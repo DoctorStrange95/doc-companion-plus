@@ -9,38 +9,160 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PatientsIndexRouteImport } from './routes/patients.index'
+import { Route as FormsIndexRouteImport } from './routes/forms.index'
+import { Route as PatientsNewRouteImport } from './routes/patients.new'
+import { Route as PatientsIdRouteImport } from './routes/patients.$id'
+import { Route as FormsNewRouteImport } from './routes/forms.new'
+import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PatientsIndexRoute = PatientsIndexRouteImport.update({
+  id: '/patients/',
+  path: '/patients/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormsIndexRoute = FormsIndexRouteImport.update({
+  id: '/forms/',
+  path: '/forms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatientsNewRoute = PatientsNewRouteImport.update({
+  id: '/patients/new',
+  path: '/patients/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PatientsIdRoute = PatientsIdRouteImport.update({
+  id: '/patients/$id',
+  path: '/patients/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormsNewRoute = FormsNewRouteImport.update({
+  id: '/forms/new',
+  path: '/forms/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormsIdFillRoute = FormsIdFillRouteImport.update({
+  id: '/forms/$id/fill',
+  path: '/forms/$id/fill',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
+  '/settings': typeof SettingsRoute
+  '/forms/new': typeof FormsNewRoute
+  '/patients/$id': typeof PatientsIdRoute
+  '/patients/new': typeof PatientsNewRoute
+  '/forms/': typeof FormsIndexRoute
+  '/patients/': typeof PatientsIndexRoute
+  '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
+  '/settings': typeof SettingsRoute
+  '/forms/new': typeof FormsNewRoute
+  '/patients/$id': typeof PatientsIdRoute
+  '/patients/new': typeof PatientsNewRoute
+  '/forms': typeof FormsIndexRoute
+  '/patients': typeof PatientsIndexRoute
+  '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
+  '/settings': typeof SettingsRoute
+  '/forms/new': typeof FormsNewRoute
+  '/patients/$id': typeof PatientsIdRoute
+  '/patients/new': typeof PatientsNewRoute
+  '/forms/': typeof FormsIndexRoute
+  '/patients/': typeof PatientsIndexRoute
+  '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/analytics'
+    | '/settings'
+    | '/forms/new'
+    | '/patients/$id'
+    | '/patients/new'
+    | '/forms/'
+    | '/patients/'
+    | '/forms/$id/fill'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/analytics'
+    | '/settings'
+    | '/forms/new'
+    | '/patients/$id'
+    | '/patients/new'
+    | '/forms'
+    | '/patients'
+    | '/forms/$id/fill'
+  id:
+    | '__root__'
+    | '/'
+    | '/analytics'
+    | '/settings'
+    | '/forms/new'
+    | '/patients/$id'
+    | '/patients/new'
+    | '/forms/'
+    | '/patients/'
+    | '/forms/$id/fill'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AnalyticsRoute: typeof AnalyticsRoute
+  SettingsRoute: typeof SettingsRoute
+  FormsNewRoute: typeof FormsNewRoute
+  PatientsIdRoute: typeof PatientsIdRoute
+  PatientsNewRoute: typeof PatientsNewRoute
+  FormsIndexRoute: typeof FormsIndexRoute
+  PatientsIndexRoute: typeof PatientsIndexRoute
+  FormsIdFillRoute: typeof FormsIdFillRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +170,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/patients/': {
+      id: '/patients/'
+      path: '/patients'
+      fullPath: '/patients/'
+      preLoaderRoute: typeof PatientsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forms/': {
+      id: '/forms/'
+      path: '/forms'
+      fullPath: '/forms/'
+      preLoaderRoute: typeof FormsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/patients/new': {
+      id: '/patients/new'
+      path: '/patients/new'
+      fullPath: '/patients/new'
+      preLoaderRoute: typeof PatientsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/patients/$id': {
+      id: '/patients/$id'
+      path: '/patients/$id'
+      fullPath: '/patients/$id'
+      preLoaderRoute: typeof PatientsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forms/new': {
+      id: '/forms/new'
+      path: '/forms/new'
+      fullPath: '/forms/new'
+      preLoaderRoute: typeof FormsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forms/$id/fill': {
+      id: '/forms/$id/fill'
+      path: '/forms/$id/fill'
+      fullPath: '/forms/$id/fill'
+      preLoaderRoute: typeof FormsIdFillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AnalyticsRoute: AnalyticsRoute,
+  SettingsRoute: SettingsRoute,
+  FormsNewRoute: FormsNewRoute,
+  PatientsIdRoute: PatientsIdRoute,
+  PatientsNewRoute: PatientsNewRoute,
+  FormsIndexRoute: FormsIndexRoute,
+  PatientsIndexRoute: PatientsIndexRoute,
+  FormsIdFillRoute: FormsIdFillRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
