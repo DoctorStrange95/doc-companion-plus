@@ -150,11 +150,11 @@ function DetailModal({ sub, fields, onClose, onDelete }: DetailModalProps) {
 function FormResponses() {
   const { id } = Route.useParams();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
-  const allSubmissions = useStore((s) => s.submissions.filter((s) => s.formId === id));
+  const rawSubmissions = useStore((s) => s.submissions);
 
   const submissions = useMemo(
-    () => [...allSubmissions].sort((a, b) => b.createdAt - a.createdAt),
-    [allSubmissions],
+    () => rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt),
+    [rawSubmissions, id],
   );
 
   const [selected, setSelected] = useState<Submission | null>(null);

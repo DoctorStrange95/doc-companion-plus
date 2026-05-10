@@ -54,9 +54,13 @@ function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission
 function FormAnalytics() {
   const { id } = Route.useParams();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
-  const allSubs = useStore((s) => s.submissions.filter((x) => x.formId === id).sort((a, b) => a.createdAt - b.createdAt));
+  const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("all");
 
+  const allSubs = useMemo(
+    () => rawSubs.filter((x) => x.formId === id).sort((a, b) => a.createdAt - b.createdAt),
+    [rawSubs, id],
+  );
   const submissions = useMemo(() => filterByDate(allSubs, dateRange), [allSubs, dateRange]);
 
   if (!form) {

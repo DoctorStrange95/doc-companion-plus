@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
@@ -28,7 +28,8 @@ function FormDetail() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
-  const submissions = useStore((s) => s.submissions.filter((s) => s.formId === id));
+  const allSubmissions = useStore((s) => s.submissions);
+  const submissions = useMemo(() => allSubmissions.filter((s) => s.formId === id), [allSubmissions, id]);
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState<"fill" | "analytics" | null>(null);
