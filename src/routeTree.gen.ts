@@ -23,6 +23,7 @@ import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as FormsNewRouteImport } from './routes/forms.new'
+import { Route as AnalyticsIdRouteImport } from './routes/analytics.$id'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -95,6 +96,11 @@ const FormsNewRoute = FormsNewRouteImport.update({
   path: '/forms/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnalyticsIdRoute = AnalyticsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AnalyticsRoute,
+} as any)
 const FormsIdFillRoute = FormsIdFillRouteImport.update({
   id: '/forms/$id/fill',
   path: '/forms/$id/fill',
@@ -103,8 +109,9 @@ const FormsIdFillRoute = FormsIdFillRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/analytics': typeof AnalyticsRoute
+  '/analytics': typeof AnalyticsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/analytics/$id': typeof AnalyticsIdRoute
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -120,8 +127,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/analytics': typeof AnalyticsRoute
+  '/analytics': typeof AnalyticsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/analytics/$id': typeof AnalyticsIdRoute
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -138,8 +146,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/analytics': typeof AnalyticsRoute
+  '/analytics': typeof AnalyticsRouteWithChildren
   '/settings': typeof SettingsRoute
+  '/analytics/$id': typeof AnalyticsIdRoute
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/settings'
+    | '/analytics/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/settings'
+    | '/analytics/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/settings'
+    | '/analytics/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -209,7 +221,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AnalyticsRoute: typeof AnalyticsRoute
+  AnalyticsRoute: typeof AnalyticsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
@@ -325,6 +337,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FormsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/analytics/$id': {
+      id: '/analytics/$id'
+      path: '/$id'
+      fullPath: '/analytics/$id'
+      preLoaderRoute: typeof AnalyticsIdRouteImport
+      parentRoute: typeof AnalyticsRoute
+    }
     '/forms/$id/fill': {
       id: '/forms/$id/fill'
       path: '/forms/$id/fill'
@@ -335,9 +354,21 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AnalyticsRouteChildren {
+  AnalyticsIdRoute: typeof AnalyticsIdRoute
+}
+
+const AnalyticsRouteChildren: AnalyticsRouteChildren = {
+  AnalyticsIdRoute: AnalyticsIdRoute,
+}
+
+const AnalyticsRouteWithChildren = AnalyticsRoute._addFileChildren(
+  AnalyticsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AnalyticsRoute: AnalyticsRoute,
+  AnalyticsRoute: AnalyticsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,
@@ -355,3 +386,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
