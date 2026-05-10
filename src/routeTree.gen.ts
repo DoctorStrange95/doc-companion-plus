@@ -14,6 +14,7 @@ import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
+import { Route as FormsNewRouteImport } from './routes/forms.new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,9 +41,15 @@ const PatientsIdRoute = PatientsIdRouteImport.update({
   path: '/patients/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FormsNewRoute = FormsNewRouteImport.update({
+  id: '/forms/new',
+  path: '/forms/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
   '/forms/': typeof FormsIndexRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
   '/forms': typeof FormsIndexRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
   '/forms/': typeof FormsIndexRoute
@@ -65,12 +74,25 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/patients/$id' | '/patients/new' | '/forms/' | '/patients/'
+  fullPaths:
+    | '/'
+    | '/forms/new'
+    | '/patients/$id'
+    | '/patients/new'
+    | '/forms/'
+    | '/patients/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/patients/$id' | '/patients/new' | '/forms' | '/patients'
+  to:
+    | '/'
+    | '/forms/new'
+    | '/patients/$id'
+    | '/patients/new'
+    | '/forms'
+    | '/patients'
   id:
     | '__root__'
     | '/'
+    | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
     | '/forms/'
@@ -79,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsNewRoute: typeof PatientsNewRoute
   FormsIndexRoute: typeof FormsIndexRoute
@@ -122,11 +145,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PatientsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forms/new': {
+      id: '/forms/new'
+      path: '/forms/new'
+      fullPath: '/forms/new'
+      preLoaderRoute: typeof FormsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsNewRoute: PatientsNewRoute,
   FormsIndexRoute: FormsIndexRoute,
