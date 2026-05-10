@@ -49,11 +49,15 @@ def decode_token(token: str) -> dict:
 async def get_current_user(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> User:
-    token: Optional[str] = request.cookies.get("access_token")
+    # Authorization header takes precedence so that a stale cookie can never
+    # silently authenticate a request that explicitly carries a different
+    # bearer token.
+    token: Optional[str] = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
     if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+        token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     try:
