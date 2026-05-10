@@ -6,10 +6,14 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { BottomNav } from "@/components/BottomNav";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -113,10 +117,42 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-background">
-        <Outlet />
-        <BottomNav />
-      </div>
+      <AuthProvider>
+        <AuthShell />
+      </AuthProvider>
     </QueryClientProvider>
+  );
+}
+
+function AuthShell() {
+  const { user } = useAuth();
+  const nav = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    if (user === undefined) return;
+    const onLogin = path === "/login";
+    if (!user && !onLogin) {
+      nav({ to: "/login", replace: true });
+    } else if (user && onLogin) {
+      nav({ to: "/", replace: true });
+    }
+  }, [user, path, nav]);
+
+  if (user === undefined) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="font-display text-2xl uppercase tracking-widest text-muted-foreground">
+          Loading…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Outlet />
+      {user && <BottomNav />}
+    </div>
   );
 }

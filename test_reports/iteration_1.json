@@ -1,0 +1,66 @@
+{
+  "summary": "End-to-end backend tests for CommunityMed Pro. 19/19 pytest tests pass after fixing a critical Supabase Transaction Pooler bug in /app/backend/database.py (DuplicatePreparedStatementError causing intermittent backend startup failures + request hangs). Auth, patients, forms (JSONB + longitudinal), submissions (JSONB), shares (success/403/404), owner-only delete, and sync push idempotency + pull are all green. Code review surfaced 1 HIGH-priority security/UX bug (cookie precedence over Authorization header in auth.py) and minor concerns.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/app/backend/database.py (engine init)",
+        "issue": "Supabase Transaction Pooler (pgbouncer pool_mode=transaction) + asyncpg fails with `DuplicatePreparedStatementError: prepared statement \"__asyncpg_stmt_1__\" already exists` on the very first SQLAlchemy bootstrap query (`select pg_catalog.version()`), causing `Application startup failed. Exiting.` Backend was alive only briefly between reloads; subsequent requests hung indefinitely because uvicorn kept retrying. Original config (`pool_size=10`, only `statement_cache_size=0`) was insufficient because SQLAlchemy still issues internal prepared statements that pgbouncer caches across pooled backends.",
+        "priority": "CRITICAL"
+      },
+      {
+        "endpoint": "/app/backend/auth.py get_current_user (lines 52-56)",
+        "issue": "Cookie is read BEFORE the Authorization header. If a client (or test/SPA) ever has a stale `access_token` cookie AND sends an explicit `Authorization: Bearer <token>` for a different user, the cookie wins and silently authenticates the wrong identity. This makes multi-account flows and offline-token-refresh scenarios unsafe. Recommend reversing precedence: Authorization header first, cookie as fallback. Reproduced via test cross-talk: a single requests.Session that logged in as user_a then sent `Authorization: Bearer <user_b_token>` was authenticated as user_a.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/auth/* response cookies",
+        "issue": "set_cookie uses `secure=False` and CORS is `allow_origins=['*']` with `allow_credentials=False`. For production behind HTTPS ingress, set `secure=True`; if the frontend ever moves cross-origin, `allow_credentials=False` will break cookie-based auth. Bearer-only flow works today, but the cookie path is dead weight in that case."
+      },
+      {
+        "endpoint": "/api/sync/push",
+        "issue": "Idempotency for patients/forms relies entirely on the client supplying a stable `id`. If the client omits `id`, a duplicate row is created on every retry. Consider rejecting POSTs without an id, or returning 400 from /api/sync/push specifically when id is missing."
+      },
+      {
+        "endpoint": "/api/patients & /api/forms (DELETE)",
+        "issue": "Returns plain {ok:true} with status 200; conventional REST would use 204 No Content. Cosmetic only."
+      },
+      {
+        "endpoint": "/api/sync/pull",
+        "issue": "Latency is high (~25-30s observed via the pooler) because the snapshot serializes 3 sequential queries with NullPool. Acceptable for offline drains but worth batching/parallelizing if user count grows."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_communitymed_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Verify the database.py fix I applied (NullPool + prepared_statement_cache_size=0 + randomized prepared_statement_name_func) is acceptable; this is the documented Supabase Transaction Pooler workaround for asyncpg+SQLAlchemy. Without it the backend is unusable.",
+    "Reverse auth precedence in /app/backend/auth.py: read `Authorization: Bearer ...` first, fall back to cookie. (HIGH — silent identity confusion otherwise.)",
+    "Decide whether the cookie auth path is still needed; if Bearer-only, remove `set_cookie` from /api/auth/login and /api/auth/register to avoid the precedence pitfall altogether.",
+    "Consider rejecting /api/sync/push items without `id` to enforce idempotency at the API layer."
+  ],
+  "critical_code_review_comments": [
+    "auth.py L52-56 reads cookie BEFORE Authorization header — invert this to avoid cross-identity auth bugs.",
+    "database.py originally had pool_size=10 + only statement_cache_size=0 — incompatible with Supabase Transaction Pooler; replaced with NullPool + prepared_statement_cache_size=0 + randomized prepared statement names per Supabase asyncpg guidance.",
+    "server.py POST /api/patients returns 200 on create; convention is 201. Same for /api/forms, /api/submissions, /api/shares.",
+    "POST /api/patients accepts client-supplied `id` from the request body and trusts it for upsert. Missing validation that the id is a UUID; could enable predictable-id attacks if a malicious client posts another user's UUID and the existing row is owned by them and shared with no one (currently safe because of the owner_id check, but fragile).",
+    "/api/auth/me returns the user but with the cookie-precedence bug a stale cookie can return a different user than the Bearer token claims, which will confuse client-side caches.",
+    "list_patients / list_forms select `OR owner_id == X OR id IN (shared_ids)` — if `shared_ids` is empty the `IN ()` clause is fine in PG but worth a guard / unit test. (Currently passes.)",
+    "Consider Alembic migrations rather than `Base.metadata.create_all` on lifespan — fine for MVP, not for production schema evolution."
+  ],
+  "updated_files": [
+    "/app/backend/database.py",
+    "/app/backend/tests/test_communitymed_backend.py"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "n/a — backend-only request"},
+  "test_credentials": "Admin: admin@communitymed.app / admin12345 (seeded). Per-run unique users test_a_<run>@example.com / test_b_<run>@example.com / pass1234.",
+  "seed_data_creation": "Each pytest run creates 2 fresh users (TEST_a_<run>, TEST_b_<run>), one TEST patient, one TEST form, one TEST submission, one share row, and a few sync rows. All rows are TEST-prefixed and isolated per run via uuid suffix; not deleted after the run (DB rows are cheap to leave).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_communitymed_backend.py and must be run with `timeout 240` because Supabase pooler + NullPool makes each connection cold (~1-3s). All 19 tests should pass. Two real backend issues remain (cookie-precedence in auth.py is HIGH; CORS/cookie config is minor). The database.py change (NullPool + prepared_statement_cache_size=0 + randomized prepared_statement_name_func) is REQUIRED for the backend to even start reliably against Supabase Transaction Pooler — do not revert it.",
+  "rca of the issue": "1) Backend hang/startup-failure RCA: SQLAlchemy's asyncpg dialect calls `select pg_catalog.version()` on first connect via an internal prepared statement; pgbouncer in transaction-pool mode shares server-side prepared-statement state across logical sessions, so the second connection sees the stale `__asyncpg_stmt_1__` and raises DuplicatePreparedStatementError, which bubbles up as `Application startup failed`. Fix: NullPool (no SQLAlchemy connection reuse) + connect_args `prepared_statement_cache_size=0` + `prepared_statement_name_func=lambda: f'__asyncpg_{uuid4().hex}__'` so each connection's prepared-statement names are unique and pgbouncer never sees a collision. Reproduction: `sudo supervisorctl restart backend` repeatedly; before fix the backend would hang within 1-2 reload cycles. After fix, 240s end-to-end test run completes cleanly.\n\n2) Cookie-precedence RCA: get_current_user reads request.cookies.get('access_token') first; only falls back to Authorization header when the cookie is missing. requests.Session preserves the Set-Cookie from /api/auth/login, so a later call with `Authorization: Bearer <other_user>` is silently re-authenticated as the cookie holder. Mitigation: invert precedence (Authorization first), or stop issuing the cookie if Bearer-only flow is sufficient."
+}
