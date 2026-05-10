@@ -1,70 +1,124 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Trash2 } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
+function StatusBadge({ status }: { status?: string }) {
+  const s = status ?? "active";
+  const styles: Record<string, string> = {
+    active: "bg-primary text-primary-foreground",
+    draft: "border border-muted-foreground text-muted-foreground",
+    closed: "bg-destructive/20 text-destructive",
+  };
+  return (
+    <span className={`inline-block px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest ${styles[s] ?? "border border-muted-foreground text-muted-foreground"}`}>
+      {s}
+    </span>
+  );
+}
+
 function FormsList() {
   const forms = useStore((s) => s.forms);
+  const submissions = useStore((s) => s.submissions);
+
+  const countFor = (id: string) => submissions.filter((s) => s.formId === id).length;
 
   return (
     <>
       <PageHeader
         title="Form library"
-        subtitle={`${forms.length} forms`}
+        subtitle={`${forms.length} form${forms.length !== 1 ? "s" : ""}`}
         action={
-          <Link to="/forms/new" className="btn-brutal inline-flex items-center gap-1.5 text-xs">
+          <Link
+            to="/forms/new"
+            className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+          >
             <Plus className="h-3.5 w-3.5" /> New
           </Link>
         }
       />
       <PageShell>
         {forms.length === 0 ? (
-          <div className="brutal-flat p-8 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            No forms yet
+          <div className="brutal-flat p-8 text-center">
+            <FileText className="h-10 w-10 mx-auto mb-3 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No forms yet</p>
+            <Link to="/forms/new" className="btn-brutal mt-4 inline-block text-xs">
+              Create first form
+            </Link>
           </div>
         ) : (
           <ul className="grid gap-3">
-            {forms.map((f) => (
-              <li key={f.id} className="brutal p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-border bg-primary">
-                    <FileText className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="truncate font-display text-lg uppercase leading-tight">{f.name}</h3>
-                      <span className="chip">{f.category}</span>
-                    </div>
-                    {f.description && (
-                      <p className="mt-0.5 line-clamp-2 text-xs font-semibold text-muted-foreground">{f.description}</p>
-                    )}
-                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      {f.fields.length} fields
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <Link
-                        to="/forms/$id/fill"
-                        params={{ id: f.id }}
-                        className="btn-brutal text-[11px]"
-                      >
-                        Fill form
-                      </Link>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete form "${f.name}"?`)) store.deleteForm(f.id);
-                    }}
-                    className="border-2 border-border p-1.5 hover:bg-destructive hover:text-destructive-foreground"
-                    aria-label="Delete form"
+            {forms.map((f) => {
+              const responses = countFor(f.id);
+              return (
+                <li key={f.id} className="brutal">
+                  {/* Main clickable area → form detail page */}
+                  <Link
+                    to="/forms/$id"
+                    params={{ id: f.id }}
+                    className="flex items-start gap-3 p-4 hover:bg-primary/5 transition-colors"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </li>
-            ))}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-border bg-primary">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display text-base uppercase leading-tight">{f.name}</h3>
+                        <StatusBadge status={f.status} />
+                        {f.longitudinal && (
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground border border-muted-foreground px-1 py-0.5">
+                            longitudinal
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        {f.category} · {f.fields.length} fields · {responses} response{responses !== 1 ? "s" : ""}
+                      </p>
+                      {f.description && (
+                        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{f.description}</p>
+                      )}
+                      <div className="mt-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                        {f.shared ? "Shared with you" : "You (owner)"}
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground mt-1" />
+                  </Link>
+
+                  {/* Quick action row */}
+                  <div className="flex border-t-2 border-border">
+                    <Link
+                      to="/forms/$id/fill"
+                      params={{ id: f.id }}
+                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                    >
+                      <Edit2 className="h-3 w-3" /> Fill
+                    </Link>
+                    <Link
+                      to="/forms/new"
+                      search={{ edit: f.id }}
+                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                    >
+                      <Edit2 className="h-3 w-3" /> Edit
+                    </Link>
+                    <button
+                      onClick={() => { store.duplicateForm(f.id); }}
+                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                    >
+                      <Copy className="h-3 w-3" /> Duplicate
+                    </button>
+                    <Link
+                      to="/forms/$id"
+                      params={{ id: f.id }}
+                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+                    >
+                      <Share2 className="h-3 w-3" /> Share
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </PageShell>

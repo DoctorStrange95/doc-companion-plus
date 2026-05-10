@@ -76,6 +76,13 @@ class FormDef(Base):
     description = Column(String(2048), nullable=True)
     fields = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     longitudinal = Column(Boolean, nullable=False, default=False)
+    status = Column(String(16), nullable=False, server_default="active")
+    share_token = Column(String(64), nullable=True, unique=True, index=True)
+    analytics_token = Column(String(64), nullable=True, unique=True, index=True)
+    form_role = Column(String(16), nullable=False, server_default="standalone")
+    parent_form_id = Column(String(64), ForeignKey("forms.id", ondelete="SET NULL"), nullable=True)
+    subject_identifier_field_id = Column(String(64), nullable=True)
+    parent_link_field_id = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=now_utc)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=now_utc, onupdate=now_utc

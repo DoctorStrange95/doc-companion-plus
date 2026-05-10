@@ -43,13 +43,25 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
+      <div className="max-w-lg w-full text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {error?.message && (
+          <div className="mt-4 rounded border-2 border-destructive bg-destructive/10 p-3 text-left">
+            <p className="text-xs font-bold uppercase tracking-wider text-destructive mb-1">Error</p>
+            <p className="text-xs font-mono text-destructive break-all">{error.message}</p>
+            {error.stack && (
+              <details className="mt-2">
+                <summary className="text-xs font-bold uppercase tracking-wider text-destructive cursor-pointer">Stack trace</summary>
+                <pre className="mt-1 text-[10px] font-mono text-destructive whitespace-pre-wrap break-all">{error.stack}</pre>
+              </details>
+            )}
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -132,14 +144,16 @@ function AuthShell() {
   useEffect(() => {
     if (user === undefined) return;
     const onLogin = path === "/login";
-    if (!user && !onLogin) {
+    const isPublic = path.startsWith("/f/") || path.startsWith("/fa/");
+    if (!user && !onLogin && !isPublic) {
       nav({ to: "/login", replace: true });
     } else if (user && onLogin) {
       nav({ to: "/", replace: true });
     }
   }, [user, path, nav]);
 
-  if (user === undefined) {
+  const isPublic = path.startsWith("/f/") || path.startsWith("/fa/");
+  if (user === undefined && !isPublic) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="font-display text-2xl uppercase tracking-widest text-muted-foreground">

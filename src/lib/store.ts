@@ -13,17 +13,37 @@ import { api, getToken, isOnline, ApiError } from "./api";
 
 // ---------- Types ----------------------------------------------------------
 export type FieldType =
+  // Legacy types (kept for backward compat with saved data)
   | "text"
-  | "number"
-  | "date"
   | "select"
   | "radio"
   | "multiselect"
   | "textarea"
   | "boolean"
-  | "location";
+  // Core types (new names)
+  | "short_text"
+  | "long_text"
+  | "number"
+  | "date"
+  | "time"
+  | "datetime"
+  | "select_one"
+  | "select_many"
+  | "yes_no"
+  // Advanced
+  | "slider"
+  | "rating"
+  | "calculated"
+  | "matrix"
+  // Clinical
+  | "measurement"
+  | "location"
+  | "photo"
+  // Layout
+  | "section_header"
+  | "page_break";
 
-export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains";
+export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains" | "is_answered";
 
 export interface SkipRule {
   fieldId: string;
@@ -36,17 +56,126 @@ export interface VisibleIf {
   rules: SkipRule[];
 }
 
+export type ConditionalOperator =
+  | "equals" | "not_equals"
+  | "greater_than" | "less_than"
+  | "greater_than_or_equal" | "less_than_or_equal"
+  | "contains" | "not_contains"
+  | "is_answered" | "is_not_answered"
+  | "is_one_of" | "is_not_one_of";
+
+export interface ConditionalRule {
+  id: string;
+  fieldId: string;
+  operator: ConditionalOperator;
+  value: unknown;
+}
+
+export interface ConditionalLogic {
+  combinator: "AND" | "OR";
+  rules: ConditionalRule[];
+}
+
+export function ruleId(): string {
+  return `r_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function normalizeShowIf(showIf: unknown): ConditionalLogic | undefined {
+  if (!showIf) return undefined;
+  const obj = showIf as Record<string, unknown>;
+  if ("combinator" in obj && Array.isArray(obj.rules)) return obj as unknown as ConditionalLogic;
+  if ("fieldId" in obj) {
+    return {
+      combinator: "AND",
+      rules: [{ id: "legacy_0", fieldId: obj.fieldId as string, operator: (obj.operator as ConditionalOperator) ?? "equals", value: obj.value }],
+    };
+  }
+  return undefined;
+}
+
+export function evaluateRule(rule: ConditionalRule, state: Record<string, unknown>): boolean {
+  const v = state[rule.fieldId];
+  const rv = rule.value;
+  const answered = v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+  switch (rule.operator) {
+    case "equals":
+      if (Array.isArray(v)) return v.map(String).includes(String(rv));
+      return String(v ?? "") === String(rv ?? "");
+    case "not_equals":
+      if (Array.isArray(v)) return !v.map(String).includes(String(rv));
+      return String(v ?? "") !== String(rv ?? "");
+    case "greater_than": return Number(v) > Number(rv);
+    case "less_than": return Number(v) < Number(rv);
+    case "greater_than_or_equal": return Number(v) >= Number(rv);
+    case "less_than_or_equal": return Number(v) <= Number(rv);
+    case "contains":
+      if (Array.isArray(v)) return v.map(String).some((x) => x.toLowerCase().includes(String(rv).toLowerCase()));
+      return String(v ?? "").toLowerCase().includes(String(rv).toLowerCase());
+    case "not_contains":
+      if (Array.isArray(v)) return !v.map(String).some((x) => x.toLowerCase().includes(String(rv).toLowerCase()));
+      return !String(v ?? "").toLowerCase().includes(String(rv).toLowerCase());
+    case "is_answered": return answered;
+    case "is_not_answered": return !answered;
+    case "is_one_of": return Array.isArray(rv) && (rv as unknown[]).some((opt) => String(opt) === String(v));
+    case "is_not_one_of": return !Array.isArray(rv) || !(rv as unknown[]).some((opt) => String(opt) === String(v));
+    default: return true;
+  }
+}
+
+export function evaluateConditions(showIf: unknown, state: Record<string, unknown>): boolean {
+  const logic = normalizeShowIf(showIf);
+  if (!logic || logic.rules.length === 0) return true;
+  const results = logic.rules.map((r) => evaluateRule(r, state));
+  return logic.combinator === "AND" ? results.every(Boolean) : results.some(Boolean);
+}
+
+export type ChartType = "histogram" | "line" | "bar" | "pie" | "donut" | "none" | "auto";
+
 export interface FormField {
   id: string;
   type: FieldType;
   label: string;
   required?: boolean;
+  // Legacy properties
   options?: string[];
   unit?: string;
   min?: number;
   max?: number;
   visibleIf?: VisibleIf;
+  // New properties (spec)
+  variableName?: string;
+  hint?: string;
+  defaultValue?: unknown;
+  analyticsChart?: ChartType;
+  normalRange?: { min: number; max: number };
+  showIf?: ConditionalLogic;
+  // Number / Measurement
+  decimalPlaces?: number;
+  // Slider
+  sliderMin?: number;
+  sliderMax?: number;
+  sliderStep?: number;
+  leftLabel?: string;
+  rightLabel?: string;
+  showValue?: boolean;
+  // Rating
+  maxRating?: number;
+  ratingType?: "stars" | "numbers";
+  // Calculated
+  formula?: string;
+  referencedFields?: string[];
+  // Matrix
+  matrixRows?: string[];
+  matrixColumns?: string[];
+  // Select (new spec)
+  optionObjects?: { label: string; value: string }[];
+  displayAs?: "radio" | "dropdown";
+  includeOther?: boolean;
+  // Measurement clinical preset
+  measurementType?: "BP" | "temperature" | "SpO2" | "BSL" | "MUAC" | "weight" | "height" | "custom";
 }
+
+export type FormRole = "standalone" | "parent" | "child";
 
 export interface FormDef {
   id: string;
@@ -58,6 +187,17 @@ export interface FormDef {
   longitudinal?: boolean;
   ownerId?: string;
   shared?: boolean;
+  status?: "draft" | "active" | "closed";
+  shareToken?: string;
+  analyticsToken?: string;
+  responseCount?: number;
+  requireRespondentInfo?: boolean;
+  requireRespondentId?: boolean;
+  // Parent-child longitudinal structure
+  formRole?: FormRole;
+  subjectIdentifierFieldId?: string; // parent: field whose value identifies the subject
+  parentFormId?: string;             // child: linked parent form ID
+  parentLinkFieldId?: string;        // child: field where respondent types the parent subject ID
 }
 
 export interface Patient {
@@ -273,6 +413,13 @@ interface SrvForm {
   owner_id: string;
   created_at: string;
   shared?: boolean;
+  share_token?: string | null;
+  analytics_token?: string | null;
+  status?: string | null;
+  form_role?: string | null;
+  parent_form_id?: string | null;
+  subject_identifier_field_id?: string | null;
+  parent_link_field_id?: string | null;
 }
 interface SrvSubmission {
   id: string;
@@ -307,6 +454,13 @@ const mapForm = (s: SrvForm): FormDef => ({
   createdAt: new Date(s.created_at).getTime(),
   ownerId: s.owner_id,
   shared: !!s.shared,
+  shareToken: s.share_token ?? undefined,
+  analyticsToken: s.analytics_token ?? undefined,
+  status: (s.status as FormDef["status"]) ?? "active",
+  formRole: (s.form_role as FormRole) ?? "standalone",
+  parentFormId: s.parent_form_id ?? undefined,
+  subjectIdentifierFieldId: s.subject_identifier_field_id ?? undefined,
+  parentLinkFieldId: s.parent_link_field_id ?? undefined,
 });
 const mapSubmission = (s: SrvSubmission): Submission => ({
   id: s.id,
@@ -366,12 +520,48 @@ export const store = {
       ...f,
       id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       createdAt: Date.now(),
+      status: f.status ?? "active",
+      shareToken: f.shareToken ?? `sh_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      analyticsToken: f.analyticsToken ?? `an_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      responseCount: 0,
     };
     state = { ...state, forms: [form, ...state.forms] };
     enqueue({ kind: "form", payload: form });
     persist();
     void drain();
     return form;
+  },
+
+  updateForm: (id: string, patch: Partial<FormDef>) => {
+    state = {
+      ...state,
+      forms: state.forms.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+    };
+    const updated = state.forms.find((f) => f.id === id);
+    if (updated) enqueue({ kind: "form", payload: updated });
+    persist();
+    void drain();
+  },
+
+  duplicateForm: (id: string): FormDef => {
+    const orig = state.forms.find((f) => f.id === id);
+    if (!orig) throw new Error("Form not found");
+    const copy: FormDef = {
+      ...orig,
+      id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name: `Copy of ${orig.name}`,
+      createdAt: Date.now(),
+      status: "draft",
+      shareToken: `sh_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      analyticsToken: `an_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      responseCount: 0,
+      ownerId: undefined,
+    };
+    state = { ...state, forms: [copy, ...state.forms] };
+    enqueue({ kind: "form", payload: copy });
+    persist();
+    void drain();
+    return copy;
   },
 
   deleteForm: (id: string) => {
@@ -392,6 +582,18 @@ export const store = {
     persist();
     void drain();
     return sub;
+  },
+
+  deleteSubmission: (id: string) => {
+    state = { ...state, submissions: state.submissions.filter((s) => s.id !== id) };
+    persist();
+    const token = getToken();
+    if (token && isOnline()) {
+      fetch(`/api/submissions/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
   },
 
   setWorker: (w: { name: string; village: string }) => {

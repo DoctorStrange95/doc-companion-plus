@@ -24,7 +24,10 @@ import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as FormsNewRouteImport } from './routes/forms.new'
+import { Route as FormsIdRouteImport } from './routes/forms.$id'
+import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as AnalyticsIdRouteImport } from './routes/analytics.$id'
+import { Route as FormsIdResponsesRouteImport } from './routes/forms.$id.responses'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -102,15 +105,30 @@ const FormsNewRoute = FormsNewRouteImport.update({
   path: '/forms/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FormsIdRoute = FormsIdRouteImport.update({
+  id: '/forms/$id',
+  path: '/forms/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FTokenRoute = FTokenRouteImport.update({
+  id: '/f/$token',
+  path: '/f/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalyticsIdRoute = AnalyticsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => AnalyticsRoute,
 } as any)
+const FormsIdResponsesRoute = FormsIdResponsesRouteImport.update({
+  id: '/responses',
+  path: '/responses',
+  getParentRoute: () => FormsIdRoute,
+} as any)
 const FormsIdFillRoute = FormsIdFillRouteImport.update({
-  id: '/forms/$id/fill',
-  path: '/forms/$id/fill',
-  getParentRoute: () => rootRouteImport,
+  id: '/fill',
+  path: '/fill',
+  getParentRoute: () => FormsIdRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -119,6 +137,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
+  '/f/$token': typeof FTokenRoute
+  '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -131,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/patients/': typeof PatientsIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -138,6 +159,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
+  '/f/$token': typeof FTokenRoute
+  '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -150,6 +173,7 @@ export interface FileRoutesByTo {
   '/patients': typeof PatientsIndexRoute
   '/tools': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -158,6 +182,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
+  '/f/$token': typeof FTokenRoute
+  '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
@@ -170,6 +196,7 @@ export interface FileRoutesById {
   '/patients/': typeof PatientsIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -179,6 +206,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/analytics/$id'
+    | '/f/$token'
+    | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -191,6 +220,7 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/tools/'
     | '/forms/$id/fill'
+    | '/forms/$id/responses'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -198,6 +228,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/analytics/$id'
+    | '/f/$token'
+    | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -210,6 +242,7 @@ export interface FileRouteTypes {
     | '/patients'
     | '/tools'
     | '/forms/$id/fill'
+    | '/forms/$id/responses'
   id:
     | '__root__'
     | '/'
@@ -217,6 +250,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/settings'
     | '/analytics/$id'
+    | '/f/$token'
+    | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
@@ -229,6 +264,7 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/tools/'
     | '/forms/$id/fill'
+    | '/forms/$id/responses'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +272,8 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRouteWithChildren
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
+  FTokenRoute: typeof FTokenRoute
+  FormsIdRoute: typeof FormsIdRouteWithChildren
   FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsNewRoute: typeof PatientsNewRoute
@@ -247,7 +285,6 @@ export interface RootRouteChildren {
   FormsIndexRoute: typeof FormsIndexRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
   ToolsIndexRoute: typeof ToolsIndexRoute
-  FormsIdFillRoute: typeof FormsIdFillRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -357,6 +394,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FormsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forms/$id': {
+      id: '/forms/$id'
+      path: '/forms/$id'
+      fullPath: '/forms/$id'
+      preLoaderRoute: typeof FormsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/f/$token': {
+      id: '/f/$token'
+      path: '/f/$token'
+      fullPath: '/f/$token'
+      preLoaderRoute: typeof FTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analytics/$id': {
       id: '/analytics/$id'
       path: '/$id'
@@ -364,12 +415,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyticsIdRouteImport
       parentRoute: typeof AnalyticsRoute
     }
+    '/forms/$id/responses': {
+      id: '/forms/$id/responses'
+      path: '/responses'
+      fullPath: '/forms/$id/responses'
+      preLoaderRoute: typeof FormsIdResponsesRouteImport
+      parentRoute: typeof FormsIdRoute
+    }
     '/forms/$id/fill': {
       id: '/forms/$id/fill'
-      path: '/forms/$id/fill'
+      path: '/fill'
       fullPath: '/forms/$id/fill'
       preLoaderRoute: typeof FormsIdFillRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof FormsIdRoute
     }
   }
 }
@@ -386,11 +444,26 @@ const AnalyticsRouteWithChildren = AnalyticsRoute._addFileChildren(
   AnalyticsRouteChildren,
 )
 
+interface FormsIdRouteChildren {
+  FormsIdFillRoute: typeof FormsIdFillRoute
+  FormsIdResponsesRoute: typeof FormsIdResponsesRoute
+}
+
+const FormsIdRouteChildren: FormsIdRouteChildren = {
+  FormsIdFillRoute: FormsIdFillRoute,
+  FormsIdResponsesRoute: FormsIdResponsesRoute,
+}
+
+const FormsIdRouteWithChildren =
+  FormsIdRoute._addFileChildren(FormsIdRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRouteWithChildren,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
+  FTokenRoute: FTokenRoute,
+  FormsIdRoute: FormsIdRouteWithChildren,
   FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsNewRoute: PatientsNewRoute,
@@ -402,7 +475,6 @@ const rootRouteChildren: RootRouteChildren = {
   FormsIndexRoute: FormsIndexRoute,
   PatientsIndexRoute: PatientsIndexRoute,
   ToolsIndexRoute: ToolsIndexRoute,
-  FormsIdFillRoute: FormsIdFillRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

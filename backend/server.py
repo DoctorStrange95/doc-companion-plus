@@ -71,6 +71,20 @@ async def ensure_user_profile_columns():
         )
 
 
+async def ensure_form_extra_columns():
+    """Add extra columns to forms table if missing (safe to run on every startup)."""
+    async with engine.begin() as conn:
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'active'"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS analytics_token VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS form_role VARCHAR(16) NOT NULL DEFAULT 'standalone'"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS parent_form_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS subject_identifier_field_id VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS parent_link_field_id VARCHAR(64)"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_share_token ON forms(share_token) WHERE share_token IS NOT NULL"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_analytics_token ON forms(analytics_token) WHERE analytics_token IS NOT NULL"))
+
+
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
     # Fallback for environments where lifespan hooks may not run consistently.
     try:
@@ -115,6 +129,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await ensure_user_profile_columns()
+    try:
+        await ensure_form_extra_columns()
+    except Exception as e:
+        print(f"[ensure_form_extra_columns] warning: {e}")
     try:
         await seed_admin()
     except Exception as e:  # noqa: BLE001
@@ -209,6 +227,13 @@ class FormIn(BaseModel):
     description: Optional[str] = None
     fields: list[dict[str, Any]] = []
     longitudinal: bool = False
+    status: str = "active"
+    share_token: Optional[str] = None
+    analytics_token: Optional[str] = None
+    form_role: str = "standalone"
+    parent_form_id: Optional[str] = None
+    subject_identifier_field_id: Optional[str] = None
+    parent_link_field_id: Optional[str] = None
 
 
 class FormOut(FormIn):
@@ -219,6 +244,27 @@ class FormOut(FormIn):
     shared: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class PublicFormOut(BaseModel):
+    id: str
+    name: str
+    category: str
+    description: Optional[str] = None
+    fields: list[dict[str, Any]] = []
+    longitudinal: bool = False
+    status: str
+    require_respondent_info: bool = False
+    require_respondent_id: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class PublicSubmissionIn(BaseModel):
+    respondent_name: Optional[str] = None
+    respondent_email: Optional[str] = None
+    respondent_id: Optional[str] = None
+    data: dict[str, Any] = {}
 
 
 class SubmissionIn(BaseModel):
@@ -689,6 +735,57 @@ async def create_submission(
     return SubmissionOut.model_validate(s)
 
 
+@app.delete("/api/submissions/{sid}", status_code=204)
+async def delete_submission(
+    sid: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Submission).where(Submission.id == sid))
+    s = res.scalar_one_or_none()
+    if not s:
+        raise HTTPException(404, "Submission not found")
+    if str(s.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can delete")
+    await db.delete(s)
+    await db.commit()
+
+
+# ============================================================================
+# Ownership Transfer
+# ============================================================================
+class TransferIn(BaseModel):
+    form_id: str
+    new_owner_email: str
+
+
+@app.post("/api/forms/transfer")
+async def transfer_form_ownership(
+    body: TransferIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(FormDef).where(FormDef.id == body.form_id))
+    form = res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if str(form.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the current owner can transfer ownership")
+
+    new_email = body.new_owner_email.lower().strip()
+    if new_email == user.email.lower():
+        raise HTTPException(400, "You already own this form")
+
+    res2 = await db.execute(select(User).where(User.email == new_email))
+    new_owner = res2.scalar_one_or_none()
+    if not new_owner:
+        raise HTTPException(404, f"No account found for {new_email}. They must sign up first.")
+
+    form.owner_id = str(new_owner.id)
+    await db.commit()
+    return {"ok": True, "new_owner": new_email}
+
+
 # ============================================================================
 # Sharing
 # ============================================================================
@@ -843,6 +940,70 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
     forms = await list_forms(user=user, db=db)
     submissions = await list_submissions(user=user, db=db)
     return {"patients": patients, "forms": forms, "submissions": submissions}
+
+
+# ============================================================================
+# Public form endpoints (no auth required)
+# ============================================================================
+
+@app.get("/api/forms/public/{share_token}", response_model=PublicFormOut)
+async def get_public_form(share_token: str, db: AsyncSession = Depends(get_db)):
+    """Return a form definition by share_token — no authentication required."""
+    res = await db.execute(select(FormDef).where(FormDef.share_token == share_token))
+    form = res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if getattr(form, "status", "active") == "closed":
+        raise HTTPException(410, "This form is closed and no longer accepting responses")
+    if getattr(form, "status", "active") == "draft":
+        raise HTTPException(403, "This form is not yet published")
+    fields = form.fields if isinstance(form.fields, list) else []
+    return PublicFormOut(
+        id=str(form.id),
+        name=form.name,
+        category=form.category,
+        description=form.description,
+        fields=fields,
+        longitudinal=form.longitudinal,
+        status=getattr(form, "status", "active"),
+    )
+
+
+@app.post("/api/forms/public/{share_token}/submit")
+async def submit_public_form(
+    share_token: str,
+    body: PublicSubmissionIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a public form submission — no authentication required."""
+    res = await db.execute(select(FormDef).where(FormDef.share_token == share_token))
+    form = res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if getattr(form, "status", "active") == "closed":
+        raise HTTPException(410, "This form is closed")
+    if getattr(form, "status", "active") == "draft":
+        raise HTTPException(403, "This form is not yet published")
+
+    submission_data = dict(body.data)
+    if body.respondent_name:
+        submission_data["__respondent_name"] = body.respondent_name
+    if body.respondent_email:
+        submission_data["__respondent_email"] = body.respondent_email
+    if body.respondent_id:
+        submission_data["__respondent_id"] = body.respondent_id
+
+    sub = Submission(
+        owner_id=form.owner_id,
+        patient_id="",
+        form_id=str(form.id),
+        form_name=form.name,
+        data=submission_data,
+    )
+    db.add(sub)
+    await db.commit()
+    await db.refresh(sub)
+    return {"ok": True, "id": str(sub.id)}
 
 
 @app.get("/api/health")
