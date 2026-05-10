@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { BottomNav } from "@/components/BottomNav";
 
 function NotFoundComponent() {
   return (
