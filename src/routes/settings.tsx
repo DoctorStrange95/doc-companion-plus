@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useStore, store } from "@/lib/store";
-import { PageHeader, PageShell } from "@/components/PageShell";
+import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { Download, RotateCcw, Wifi, WifiOff } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({ component: Settings });
@@ -33,72 +33,50 @@ function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" variant="dark" />
       <PageShell>
-        <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Health worker profile</h2>
-          <label className="mb-1 block text-xs font-medium">Name</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mb-3 w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
-          />
-          <label className="mb-1 block text-xs font-medium">Posted at (village/PHC)</label>
-          <input
-            value={village}
-            onChange={(e) => setVillage(e.target.value)}
-            className="mb-3 w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
-          />
-          <button
-            onClick={save}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            {saved ? "Saved ✓" : "Save profile"}
-          </button>
+        <section className="brutal p-4">
+          <SectionTitle kicker="Worker">Profile</SectionTitle>
+          <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className="input-brutal mb-3" />
+          <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Posted at</label>
+          <input value={village} onChange={(e) => setVillage(e.target.value)} className="input-brutal mb-3" />
+          <button onClick={save} className="btn-brutal">{saved ? "Saved ✓" : "Save profile"}</button>
         </section>
 
-        <section className="mt-4 rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Sync status</h2>
-          <div className="flex items-center gap-2 text-sm">
+        <section className="brutal mt-4 p-4">
+          <SectionTitle kicker="Sync">Status</SectionTitle>
+          <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider">
             {online ? (
-              <>
-                <Wifi className="h-4 w-4 text-primary" /> Online — data stored locally on this device
-              </>
+              <><Wifi className="h-4 w-4" /> Online — local-first</>
             ) : (
-              <>
-                <WifiOff className="h-4 w-4 text-destructive" /> Offline — data is queued locally
-              </>
+              <><WifiOff className="h-4 w-4 text-destructive" /> Offline — queued</>
             )}
           </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            {patients.length} patients · {submissions.length} visits saved on this device
+          <div className="mt-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            {patients.length} patients · {submissions.length} visits saved on device
           </div>
         </section>
 
-        <section className="mt-4 rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-3 text-sm font-semibold">Data</h2>
+        <section className="brutal mt-4 p-4">
+          <SectionTitle kicker="Data">Export</SectionTitle>
           <div className="flex flex-col gap-2">
-            <button
-              onClick={exportData}
-              className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm hover:bg-muted/50"
-            >
-              <Download className="h-4 w-4" /> Export all data (JSON)
+            <button onClick={exportData} className="btn-brutal flex items-center justify-center gap-2 bg-card">
+              <Download className="h-4 w-4" /> Export JSON
             </button>
             <button
               onClick={() => {
-                if (confirm("Reset all data? This will delete all patients, forms, and visits on this device.")) {
-                  store.reset();
-                }
+                if (confirm("Reset all data? This will delete patients, forms, and visits on this device.")) store.reset();
               }}
-              className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+              className="btn-brutal flex items-center justify-center gap-2 bg-destructive text-destructive-foreground"
             >
-              <RotateCcw className="h-4 w-4" /> Reset to seed data
+              <RotateCcw className="h-4 w-4" /> Reset to seed
             </button>
           </div>
         </section>
 
-        <p className="mt-6 text-center text-[11px] text-muted-foreground">
-          CommunityMed Pro · MVP v0.1 · Data stays on this device until sync is configured.
+        <p className="mt-6 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          CommunityMed Pro · MVP v0.2
         </p>
       </PageShell>
     </>

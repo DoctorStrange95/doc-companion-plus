@@ -12,8 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ToolsIndexRouteImport } from './routes/tools.index'
 import { Route as PatientsIndexRouteImport } from './routes/patients.index'
 import { Route as FormsIndexRouteImport } from './routes/forms.index'
+import { Route as ToolsSampleSizeRouteImport } from './routes/tools.sample-size'
+import { Route as ToolsNutritionRouteImport } from './routes/tools.nutrition'
+import { Route as ToolsImnciRouteImport } from './routes/tools.imnci'
+import { Route as ToolsGrowthRouteImport } from './routes/tools.growth'
+import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as FormsNewRouteImport } from './routes/forms.new'
@@ -34,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsIndexRoute = ToolsIndexRouteImport.update({
+  id: '/tools/',
+  path: '/tools/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PatientsIndexRoute = PatientsIndexRouteImport.update({
   id: '/patients/',
   path: '/patients/',
@@ -42,6 +53,31 @@ const PatientsIndexRoute = PatientsIndexRouteImport.update({
 const FormsIndexRoute = FormsIndexRouteImport.update({
   id: '/forms/',
   path: '/forms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsSampleSizeRoute = ToolsSampleSizeRouteImport.update({
+  id: '/tools/sample-size',
+  path: '/tools/sample-size',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsNutritionRoute = ToolsNutritionRouteImport.update({
+  id: '/tools/nutrition',
+  path: '/tools/nutrition',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsImnciRoute = ToolsImnciRouteImport.update({
+  id: '/tools/imnci',
+  path: '/tools/imnci',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsGrowthRoute = ToolsGrowthRouteImport.update({
+  id: '/tools/growth',
+  path: '/tools/growth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsBmiRoute = ToolsBmiRouteImport.update({
+  id: '/tools/bmi',
+  path: '/tools/bmi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PatientsNewRoute = PatientsNewRouteImport.update({
@@ -72,8 +108,14 @@ export interface FileRoutesByFullPath {
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/growth': typeof ToolsGrowthRoute
+  '/tools/imnci': typeof ToolsImnciRoute
+  '/tools/nutrition': typeof ToolsNutritionRoute
+  '/tools/sample-size': typeof ToolsSampleSizeRoute
   '/forms/': typeof FormsIndexRoute
   '/patients/': typeof PatientsIndexRoute
+  '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRoutesByTo {
@@ -83,8 +125,14 @@ export interface FileRoutesByTo {
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/growth': typeof ToolsGrowthRoute
+  '/tools/imnci': typeof ToolsImnciRoute
+  '/tools/nutrition': typeof ToolsNutritionRoute
+  '/tools/sample-size': typeof ToolsSampleSizeRoute
   '/forms': typeof FormsIndexRoute
   '/patients': typeof PatientsIndexRoute
+  '/tools': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRoutesById {
@@ -95,8 +143,14 @@ export interface FileRoutesById {
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/growth': typeof ToolsGrowthRoute
+  '/tools/imnci': typeof ToolsImnciRoute
+  '/tools/nutrition': typeof ToolsNutritionRoute
+  '/tools/sample-size': typeof ToolsSampleSizeRoute
   '/forms/': typeof FormsIndexRoute
   '/patients/': typeof PatientsIndexRoute
+  '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
 }
 export interface FileRouteTypes {
@@ -108,8 +162,14 @@ export interface FileRouteTypes {
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/tools/bmi'
+    | '/tools/growth'
+    | '/tools/imnci'
+    | '/tools/nutrition'
+    | '/tools/sample-size'
     | '/forms/'
     | '/patients/'
+    | '/tools/'
     | '/forms/$id/fill'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -119,8 +179,14 @@ export interface FileRouteTypes {
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/tools/bmi'
+    | '/tools/growth'
+    | '/tools/imnci'
+    | '/tools/nutrition'
+    | '/tools/sample-size'
     | '/forms'
     | '/patients'
+    | '/tools'
     | '/forms/$id/fill'
   id:
     | '__root__'
@@ -130,8 +196,14 @@ export interface FileRouteTypes {
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/tools/bmi'
+    | '/tools/growth'
+    | '/tools/imnci'
+    | '/tools/nutrition'
+    | '/tools/sample-size'
     | '/forms/'
     | '/patients/'
+    | '/tools/'
     | '/forms/$id/fill'
   fileRoutesById: FileRoutesById
 }
@@ -142,8 +214,14 @@ export interface RootRouteChildren {
   FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsNewRoute: typeof PatientsNewRoute
+  ToolsBmiRoute: typeof ToolsBmiRoute
+  ToolsGrowthRoute: typeof ToolsGrowthRoute
+  ToolsImnciRoute: typeof ToolsImnciRoute
+  ToolsNutritionRoute: typeof ToolsNutritionRoute
+  ToolsSampleSizeRoute: typeof ToolsSampleSizeRoute
   FormsIndexRoute: typeof FormsIndexRoute
   PatientsIndexRoute: typeof PatientsIndexRoute
+  ToolsIndexRoute: typeof ToolsIndexRoute
   FormsIdFillRoute: typeof FormsIdFillRoute
 }
 
@@ -170,6 +248,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tools/': {
+      id: '/tools/'
+      path: '/tools'
+      fullPath: '/tools/'
+      preLoaderRoute: typeof ToolsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/patients/': {
       id: '/patients/'
       path: '/patients'
@@ -182,6 +267,41 @@ declare module '@tanstack/react-router' {
       path: '/forms'
       fullPath: '/forms/'
       preLoaderRoute: typeof FormsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/sample-size': {
+      id: '/tools/sample-size'
+      path: '/tools/sample-size'
+      fullPath: '/tools/sample-size'
+      preLoaderRoute: typeof ToolsSampleSizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/nutrition': {
+      id: '/tools/nutrition'
+      path: '/tools/nutrition'
+      fullPath: '/tools/nutrition'
+      preLoaderRoute: typeof ToolsNutritionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/imnci': {
+      id: '/tools/imnci'
+      path: '/tools/imnci'
+      fullPath: '/tools/imnci'
+      preLoaderRoute: typeof ToolsImnciRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/growth': {
+      id: '/tools/growth'
+      path: '/tools/growth'
+      fullPath: '/tools/growth'
+      preLoaderRoute: typeof ToolsGrowthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/bmi': {
+      id: '/tools/bmi'
+      path: '/tools/bmi'
+      fullPath: '/tools/bmi'
+      preLoaderRoute: typeof ToolsBmiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/patients/new': {
@@ -222,8 +342,14 @@ const rootRouteChildren: RootRouteChildren = {
   FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsNewRoute: PatientsNewRoute,
+  ToolsBmiRoute: ToolsBmiRoute,
+  ToolsGrowthRoute: ToolsGrowthRoute,
+  ToolsImnciRoute: ToolsImnciRoute,
+  ToolsNutritionRoute: ToolsNutritionRoute,
+  ToolsSampleSizeRoute: ToolsSampleSizeRoute,
   FormsIndexRoute: FormsIndexRoute,
   PatientsIndexRoute: PatientsIndexRoute,
+  ToolsIndexRoute: ToolsIndexRoute,
   FormsIdFillRoute: FormsIdFillRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { store, type FormField, type FieldType } from "@/lib/store";
-import { PageHeader, PageShell } from "@/components/PageShell";
+import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { GripVertical, Trash2, Plus, Type, Hash, Calendar, ListChecks, AlignLeft, ToggleLeft } from "lucide-react";
 
 export const Route = createFileRoute("/forms/new")({ component: NewForm });
@@ -62,29 +62,21 @@ function NewForm() {
       <PageHeader
         title="New form"
         back="/forms"
+        variant="yellow"
         action={
-          <button
-            onClick={save}
-            className="inline-flex h-9 items-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Save
-          </button>
+          <button onClick={save} className="btn-brutal text-xs">Save</button>
         }
       />
       <PageShell>
-        <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <div className="brutal space-y-3 p-4">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Form name (e.g. Postnatal Check)"
-            className="w-full border-b border-border bg-transparent pb-2 text-base font-semibold outline-none focus:border-primary"
+            placeholder="Form name"
+            className="w-full border-b-2 border-border bg-transparent pb-2 font-display text-2xl uppercase outline-none placeholder:text-muted-foreground"
           />
           <div className="flex gap-2">
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-            >
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-brutal w-auto text-xs font-bold uppercase">
               {["General", "Maternal", "Pediatric", "Adolescent", "Chronic", "Survey"].map((c) => (
                 <option key={c}>{c}</option>
               ))}
@@ -95,113 +87,71 @@ function NewForm() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
             rows={2}
-            className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+            className="input-brutal resize-none"
           />
         </div>
 
-        <h2 className="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Questions
-        </h2>
+        <div className="mt-6">
+          <SectionTitle kicker={`${fields.length}`}>Questions</SectionTitle>
 
-        {fields.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-card p-6 text-center text-xs text-muted-foreground">
-            Add fields from the palette below.
-          </div>
-        )}
+          {fields.length === 0 && (
+            <div className="brutal-flat p-6 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Add fields from the palette below
+            </div>
+          )}
 
-        <ul className="space-y-2">
-          {fields.map((f, i) => (
-            <li key={f.id} className="rounded-xl border border-border bg-card">
-              <div className="flex items-center gap-2 px-3 py-2.5">
-                <div className="flex flex-col">
-                  <button
-                    onClick={() => move(f.id, -1)}
-                    disabled={i === 0}
-                    className="text-muted-foreground disabled:opacity-30"
-                  >
+          <ul className="space-y-2">
+            {fields.map((f, i) => (
+              <li key={f.id} className="brutal">
+                <div className="flex items-center gap-2 px-3 py-2.5">
+                  <button onClick={() => move(f.id, -1)} disabled={i === 0} className="disabled:opacity-30">
                     <GripVertical className="h-4 w-4 rotate-180" />
                   </button>
-                </div>
-                <button
-                  onClick={() => setEditing(editing === f.id ? null : f.id)}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{f.label || "Untitled"}</span>
-                    {f.required && <span className="text-xs text-destructive">*</span>}
-                  </div>
-                  <span className="text-[11px] uppercase text-muted-foreground">
-                    {f.type}
-                    {f.unit ? ` · ${f.unit}` : ""}
-                  </span>
-                </button>
-                <button
-                  onClick={() => remove(f.id)}
-                  className="text-muted-foreground hover:text-destructive"
-                  aria-label="Remove"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              {editing === f.id && (
-                <div className="space-y-2 border-t border-border bg-muted/30 px-3 py-3">
-                  <input
-                    value={f.label}
-                    onChange={(e) => update(f.id, { label: e.target.value })}
-                    placeholder="Question label"
-                    className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
-                  />
-                  {f.type === "number" && (
-                    <div className="grid grid-cols-3 gap-2">
-                      <input
-                        placeholder="Unit"
-                        value={f.unit ?? ""}
-                        onChange={(e) => update(f.id, { unit: e.target.value })}
-                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        value={f.min ?? ""}
-                        onChange={(e) => update(f.id, { min: e.target.value === "" ? undefined : Number(e.target.value) })}
-                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                      />
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        value={f.max ?? ""}
-                        onChange={(e) => update(f.id, { max: e.target.value === "" ? undefined : Number(e.target.value) })}
-                        className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                      />
+                  <button onClick={() => setEditing(editing === f.id ? null : f.id)} className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-bold">{f.label || "Untitled"}</span>
+                      {f.required && <span className="text-xs font-bold text-destructive">*</span>}
                     </div>
-                  )}
-                  {f.type === "select" && (
-                    <textarea
-                      placeholder="One option per line"
-                      value={(f.options ?? []).join("\n")}
-                      onChange={(e) =>
-                        update(f.id, { options: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })
-                      }
-                      rows={3}
-                      className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
-                    />
-                  )}
-                  <label className="flex items-center gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={!!f.required}
-                      onChange={(e) => update(f.id, { required: e.target.checked })}
-                    />
-                    Required
-                  </label>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      {f.type}{f.unit ? ` · ${f.unit}` : ""}
+                    </span>
+                  </button>
+                  <button onClick={() => remove(f.id)} className="border-2 border-border p-1 hover:bg-destructive hover:text-destructive-foreground">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-              )}
-            </li>
-          ))}
-        </ul>
+                {editing === f.id && (
+                  <div className="space-y-2 border-t-2 border-border bg-muted/40 px-3 py-3">
+                    <input value={f.label} onChange={(e) => update(f.id, { label: e.target.value })} placeholder="Question label" className="input-brutal" />
+                    {f.type === "number" && (
+                      <div className="grid grid-cols-3 gap-2">
+                        <input placeholder="Unit" value={f.unit ?? ""} onChange={(e) => update(f.id, { unit: e.target.value })} className="input-brutal text-xs" />
+                        <input type="number" placeholder="Min" value={f.min ?? ""} onChange={(e) => update(f.id, { min: e.target.value === "" ? undefined : Number(e.target.value) })} className="input-brutal text-xs" />
+                        <input type="number" placeholder="Max" value={f.max ?? ""} onChange={(e) => update(f.id, { max: e.target.value === "" ? undefined : Number(e.target.value) })} className="input-brutal text-xs" />
+                      </div>
+                    )}
+                    {f.type === "select" && (
+                      <textarea
+                        placeholder="One option per line"
+                        value={(f.options ?? []).join("\n")}
+                        onChange={(e) => update(f.id, { options: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+                        rows={3}
+                        className="input-brutal resize-none text-xs"
+                      />
+                    )}
+                    <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
+                      <input type="checkbox" checked={!!f.required} onChange={(e) => update(f.id, { required: e.target.checked })} />
+                      Required
+                    </label>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
 
-        <div className="mt-6 rounded-xl border border-border bg-card p-3">
-          <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase text-muted-foreground">
+        <div className="brutal mt-6 p-3">
+          <div className="mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-widest">
             <Plus className="h-3.5 w-3.5" /> Add field
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -209,7 +159,7 @@ function NewForm() {
               <button
                 key={type}
                 onClick={() => add(type)}
-                className="flex flex-col items-center gap-1 rounded-lg border border-border bg-background p-3 text-xs hover:border-primary hover:text-primary"
+                className="flex flex-col items-center gap-1 border-2 border-border bg-card p-3 text-[11px] font-bold uppercase tracking-wider hover:bg-primary"
               >
                 <Icon className="h-5 w-5" />
                 {label}
