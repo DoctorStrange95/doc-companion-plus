@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useStore, store } from "@/lib/store";
 import { getToken } from "@/lib/api";
 import { PageHeader, PageShell } from "@/components/PageShell";
@@ -67,24 +67,23 @@ function FormDetail() {
   const [inviteWorking, setInviteWorking] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const loadShares = useCallback(async () => {
-    const tok = getToken();
-    if (!tok || !form) return;
-    setSharesLoading(true);
-    try {
-      const res = await fetch(`/api/forms/${form.id}/shares`, { headers: { Authorization: `Bearer ${tok}` } });
-      if (res.ok) {
-        const data: Array<{ id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean }> = await res.json();
-        setShares(data.map((s) => ({ id: s.id, email: s.shared_with_email, canFill: s.can_fill, canView: s.can_view, canEdit: s.can_edit })));
-      }
-    } finally {
-      setSharesLoading(false);
-    }
-  }, [form]);
+  const formId = form?.id;
 
   useEffect(() => {
-    if (showShare) loadShares();
-  }, [showShare, loadShares]);
+    if (!showShare || !formId) return;
+    let cancelled = false;
+    const tok = getToken();
+    if (!tok) return;
+    setSharesLoading(true);
+    fetch(`/api/forms/${formId}/shares`, { headers: { Authorization: `Bearer ${tok}` } })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: Array<{ id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean }>) => {
+        if (!cancelled) setShares(data.map((s) => ({ id: s.id, email: s.shared_with_email, canFill: s.can_fill, canView: s.can_view, canEdit: s.can_edit })));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSharesLoading(false); });
+    return () => { cancelled = true; };
+  }, [showShare, formId]);
 
   const handleGenerateToken = async (type: "fill" | "analytics") => {
     const tok = getToken();
@@ -145,10 +144,15 @@ function FormDetail() {
         const body = await res.json().catch(() => ({ detail: "Failed" }));
         setInviteMsg({ text: body.detail ?? "Failed", ok: false });
       } else {
+        const shareData: { id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean } = await res.json();
+        const newShare = { id: shareData.id, email: shareData.shared_with_email, canFill: shareData.can_fill, canView: shareData.can_view, canEdit: shareData.can_edit };
+        setShares((prev) => {
+          const exists = prev.some((s) => s.id === newShare.id);
+          return exists ? prev.map((s) => (s.id === newShare.id ? newShare : s)) : [...prev, newShare];
+        });
         setInviteEmail("");
         setInvitePerms({ fill: true, view: true, edit: false });
         setInviteMsg({ text: "User added.", ok: true });
-        await loadShares();
       }
     } catch {
       setInviteMsg({ text: "Failed. Check connection.", ok: false });
