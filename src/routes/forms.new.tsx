@@ -22,7 +22,7 @@ import {
   store, useStore,
   type FormField, type FieldType, type ChartType,
   type ConditionalLogic, type ConditionalOperator,
-  ruleId,
+  ruleId, normalizeShowIf,
 } from "@/lib/store";
 import { PageHeader } from "@/components/PageShell";
 import {
@@ -708,7 +708,7 @@ function ConditionalConfig({
   const others = allFields.filter(
     (f) => f.id !== field.id && f.type !== "section_header" && f.type !== "page_break",
   );
-  const logic: ConditionalLogic | undefined = field.showIf;
+  const logic: ConditionalLogic | undefined = normalizeShowIf(field.showIf);
   const hasCondition = !!logic;
 
   const setLogic = (l: ConditionalLogic | undefined) => onChange({ showIf: l });
