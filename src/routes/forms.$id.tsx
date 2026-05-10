@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
@@ -8,7 +8,15 @@ import {
   User, Globe, List, ArrowRight,
 } from "lucide-react";
 
-export const Route = createFileRoute("/forms/$id")({ component: FormDetail });
+export const Route = createFileRoute("/forms/$id")({ component: FormsIdLayout });
+
+/** Layout wrapper — renders FormDetail when at /forms/:id exactly, child route otherwise. */
+function FormsIdLayout() {
+  const { id } = Route.useParams();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isIndex = pathname === `/forms/${id}` || pathname === `/forms/${id}/`;
+  return isIndex ? <FormDetail /> : <Outlet />;
+}
 
 function StatusBadge({ status }: { status?: string }) {
   const s = status ?? "active";
@@ -123,7 +131,6 @@ function FormDetail() {
               <p className="text-sm text-muted-foreground">{form.description}</p>
             )}
 
-            {/* Owner */}
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               <User className="h-3.5 w-3.5" />
               {form.shared ? "Shared with you" : "You (owner)"}
@@ -191,49 +198,6 @@ function FormDetail() {
             </Link>
           </div>
 
-          {/* Share links */}
-          {fillLink && (
-            <div className="brutal p-4 space-y-3">
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                <Globe className="h-3.5 w-3.5" /> Public fill link
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
-                <button
-                  onClick={() => copyToClipboard(fillLink, "fill")}
-                  className="btn-brutal shrink-0 text-[10px]"
-                >
-                  {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
-                </button>
-              </div>
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(`Hi! Please fill this form.\n\nFill here: ${fillLink}\n\nNo login required.`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Share on WhatsApp
-              </a>
-            </div>
-          )}
-
-          {analyticsLink && (
-            <div className="brutal p-4 space-y-3">
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                <BarChart2 className="h-3.5 w-3.5" /> Public analytics link
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
-                <button
-                  onClick={() => copyToClipboard(analyticsLink, "analytics")}
-                  className="btn-brutal shrink-0 text-[10px]"
-                >
-                  {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Danger zone */}
           <div className="brutal border-destructive p-4 space-y-3">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-destructive">
@@ -279,10 +243,10 @@ function FormDetail() {
         </div>
       </PageShell>
 
-      {/* Share modal */}
+      {/* Share modal — contains all public links */}
       {showShare && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
-          <div className="w-full max-w-md border-4 border-border bg-background p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowShare(false)}>
+          <div className="w-full max-w-md border-4 border-border bg-background p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div className="font-display text-lg uppercase">Share "{form.name}"</div>
               <button onClick={() => setShowShare(false)} className="border border-border p-1.5 hover:bg-muted">
@@ -290,14 +254,17 @@ function FormDetail() {
               </button>
             </div>
 
+            {/* Public fill link */}
             {fillLink ? (
               <div className="space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Public fill link</div>
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5" /> Public fill link
+                </div>
                 <p className="text-[11px] text-muted-foreground">Anyone with this link can fill the form — no login needed.</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
                   <button onClick={() => copyToClipboard(fillLink, "fill")} className="btn-brutal shrink-0 text-[10px]">
-                    {copied === "fill" ? "Copied!" : "Copy"}
+                    {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
                   </button>
                 </div>
                 <a
@@ -310,10 +277,28 @@ function FormDetail() {
                 </a>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No share link yet — save the form first.</p>
+              <p className="text-[11px] text-muted-foreground border-2 border-dashed border-border p-3">
+                No share link yet — save the form to generate one.
+              </p>
             )}
 
-            {/* Transfer ownership — only for non-shared forms (i.e., you are the owner) */}
+            {/* Analytics link */}
+            {analyticsLink && (
+              <div className="border-t border-border pt-4 space-y-2">
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <BarChart2 className="h-3.5 w-3.5" /> Public analytics link
+                </div>
+                <p className="text-[11px] text-muted-foreground">Share read-only analytics — no login required.</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
+                  <button onClick={() => copyToClipboard(analyticsLink, "analytics")} className="btn-brutal shrink-0 text-[10px]">
+                    {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Transfer ownership */}
             {!form.shared && (
               <div className="border-t-2 border-border pt-4 space-y-2">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
@@ -354,7 +339,7 @@ function FormDetail() {
                       <button
                         onClick={async () => {
                           try {
-                            const { api, getToken } = await import("@/lib/api");
+                            const { getToken } = await import("@/lib/api");
                             const tok = getToken();
                             if (!tok) { setTransferMsg("Not authenticated."); return; }
                             const res = await fetch("/api/forms/transfer", {
