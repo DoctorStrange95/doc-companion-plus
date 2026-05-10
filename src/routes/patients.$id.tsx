@@ -11,8 +11,10 @@ function PatientDetail() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const patient = useStore((s) => s.patients.find((p) => p.id === id));
-  const submissions = useStore((s) =>
-    s.submissions.filter((x) => x.patientId === id).sort((a, b) => a.createdAt - b.createdAt),
+  const allSubmissions = useStore((s) => s.submissions);
+  const submissions = useMemo(
+    () => allSubmissions.filter((x) => x.patientId === id).sort((a, b) => a.createdAt - b.createdAt),
+    [allSubmissions, id],
   );
   const forms = useStore((s) => s.forms);
   const [picker, setPicker] = useState(false);
