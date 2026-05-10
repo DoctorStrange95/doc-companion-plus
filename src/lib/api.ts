@@ -43,10 +43,19 @@ export async function api<T>(
     body = text;
   }
   if (!res.ok) {
-    const detail =
+    let detail =
       (body && typeof body === "object" && "detail" in (body as Record<string, unknown>)
         ? (body as { detail: unknown }).detail
         : body) ?? res.statusText;
+    if (
+      res.status >= 500 &&
+      typeof detail === "string" &&
+      detail.toLowerCase().includes("internal server error") &&
+      path.startsWith("/api/auth")
+    ) {
+      detail =
+        "Auth backend is not running or is missing DATABASE_URL. Start the FastAPI backend on port 8001 with Supabase config.";
+    }
     throw new ApiError(res.status, detail);
   }
   return body as T;

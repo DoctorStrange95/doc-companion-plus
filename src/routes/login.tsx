@@ -1,31 +1,79 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { ApiError } from "@/lib/api";
-import { Stethoscope, ArrowRight, UserPlus, LogIn } from "lucide-react";
+import { API_BASE, ApiError, api, setToken } from "@/lib/api";
+import { Stethoscope, ArrowRight, UserPlus, LogIn, Chrome } from "lucide-react";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
 type Mode = "login" | "register";
+type GoogleStatus = "checking" | "enabled" | "not-configured" | "unavailable";
+const BEST_SUITED_ROLES = [
+  "Nurse",
+  "Doctor",
+  "Researcher",
+  "Student",
+  "Community Worker",
+] as const;
 
 function LoginPage() {
   const { login, register } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [bestSuitedRole, setBestSuitedRole] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>("checking");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const token = params.get("access_token");
+      if (token) {
+        setToken(token);
+        window.history.replaceState(null, "", "/login");
+        window.location.replace("/");
+        return;
+      }
+    }
+
+    let mounted = true;
+    api<{ enabled: boolean }>("/api/auth/google/config")
+      .then((config) => {
+        if (mounted) setGoogleStatus(config.enabled ? "enabled" : "not-configured");
+      })
+      .catch(() => {
+        if (mounted) setGoogleStatus("unavailable");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (mode === "register" && password !== confirmPassword) {
+      setError("Password and confirm password do not match.");
+      return;
+    }
     setBusy(true);
     try {
       if (mode === "login") {
         await login(email.trim().toLowerCase(), password);
       } else {
-        await register(email.trim().toLowerCase(), password, name.trim());
+        await register(
+          email.trim().toLowerCase(),
+          password,
+          name.trim(),
+          phone.trim(),
+          bestSuitedRole.trim(),
+        );
       }
     } catch (e) {
       const msg =
@@ -48,6 +96,19 @@ function LoginPage() {
     }
   };
 
+  const startGoogleLogin = () => {
+    setError("");
+    if (googleStatus === "not-configured") {
+      setError(
+        "Google sign-in is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the backend.",
+      );
+      return;
+    }
+    if (googleStatus === "checking") return;
+    const returnTo = typeof window !== "undefined" ? window.location.origin : "/";
+    window.location.href = `${API_BASE}/api/auth/google/start?return_to=${encodeURIComponent(returnTo)}`;
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="flex flex-1 items-center justify-center px-4 py-10">
@@ -65,41 +126,139 @@ function LoginPage() {
           </div>
 
           <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form">
+            <button
+              type="button"
+              data-testid="google-auth-submit"
+              onClick={startGoogleLogin}
+              disabled={googleStatus === "checking"}
+              className="btn-brutal flex w-full items-center justify-center gap-2 bg-white text-foreground disabled:opacity-50"
+            >
+              <Chrome className="h-4 w-4" />
+              {googleStatus === "checking" ? "Checking Google…" : "Continue with Google"}
+            </button>
+
+            <div className="flex items-center gap-3">
+              <div className="h-0.5 flex-1 bg-border" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                or
+              </span>
+              <div className="h-0.5 flex-1 bg-border" />
+            </div>
+
             {mode === "register" && (
-              <Field label="Your name">
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Asha CHW"
-                  data-testid="auth-name"
-                  className="input-brutal"
-                  autoComplete="name"
-                />
-              </Field>
+              <>
+                <Field label="Name">
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Asha CHW"
+                    data-testid="auth-name"
+                    className="input-brutal"
+                    autoComplete="name"
+                    required
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    data-testid="auth-email"
+                    className="input-brutal"
+                    autoComplete="email"
+                  />
+                </Field>
+                <Field label="Phone Number">
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98765 43210"
+                    data-testid="auth-phone"
+                    className="input-brutal"
+                    autoComplete="tel"
+                    required
+                  />
+                </Field>
+                <Field label="Best Suited Role">
+                  <select
+                    value={bestSuitedRole}
+                    onChange={(e) => setBestSuitedRole(e.target.value)}
+                    data-testid="auth-best-suited-role"
+                    className="input-brutal"
+                    required
+                  >
+                    <option value="">Select role</option>
+                    {BEST_SUITED_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Password">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    data-testid="auth-password"
+                    className="input-brutal"
+                    autoComplete="new-password"
+                  />
+                </Field>
+                <Field label="Confirm Password">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    data-testid="auth-confirm-password"
+                    className="input-brutal"
+                    autoComplete="new-password"
+                    required
+                    minLength={6}
+                  />
+                </Field>
+              </>
             )}
-            <Field label="Email">
+            {mode === "login" && (
+              <>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    data-testid="auth-email"
+                    className="input-brutal"
+                    autoComplete="email"
+                  />
+                </Field>
+                <Field label="Password">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    data-testid="auth-password"
+                    className="input-brutal"
+                    autoComplete="current-password"
+                  />
+                </Field>
+              </>
+            )}
+            <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                data-testid="auth-email"
-                className="input-brutal"
-                autoComplete="email"
+                type="checkbox"
+                checked={showPassword}
+                onChange={(e) => setShowPassword(e.target.checked)}
+                data-testid="auth-show-password"
               />
-            </Field>
-            <Field label="Password">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                data-testid="auth-password"
-                className="input-brutal"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-              />
-            </Field>
+              View password
+            </label>
 
             {error && (
               <p
@@ -128,6 +287,12 @@ function LoginPage() {
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError("");
+              if (mode === "register") {
+                setName("");
+                setPhone("");
+                setBestSuitedRole("");
+                setConfirmPassword("");
+              }
             }}
             className="mt-4 w-full text-center text-[11px] font-bold uppercase tracking-widest underline"
           >

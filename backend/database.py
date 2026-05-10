@@ -8,9 +8,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool
 
-load_dotenv(Path(__file__).parent / ".env")
+ROOT_DIR = Path(__file__).resolve().parents[1]
+BACKEND_DIR = Path(__file__).resolve().parent
 
-DATABASE_URL = os.environ["DATABASE_URL"]
+load_dotenv(ROOT_DIR / ".env")
+load_dotenv(BACKEND_DIR / ".env", override=True)
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is missing. Create backend/.env or project .env with your "
+        "Supabase Postgres connection string before starting the API."
+    )
 ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
 
 # NOTE: Supabase Transaction Pooler (PgBouncer pool_mode=transaction) does NOT

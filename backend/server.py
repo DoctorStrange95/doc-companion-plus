@@ -6,14 +6,22 @@ from pathlib import Path
 load_dotenv(Path(__file__).parent / ".env")
 
 import os
+import json
+import secrets
+import uuid
+import urllib.parse
+import urllib.request
+import urllib.error
 from datetime import datetime
 from typing import Any, Optional, Literal
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
-from fastapi import FastAPI, Depends, HTTPException, Response
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db, engine, AsyncSessionLocal, Base
@@ -50,11 +58,63 @@ async def seed_admin():
             await db.commit()
 
 
+async def ensure_user_profile_columns():
+    # Keep existing Supabase databases compatible with newer auth fields.
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT ''")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''"
+            )
+        )
+
+
+async def ensure_user_profile_columns_in_session(db: AsyncSession):
+    # Fallback for environments where lifespan hooks may not run consistently.
+    try:
+        await db.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT ''")
+        )
+        await db.execute(
+            text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''"
+            )
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
+
+async def fetch_user_legacy_by_email(db: AsyncSession, email: str):
+    row = (
+        await db.execute(
+            text(
+                "SELECT id, email, password_hash, name, role FROM users WHERE lower(email) = :email LIMIT 1"
+            ),
+            {"email": email.lower()},
+        )
+    ).mappings().first()
+    if not row:
+        return None
+    return SimpleNamespace(
+        id=str(row["id"]),
+        email=row["email"],
+        password_hash=row["password_hash"],
+        name=row["name"] or "",
+        role=row["role"] or "worker",
+        phone="",
+        best_suited_role="",
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables if missing (idempotent). Alembic migrations are the long-term path.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await ensure_user_profile_columns()
     try:
         await seed_admin()
     except Exception as e:  # noqa: BLE001
@@ -80,6 +140,8 @@ class UserOut(BaseModel):
     id: str
     email: EmailStr
     name: str
+    phone: str
+    best_suited_role: str
     role: str
 
     model_config = {"from_attributes": True}
@@ -89,6 +151,8 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
     name: str = Field(default="", max_length=255)
+    phone: str = Field(default="", max_length=32)
+    best_suited_role: str = Field(default="", max_length=64)
 
 
 class LoginIn(BaseModel):
@@ -100,6 +164,21 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class GoogleAuthConfig(BaseModel):
+    enabled: bool
+
+
+def to_user_out(user: User) -> UserOut:
+    return UserOut(
+        id=str(user.id),
+        email=user.email,
+        name=user.name or "",
+        phone=getattr(user, "phone", "") or "",
+        best_suited_role=getattr(user, "best_suited_role", "") or "",
+        role=user.role or "worker",
+    )
 
 
 class PatientIn(BaseModel):
@@ -178,29 +257,134 @@ class ShareOut(BaseModel):
 # ============================================================================
 # Auth routes
 # ============================================================================
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+OAUTH_STATE_COOKIE = "google_oauth_state"
+OAUTH_RETURN_COOKIE = "google_oauth_return_to"
+GOOGLE_USER_PASSWORD = "!google-oauth-user!"
+
+
+def google_auth_enabled() -> bool:
+    return bool(os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET"))
+
+
+def google_redirect_uri(request: Request) -> str:
+    configured = os.environ.get("GOOGLE_REDIRECT_URI")
+    if configured:
+        return configured
+    return str(request.url_for("google_callback"))
+
+
+def safe_return_to(value: Optional[str]) -> str:
+    if not value:
+        return os.environ.get("PUBLIC_APP_URL", "/")
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return value
+    if value.startswith("/"):
+        return value
+    return "/"
+
+
+def fetch_google_json(url: str, *, data: Optional[dict[str, str]] = None, token: Optional[str] = None) -> dict[str, Any]:
+    encoded = urllib.parse.urlencode(data).encode() if data is not None else None
+    headers = {"Accept": "application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=encoded, headers=headers, method="POST" if data else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            return json.loads(res.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=502, detail=f"Google auth failed: {detail}") from e
+    except urllib.error.URLError as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach Google auth: {e.reason}") from e
+
+
+def google_success_page(token: str, user: User, return_to: str) -> HTMLResponse:
+    payload = {
+        "token": token,
+        "user": to_user_out(user).model_dump(mode="json"),
+        "returnTo": return_to,
+    }
+    script_payload = json.dumps(payload).replace("</", "<\\/")
+    html = f"""<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Signing in…</title></head>
+  <body>
+    <script>
+      const auth = {script_payload};
+      const destination = new URL("/login", auth.returnTo || window.location.origin);
+      destination.hash = `access_token=${encodeURIComponent(auth.token)}`;
+      window.location.replace(destination.toString());
+    </script>
+    <p>Signing you in…</p>
+  </body>
+</html>"""
+    return HTMLResponse(html)
+
+
 @app.post("/api/auth/register", response_model=TokenOut)
 async def register(body: RegisterIn, response: Response, db: AsyncSession = Depends(get_db)):
+    await ensure_user_profile_columns_in_session(db)
     email = body.email.lower()
-    res = await db.execute(select(User).where(User.email == email))
-    if res.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Email already registered")
-    user = User(email=email, password_hash=hash_password(body.password), name=body.name or email.split("@")[0])
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
+    try:
+        res = await db.execute(select(User).where(User.email == email))
+        if res.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Email already registered")
+        user = User(
+            email=email,
+            password_hash=hash_password(body.password),
+            name=body.name.strip() or email.split("@")[0],
+            phone=body.phone.strip(),
+            best_suited_role=body.best_suited_role.strip(),
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    except Exception:
+        await db.rollback()
+        existing = await fetch_user_legacy_by_email(db, email)
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        await db.execute(
+            text(
+                "INSERT INTO users (id, email, password_hash, name, role, created_at) "
+                "VALUES (:id, :email, :password_hash, :name, :role, now())"
+            ),
+            {
+                "id": str(uuid.uuid4()),
+                "email": email,
+                "password_hash": hash_password(body.password),
+                "name": body.name.strip() or email.split("@")[0],
+                "role": "worker",
+            },
+        )
+        await db.commit()
+        user = await fetch_user_legacy_by_email(db, email)
+        if not user:
+            raise HTTPException(status_code=500, detail="Failed to create user")
     token = create_access_token(str(user.id), user.email)
     response.set_cookie(
         "access_token", token, httponly=True, secure=False, samesite="lax",
         max_age=60 * 60 * 24 * 7, path="/",
     )
-    return TokenOut(access_token=token, user=UserOut.model_validate(user))
+    return TokenOut(access_token=token, user=to_user_out(user))
 
 
 @app.post("/api/auth/login", response_model=TokenOut)
 async def login(body: LoginIn, response: Response, db: AsyncSession = Depends(get_db)):
+    await ensure_user_profile_columns_in_session(db)
     email = body.email.lower()
-    res = await db.execute(select(User).where(User.email == email))
-    user = res.scalar_one_or_none()
+    try:
+        res = await db.execute(select(User).where(User.email == email))
+        user = res.scalar_one_or_none()
+    except Exception:
+        user = await fetch_user_legacy_by_email(db, email)
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(str(user.id), user.email)
@@ -208,7 +392,7 @@ async def login(body: LoginIn, response: Response, db: AsyncSession = Depends(ge
         "access_token", token, httponly=True, secure=False, samesite="lax",
         max_age=60 * 60 * 24 * 7, path="/",
     )
-    return TokenOut(access_token=token, user=UserOut.model_validate(user))
+    return TokenOut(access_token=token, user=to_user_out(user))
 
 
 @app.post("/api/auth/logout")
@@ -219,7 +403,100 @@ async def logout(response: Response, _: User = Depends(get_current_user)):
 
 @app.get("/api/auth/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
-    return UserOut.model_validate(user)
+    return to_user_out(user)
+
+
+@app.get("/api/auth/google/config", response_model=GoogleAuthConfig)
+async def google_config():
+    return GoogleAuthConfig(enabled=google_auth_enabled())
+
+
+@app.get("/api/auth/google/start")
+async def google_start(request: Request, return_to: Optional[str] = None):
+    if not google_auth_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Google sign-in is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the backend.",
+        )
+
+    state = secrets.token_urlsafe(32)
+    params = {
+        "client_id": os.environ["GOOGLE_CLIENT_ID"],
+        "redirect_uri": google_redirect_uri(request),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    redirect = RedirectResponse(f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}")
+    redirect.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=False, samesite="lax", max_age=600, path="/")
+    redirect.set_cookie(OAUTH_RETURN_COOKIE, safe_return_to(return_to), httponly=True, secure=False, samesite="lax", max_age=600, path="/")
+    return redirect
+
+
+@app.get("/api/auth/google/callback", name="google_callback")
+async def google_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_user_profile_columns_in_session(db)
+    if error:
+        raise HTTPException(status_code=400, detail=f"Google sign-in was cancelled: {error}")
+    if not code or not state or state != request.cookies.get(OAUTH_STATE_COOKIE):
+        raise HTTPException(status_code=400, detail="Invalid Google sign-in state")
+    if not google_auth_enabled():
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+
+    token_body = fetch_google_json(
+        GOOGLE_TOKEN_URL,
+        data={
+            "code": code,
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+            "redirect_uri": google_redirect_uri(request),
+            "grant_type": "authorization_code",
+        },
+    )
+    google_access_token = token_body.get("access_token")
+    if not isinstance(google_access_token, str):
+        raise HTTPException(status_code=502, detail="Google did not return an access token")
+
+    profile = fetch_google_json(GOOGLE_USERINFO_URL, token=google_access_token)
+    if not profile.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Google account email is not verified")
+    email = str(profile.get("email", "")).lower()
+    if not email:
+        raise HTTPException(status_code=502, detail="Google did not return an email address")
+
+    res = await db.execute(select(User).where(User.email == email))
+    user = res.scalar_one_or_none()
+    if user is None:
+        user = User(
+            email=email,
+            password_hash=GOOGLE_USER_PASSWORD,
+            name=str(profile.get("name") or email.split("@")[0]),
+            phone="",
+            best_suited_role="",
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    elif not user.name and profile.get("name"):
+        user.name = str(profile["name"])
+        await db.commit()
+        await db.refresh(user)
+
+    app_token = create_access_token(str(user.id), user.email)
+    return_to = safe_return_to(request.cookies.get(OAUTH_RETURN_COOKIE))
+    html = google_success_page(app_token, user, return_to)
+    html.set_cookie("access_token", app_token, httponly=True, secure=False, samesite="lax", max_age=60 * 60 * 24 * 7, path="/")
+    html.delete_cookie(OAUTH_STATE_COOKIE, path="/")
+    html.delete_cookie(OAUTH_RETURN_COOKIE, path="/")
+    return html
 
 
 # ============================================================================

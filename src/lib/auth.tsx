@@ -6,13 +6,21 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  phone: string;
+  best_suited_role: string;
   role: string;
 }
 
 interface AuthState {
   user: AuthUser | null | undefined; // undefined = checking
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    phone: string,
+    bestSuitedRole: string,
+  ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -62,12 +70,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sync.drain().catch(() => {});
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (
+    email: string,
+    password: string,
+    name: string,
+    phone: string,
+    bestSuitedRole: string,
+  ) => {
     const res = await api<{ access_token: string; user: AuthUser }>(
       "/api/auth/register",
       {
         method: "POST",
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          phone,
+          best_suited_role: bestSuitedRole,
+        }),
       },
     );
     setToken(res.access_token);

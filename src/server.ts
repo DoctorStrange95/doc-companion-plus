@@ -66,8 +66,25 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+type WorkerEnv = { BACKEND_URL?: string } & Record<string, unknown>;
+
 export default {
-  async fetch(request: Request, env: unknown, ctx: unknown) {
+  async fetch(request: Request, env: WorkerEnv, ctx: unknown) {
+    const url = new URL(request.url);
+
+    // Proxy /api/* to the FastAPI backend (Railway) when BACKEND_URL is set
+    if (url.pathname.startsWith("/api/") && env.BACKEND_URL) {
+      const base = env.BACKEND_URL.replace(/\/$/, "");
+      const target = `${base}${url.pathname}${url.search}`;
+      const proxyReq = new Request(target, {
+        method: request.method,
+        headers: request.headers,
+        body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
+        redirect: "manual",
+      });
+      return fetch(proxyReq);
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
