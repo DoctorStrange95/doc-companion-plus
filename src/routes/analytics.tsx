@@ -8,7 +8,7 @@ import { useMemo } from "react";
 
 export const Route = createFileRoute("/analytics")({ component: Analytics });
 
-const COLORS = ["#0ea5a5", "#22c55e", "#f59e0b", "#ef4444", "#6366f1", "#a855f7"];
+const COLORS = ["#FFE17C", "#171E19", "#7CFFB0", "#FF7C7C", "#7CB6FF"];
 
 function Analytics() {
   const patients = useStore((s) => s.patients);
@@ -24,23 +24,16 @@ function Analytics() {
   const villageDist = useMemo(() => {
     const m: Record<string, number> = {};
     patients.forEach((p) => (m[p.village] = (m[p.village] ?? 0) + 1));
-    return Object.entries(m)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
+    return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 6);
   }, [patients]);
 
   const last14Days = useMemo(() => {
     const days: { date: string; visits: number }[] = [];
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const now = new Date(); now.setHours(0, 0, 0, 0);
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const start = d.getTime();
-      const end = start + 86400000;
-      const visits = submissions.filter((s) => s.createdAt >= start && s.createdAt < end).length;
-      days.push({ date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), visits });
+      const d = new Date(now); d.setDate(d.getDate() - i);
+      const start = d.getTime(); const end = start + 86400000;
+      days.push({ date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), visits: submissions.filter((s) => s.createdAt >= start && s.createdAt < end).length });
     }
     return days;
   }, [submissions]);
@@ -67,7 +60,7 @@ function Analytics() {
 
   return (
     <>
-      <PageHeader title="Analytics" subtitle="Population insights" />
+      <PageHeader title="Analytics" subtitle="Population insights" variant="dark" />
       <PageShell>
         <div className="mb-4 grid grid-cols-3 gap-2">
           <KPI label="Patients" value={patients.length} />
@@ -80,28 +73,26 @@ function Analytics() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={last14Days} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="date" fontSize={10} stroke="var(--muted-foreground)" />
-                <YAxis fontSize={10} stroke="var(--muted-foreground)" allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="visits" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+                <XAxis dataKey="date" fontSize={10} stroke="var(--foreground)" />
+                <YAxis fontSize={10} stroke="var(--foreground)" allowDecimals={false} />
+                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
+                <Bar dataKey="visits" fill="var(--primary)" stroke="var(--secondary)" strokeWidth={2} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Card title="Sex distribution">
-            <PieBlock data={sexDist} />
-          </Card>
+          <Card title="Sex distribution"><PieBlock data={sexDist} /></Card>
           <Card title="Age groups">
             <div className="h-44">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={ageBuckets} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="name" fontSize={10} stroke="var(--muted-foreground)" />
-                  <YAxis fontSize={10} stroke="var(--muted-foreground)" allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey="name" fontSize={10} stroke="var(--foreground)" />
+                  <YAxis fontSize={10} stroke="var(--foreground)" allowDecimals={false} />
+                  <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
+                  <Bar dataKey="value" fill="var(--success)" stroke="var(--secondary)" strokeWidth={2} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -111,17 +102,15 @@ function Analytics() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={villageDist} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis type="number" fontSize={10} stroke="var(--muted-foreground)" allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" fontSize={10} width={70} stroke="var(--muted-foreground)" />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                  <XAxis type="number" fontSize={10} stroke="var(--foreground)" allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" fontSize={10} width={70} stroke="var(--foreground)" />
+                  <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
+                  <Bar dataKey="value" fill="var(--chart-5)" stroke="var(--secondary)" strokeWidth={2} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </Card>
-          <Card title="Form usage">
-            <PieBlock data={formUsage} />
-          </Card>
+          <Card title="Form usage"><PieBlock data={formUsage} /></Card>
         </div>
       </PageShell>
     </>
@@ -130,17 +119,17 @@ function Analytics() {
 
 function KPI({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="text-2xl font-semibold leading-none">{value}</div>
-      <div className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className="brutal p-3">
+      <div className="font-display text-3xl leading-none">{value}</div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-widest">{label}</div>
     </div>
   );
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+    <div className="brutal p-3">
+      <h3 className="mb-2 text-[11px] font-bold uppercase tracking-widest">{title}</h3>
       {children}
     </div>
   );
@@ -148,18 +137,16 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 
 function PieBlock({ data }: { data: { name: string; value: number }[] }) {
   if (data.length === 0)
-    return <div className="flex h-44 items-center justify-center text-xs text-muted-foreground">No data</div>;
+    return <div className="flex h-44 items-center justify-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No data</div>;
   return (
     <div className="h-44">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius={30} outerRadius={60} paddingAngle={2}>
-            {data.map((_, i) => (
-              <Cell key={i} fill={COLORS[i % COLORS.length]} />
-            ))}
+          <Pie data={data} dataKey="value" nameKey="name" innerRadius={28} outerRadius={62} paddingAngle={2} stroke="var(--secondary)" strokeWidth={2}>
+            {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Pie>
-          <Tooltip />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
+          <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", fontWeight: 700 }} />
         </PieChart>
       </ResponsiveContainer>
     </div>
