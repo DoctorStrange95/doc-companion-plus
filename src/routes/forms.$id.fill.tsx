@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useStore, store, type FormField, type VisibleIf } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
+import { PatientPicker } from "@/components/PatientPicker";
 import { AlertTriangle, MapPin, Loader2, X } from "lucide-react";
 
 const search = z.object({ patient: z.string().optional() });
@@ -62,7 +63,6 @@ function FillForm() {
   const { patient: patientId } = Route.useSearch();
   const nav = useNavigate();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
-  const patients = useStore((s) => s.patients);
   const submissions = useStore((s) => s.submissions);
   const [selectedPatient, setSelectedPatient] = useState(patientId ?? "");
   const [values, setValues] = useState<Record<string, unknown>>({});
@@ -196,22 +196,10 @@ function FillForm() {
         <form onSubmit={submit} className="space-y-4">
           {!patientId && (
             <div className="brutal p-4">
-              <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">
-                Patient
-              </label>
-              <select
+              <PatientPicker
                 value={selectedPatient}
-                onChange={(e) => setSelectedPatient(e.target.value)}
-                data-testid="patient-select"
-                className="input-brutal"
-              >
-                <option value="">Select a patient...</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} · {p.village}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => setSelectedPatient(id)}
+              />
             </div>
           )}
 
