@@ -150,11 +150,24 @@ function PatientDetail() {
                           {form.fields.slice(0, 6).map((f) => {
                             const v = s.data[f.id];
                             if (v === undefined || v === "" || v === null) return null;
+                            if (Array.isArray(v) && v.length === 0) return null;
+                            let display: string;
+                            if (typeof v === "boolean") display = v ? "Yes" : "No";
+                            else if (Array.isArray(v)) display = v.join(", ");
+                            else if (
+                              v &&
+                              typeof v === "object" &&
+                              "lat" in (v as Record<string, unknown>) &&
+                              "lng" in (v as Record<string, unknown>)
+                            ) {
+                              const g = v as { lat: number; lng: number };
+                              display = `${g.lat.toFixed(4)}, ${g.lng.toFixed(4)}`;
+                            } else display = String(v);
                             return (
                               <div key={f.id} className="flex justify-between gap-2">
                                 <dt className="truncate font-semibold uppercase tracking-wider text-muted-foreground">{f.label}</dt>
                                 <dd className="truncate font-mono font-bold">
-                                  {typeof v === "boolean" ? (v ? "Yes" : "No") : String(v)}
+                                  {display}
                                   {f.unit ? ` ${f.unit}` : ""}
                                 </dd>
                               </div>

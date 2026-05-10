@@ -1,16 +1,39 @@
 import { useSyncExternalStore } from "react";
 
-export type FieldType = "text" | "number" | "date" | "select" | "textarea" | "boolean";
+export type FieldType =
+  | "text"
+  | "number"
+  | "date"
+  | "select"
+  | "radio"
+  | "multiselect"
+  | "textarea"
+  | "boolean"
+  | "location";
+
+export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains";
+
+export interface SkipRule {
+  fieldId: string;
+  op: SkipOp;
+  value: string | number;
+}
+
+export interface VisibleIf {
+  mode: "all" | "any";
+  rules: SkipRule[];
+}
 
 export interface FormField {
   id: string;
   type: FieldType;
   label: string;
   required?: boolean;
-  options?: string[]; // for select
+  options?: string[]; // for select / radio / multiselect
   unit?: string; // e.g. kg, cm
   min?: number;
   max?: number;
+  visibleIf?: VisibleIf;
 }
 
 export interface FormDef {
@@ -20,6 +43,7 @@ export interface FormDef {
   description?: string;
   fields: FormField[];
   createdAt: number;
+  longitudinal?: boolean; // form is repeatable / tracked over time
 }
 
 export interface Patient {
