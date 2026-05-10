@@ -131,5 +131,7 @@ class Share(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    can_fill = Column(Boolean, nullable=False, default=True)
+    can_view = Column(Boolean, nullable=False, default=True)
     can_edit = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=now_utc)

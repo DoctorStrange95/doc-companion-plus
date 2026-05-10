@@ -83,6 +83,8 @@ async def ensure_form_extra_columns():
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS parent_link_field_id VARCHAR(64)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_share_token ON forms(share_token) WHERE share_token IS NOT NULL"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_analytics_token ON forms(analytics_token) WHERE analytics_token IS NOT NULL"))
+        await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_fill BOOLEAN NOT NULL DEFAULT TRUE"))
+        await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_view BOOLEAN NOT NULL DEFAULT TRUE"))
 
 
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
@@ -287,6 +289,8 @@ class ShareIn(BaseModel):
     resource_type: Literal["patient", "form"]
     resource_id: str
     email: EmailStr
+    can_fill: bool = True
+    can_view: bool = True
     can_edit: bool = False
 
 
@@ -295,9 +299,15 @@ class ShareOut(BaseModel):
     resource_type: str
     resource_id: str
     shared_with_email: str
+    can_fill: bool
+    can_view: bool
     can_edit: bool
 
     model_config = {"from_attributes": True}
+
+
+class ShareTokenIn(BaseModel):
+    type: Literal["fill", "analytics"]
 
 
 # ============================================================================
@@ -827,6 +837,8 @@ async def create_share(
     )
     sh = res.scalar_one_or_none()
     if sh:
+        sh.can_fill = body.can_fill
+        sh.can_view = body.can_view
         sh.can_edit = body.can_edit
     else:
         sh = Share(
@@ -834,6 +846,8 @@ async def create_share(
             resource_id=body.resource_id,
             owner_id=user.id,
             shared_with=target.id,
+            can_fill=body.can_fill,
+            can_view=body.can_view,
             can_edit=body.can_edit,
         )
         db.add(sh)
@@ -844,6 +858,8 @@ async def create_share(
         resource_type=sh.resource_type,
         resource_id=sh.resource_id,
         shared_with_email=target.email,
+        can_fill=sh.can_fill,
+        can_view=sh.can_view,
         can_edit=sh.can_edit,
     )
 
@@ -864,6 +880,8 @@ async def list_my_shares(user: User = Depends(get_current_user), db: AsyncSessio
                 resource_type=sh.resource_type,
                 resource_id=sh.resource_id,
                 shared_with_email=email,
+                can_fill=getattr(sh, "can_fill", True),
+                can_view=getattr(sh, "can_view", True),
                 can_edit=sh.can_edit,
             )
         )
@@ -877,6 +895,77 @@ async def revoke_share(share_id: str, user: User = Depends(get_current_user), db
     if not sh or str(sh.owner_id) != str(user.id):
         raise HTTPException(404, "Share not found")
     await db.delete(sh)
+    await db.commit()
+    return {"ok": True}
+
+
+# ============================================================================
+# Per-form share management
+# ============================================================================
+@app.get("/api/forms/{fid}/shares", response_model=list[ShareOut])
+async def list_form_shares(
+    fid: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = res.scalar_one_or_none()
+    if not form or str(form.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can view shares")
+    rows = await db.execute(
+        select(Share, User.email)
+        .join(User, User.id == Share.shared_with)
+        .where(and_(Share.resource_type == "form", Share.resource_id == fid, Share.owner_id == user.id))
+    )
+    return [
+        ShareOut(
+            id=sh.id,
+            resource_type=sh.resource_type,
+            resource_id=sh.resource_id,
+            shared_with_email=email,
+            can_fill=getattr(sh, "can_fill", True),
+            can_view=getattr(sh, "can_view", True),
+            can_edit=sh.can_edit,
+        )
+        for sh, email in rows.all()
+    ]
+
+
+@app.post("/api/forms/{fid}/share-token")
+async def generate_share_token(
+    fid: str,
+    body: ShareTokenIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = res.scalar_one_or_none()
+    if not form or str(form.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can generate links")
+    token = f"{'sh' if body.type == 'fill' else 'an'}_{secrets.token_urlsafe(16)}"
+    if body.type == "fill":
+        form.share_token = token
+    else:
+        form.analytics_token = token
+    await db.commit()
+    return {"token": token}
+
+
+@app.delete("/api/forms/{fid}/share-token")
+async def revoke_share_token(
+    fid: str,
+    type: Literal["fill", "analytics"],
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = res.scalar_one_or_none()
+    if not form or str(form.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can revoke links")
+    if type == "fill":
+        form.share_token = None
+    else:
+        form.analytics_token = None
     await db.commit()
     return {"ok": True}
 

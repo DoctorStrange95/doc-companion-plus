@@ -1,12 +1,21 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useStore, store } from "@/lib/store";
+import { getToken } from "@/lib/api";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   Edit2, Copy, Trash2, ExternalLink, BarChart2,
   Share2, X, CheckCircle2, AlertTriangle,
-  User, Globe, List, ArrowRight,
+  User, Globe, List, ArrowRight, Link2, Link2Off, Loader2,
 } from "lucide-react";
+
+interface FormShareEntry {
+  id: string;
+  email: string;
+  canFill: boolean;
+  canView: boolean;
+  canEdit: boolean;
+}
 
 export const Route = createFileRoute("/forms/$id")({ component: FormsIdLayout });
 
@@ -47,6 +56,113 @@ function FormDetail() {
   const [transferEmail, setTransferEmail] = useState("");
   const [transferStep, setTransferStep] = useState(0);
   const [transferMsg, setTransferMsg] = useState("");
+
+  // Share modal state
+  const [tokenWorking, setTokenWorking] = useState<"fill" | "analytics" | null>(null);
+  const [tokenError, setTokenError] = useState("");
+  const [shares, setShares] = useState<FormShareEntry[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePerms, setInvitePerms] = useState({ fill: true, view: true, edit: false });
+  const [inviteWorking, setInviteWorking] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const loadShares = useCallback(async () => {
+    const tok = getToken();
+    if (!tok || !form) return;
+    setSharesLoading(true);
+    try {
+      const res = await fetch(`/api/forms/${form.id}/shares`, { headers: { Authorization: `Bearer ${tok}` } });
+      if (res.ok) {
+        const data: Array<{ id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean }> = await res.json();
+        setShares(data.map((s) => ({ id: s.id, email: s.shared_with_email, canFill: s.can_fill, canView: s.can_view, canEdit: s.can_edit })));
+      }
+    } finally {
+      setSharesLoading(false);
+    }
+  }, [form]);
+
+  useEffect(() => {
+    if (showShare) loadShares();
+  }, [showShare, loadShares]);
+
+  const handleGenerateToken = async (type: "fill" | "analytics") => {
+    const tok = getToken();
+    if (!tok || !form) return;
+    setTokenWorking(type);
+    setTokenError("");
+    try {
+      const res = await fetch(`/api/forms/${form.id}/share-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ type }),
+      });
+      if (!res.ok) throw new Error("Failed to generate link");
+      const data = await res.json();
+      store.updateForm(form.id, type === "fill" ? { shareToken: data.token } : { analyticsToken: data.token });
+    } catch {
+      setTokenError("Could not generate link. Try again.");
+    } finally {
+      setTokenWorking(null);
+    }
+  };
+
+  const handleRevokeToken = async (type: "fill" | "analytics") => {
+    const tok = getToken();
+    if (!tok || !form) return;
+    setTokenWorking(type);
+    setTokenError("");
+    try {
+      const res = await fetch(`/api/forms/${form.id}/share-token?type=${type}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      if (!res.ok) throw new Error("Failed");
+      store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
+    } catch {
+      setTokenError("Could not revoke link. Try again.");
+    } finally {
+      setTokenWorking(null);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail.includes("@")) { setInviteMsg({ text: "Enter a valid email.", ok: false }); return; }
+    if (!invitePerms.fill && !invitePerms.view && !invitePerms.edit) {
+      setInviteMsg({ text: "Select at least one permission.", ok: false }); return;
+    }
+    const tok = getToken();
+    if (!tok || !form) return;
+    setInviteWorking(true);
+    setInviteMsg(null);
+    try {
+      const res = await fetch("/api/shares", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ resource_type: "form", resource_id: form.id, email: inviteEmail, can_fill: invitePerms.fill, can_view: invitePerms.view, can_edit: invitePerms.edit }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Failed" }));
+        setInviteMsg({ text: body.detail ?? "Failed", ok: false });
+      } else {
+        setInviteEmail("");
+        setInvitePerms({ fill: true, view: true, edit: false });
+        setInviteMsg({ text: "User added.", ok: true });
+        await loadShares();
+      }
+    } catch {
+      setInviteMsg({ text: "Failed. Check connection.", ok: false });
+    } finally {
+      setInviteWorking(false);
+    }
+  };
+
+  const handleRemoveShare = async (shareId: string) => {
+    const tok = getToken();
+    if (!tok) return;
+    await fetch(`/api/shares/${shareId}`, { method: "DELETE", headers: { Authorization: `Bearer ${tok}` } }).catch(() => {});
+    setShares((prev) => prev.filter((s) => s.id !== shareId));
+  };
 
   if (!form) {
     return (
@@ -243,137 +359,245 @@ function FormDetail() {
         </div>
       </PageShell>
 
-      {/* Share modal — contains all public links */}
+      {/* Share modal */}
       {showShare && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowShare(false)}>
-          <div className="w-full max-w-md border-4 border-border bg-background p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div className="font-display text-lg uppercase">Share "{form.name}"</div>
+          <div className="w-full max-w-md border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b-2 border-border p-4">
+              <div className="font-display text-base uppercase">Share form</div>
               <button onClick={() => setShowShare(false)} className="border border-border p-1.5 hover:bg-muted">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            {/* Public fill link */}
-            {fillLink ? (
+            <div className="p-4 space-y-5">
+              {tokenError && (
+                <p className="text-[10px] font-bold text-destructive">{tokenError}</p>
+              )}
+
+              {/* ── Public fill link ── */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   <Globe className="h-3.5 w-3.5" /> Public fill link
                 </div>
                 <p className="text-[11px] text-muted-foreground">Anyone with this link can fill the form — no login needed.</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
-                  <button onClick={() => copyToClipboard(fillLink, "fill")} className="btn-brutal shrink-0 text-[10px]">
-                    {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                {fillLink ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
+                      <button onClick={() => copyToClipboard(fillLink, "fill")} className="btn-brutal shrink-0 text-[10px]">
+                        {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <a
+                        href={`https://wa.me/?text=${encodeURIComponent(`Hi! Please fill this form for the *${form.name}* study.\n\nFill here: ${fillLink}\n\nNo login required.`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 flex items-center justify-center gap-1.5 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                      >
+                        <ExternalLink className="h-3 w-3" /> WhatsApp
+                      </a>
+                      <button
+                        onClick={() => handleRevokeToken("fill")}
+                        disabled={tokenWorking === "fill"}
+                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                      >
+                        {tokenWorking === "fill" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => handleGenerateToken("fill")}
+                    disabled={tokenWorking === "fill"}
+                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                  >
+                    {tokenWorking === "fill" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    Generate public fill link
                   </button>
-                </div>
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent(`Hi! Please fill this form for the *${form.name}* study.\n\nFill here: ${fillLink}\n\nNo login required.`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 w-full border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Share on WhatsApp
-                </a>
+                )}
               </div>
-            ) : (
-              <p className="text-[11px] text-muted-foreground border-2 border-dashed border-border p-3">
-                No share link yet — save the form to generate one.
-              </p>
-            )}
 
-            {/* Analytics link */}
-            {analyticsLink && (
-              <div className="border-t border-border pt-4 space-y-2">
+              {/* ── Public analytics link ── */}
+              <div className="space-y-2 border-t border-border pt-4">
                 <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                   <BarChart2 className="h-3.5 w-3.5" /> Public analytics link
                 </div>
-                <p className="text-[11px] text-muted-foreground">Share read-only analytics — no login required.</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
-                  <button onClick={() => copyToClipboard(analyticsLink, "analytics")} className="btn-brutal shrink-0 text-[10px]">
-                    {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Transfer ownership */}
-            {!form.shared && (
-              <div className="border-t-2 border-border pt-4 space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                  <ArrowRight className="h-3.5 w-3.5" /> Transfer ownership
-                </div>
-                {transferStep === 0 ? (
+                <p className="text-[11px] text-muted-foreground">Share read-only stats — no login required.</p>
+                {analyticsLink ? (
                   <>
-                    <input
-                      type="email"
-                      placeholder="New owner email"
-                      value={transferEmail}
-                      onChange={(e) => { setTransferEmail(e.target.value); setTransferMsg(""); }}
-                      className="input-brutal w-full text-sm"
-                    />
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
+                      <button onClick={() => copyToClipboard(analyticsLink, "analytics")} className="btn-brutal shrink-0 text-[10px]">
+                        {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                      </button>
+                    </div>
                     <button
-                      onClick={() => {
-                        if (!transferEmail.includes("@")) { setTransferMsg("Enter a valid email."); return; }
-                        setTransferStep(1);
-                        setTransferMsg("");
-                      }}
-                      className="w-full border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                      onClick={() => handleRevokeToken("analytics")}
+                      disabled={tokenWorking === "analytics"}
+                      className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
                     >
-                      Transfer to {transferEmail || "…"}
+                      {tokenWorking === "analytics" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
                     </button>
                   </>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-destructive">
-                      Transfer "{form.name}" to {transferEmail}? You become a viewer. This cannot be undone without the new owner's action.
-                    </p>
-                    <div className="flex gap-2">
+                  <button
+                    onClick={() => handleGenerateToken("analytics")}
+                    disabled={tokenWorking === "analytics"}
+                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                  >
+                    {tokenWorking === "analytics" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    Generate analytics link
+                  </button>
+                )}
+              </div>
+
+              {/* ── Share with user by email ── */}
+              {!form.shared && (
+                <div className="border-t-2 border-border pt-4 space-y-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <User className="h-3.5 w-3.5" /> Add user by email
+                  </div>
+                  <input
+                    type="email"
+                    placeholder="user@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => { setInviteEmail(e.target.value); setInviteMsg(null); }}
+                    className="input-brutal w-full text-sm"
+                  />
+                  <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Permissions:</span>
+                    {(["fill", "view", "edit"] as const).map((p) => {
+                      const labels = { fill: "Enter data", view: "See data", edit: "Edit form" };
+                      return (
+                        <label key={p} className="flex items-center gap-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={invitePerms[p]}
+                            onChange={(e) => setInvitePerms((prev) => ({ ...prev, [p]: e.target.checked }))}
+                          />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">{labels[p]}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <button
+                    onClick={handleInvite}
+                    disabled={inviteWorking}
+                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                  >
+                    {inviteWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Add user
+                  </button>
+                  {inviteMsg && (
+                    <p className={`text-[10px] font-bold ${inviteMsg.ok ? "text-primary" : "text-destructive"}`}>{inviteMsg.text}</p>
+                  )}
+
+                  {/* Current shares */}
+                  {sharesLoading ? (
+                    <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                  ) : shares.length > 0 ? (
+                    <div className="space-y-1">
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Shared with</div>
+                      {shares.map((s) => (
+                        <div key={s.id} className="flex items-center gap-2 border border-border px-3 py-2">
+                          <span className="flex-1 text-[11px] font-mono truncate">{s.email}</span>
+                          <div className="flex gap-1">
+                            {s.canFill && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Fill</span>}
+                            {s.canView && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">View</span>}
+                            {s.canEdit && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Edit</span>}
+                          </div>
+                          <button
+                            onClick={() => handleRemoveShare(s.id)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* ── Transfer ownership ── */}
+              {!form.shared && (
+                <div className="border-t-2 border-border pt-4 space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <ArrowRight className="h-3.5 w-3.5" /> Transfer ownership
+                  </div>
+                  {transferStep === 0 ? (
+                    <>
+                      <input
+                        type="email"
+                        placeholder="New owner email"
+                        value={transferEmail}
+                        onChange={(e) => { setTransferEmail(e.target.value); setTransferMsg(""); }}
+                        className="input-brutal w-full text-sm"
+                      />
                       <button
-                        onClick={() => { setTransferStep(0); setTransferMsg(""); }}
-                        className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                        onClick={() => {
+                          if (!transferEmail.includes("@")) { setTransferMsg("Enter a valid email."); return; }
+                          setTransferStep(1);
+                          setTransferMsg("");
+                        }}
+                        className="w-full border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
                       >
-                        Cancel
+                        Transfer to {transferEmail || "…"}
                       </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { getToken } = await import("@/lib/api");
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-destructive">
+                        Transfer "{form.name}" to {transferEmail}? You become a viewer and cannot undo this.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setTransferStep(0); setTransferMsg(""); }}
+                          className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
                             const tok = getToken();
                             if (!tok) { setTransferMsg("Not authenticated."); return; }
-                            const res = await fetch("/api/forms/transfer", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
-                              body: JSON.stringify({ form_id: form.id, new_owner_email: transferEmail }),
-                            });
-                            if (!res.ok) {
-                              const body = await res.json().catch(() => ({ detail: "Transfer failed" }));
-                              setTransferMsg(body.detail ?? "Transfer failed");
+                            try {
+                              const res = await fetch("/api/forms/transfer", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+                                body: JSON.stringify({ form_id: form.id, new_owner_email: transferEmail }),
+                              });
+                              if (!res.ok) {
+                                const body = await res.json().catch(() => ({ detail: "Transfer failed" }));
+                                setTransferMsg(body.detail ?? "Transfer failed");
+                                setTransferStep(0);
+                              } else {
+                                setShowShare(false);
+                                nav({ to: "/forms" });
+                              }
+                            } catch {
+                              setTransferMsg("Transfer failed. Check your connection.");
                               setTransferStep(0);
-                            } else {
-                              setShowShare(false);
-                              nav({ to: "/forms" });
                             }
-                          } catch {
-                            setTransferMsg("Transfer failed. Check your connection.");
-                            setTransferStep(0);
-                          }
-                        }}
-                        className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground"
-                      >
-                        Confirm transfer
-                      </button>
+                          }}
+                          className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground"
+                        >
+                          Confirm transfer
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {transferMsg && <p className="text-[10px] text-destructive font-bold">{transferMsg}</p>}
-              </div>
-            )}
+                  )}
+                  {transferMsg && <p className="text-[10px] text-destructive font-bold">{transferMsg}</p>}
+                </div>
+              )}
+            </div>
 
-            <button onClick={() => setShowShare(false)} className="btn-brutal w-full">
-              Done
-            </button>
+            <div className="border-t-2 border-border p-4">
+              <button onClick={() => setShowShare(false)} className="btn-brutal w-full">Done</button>
+            </div>
           </div>
         </div>
       )}

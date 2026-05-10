@@ -521,8 +521,8 @@ export const store = {
       id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       createdAt: Date.now(),
       status: f.status ?? "active",
-      shareToken: f.shareToken ?? `sh_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
-      analyticsToken: f.analyticsToken ?? `an_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      shareToken: f.shareToken,
+      analyticsToken: f.analyticsToken,
       responseCount: 0,
     };
     state = { ...state, forms: [form, ...state.forms] };
@@ -552,8 +552,8 @@ export const store = {
       name: `Copy of ${orig.name}`,
       createdAt: Date.now(),
       status: "draft",
-      shareToken: `sh_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
-      analyticsToken: `an_${Math.random().toString(36).slice(2, 9)}${Math.random().toString(36).slice(2, 9)}`,
+      shareToken: undefined,
+      analyticsToken: undefined,
       responseCount: 0,
       ownerId: undefined,
     };
