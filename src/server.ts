@@ -72,9 +72,9 @@ export default {
   async fetch(request: Request, env: WorkerEnv, ctx: unknown) {
     const url = new URL(request.url);
 
-    // Proxy /api/* to FastAPI: use BACKEND_URL in prod, localhost:8001 in dev
-    const backendUrl = env?.BACKEND_URL ?? (import.meta.env?.DEV ? "http://localhost:8001" : null);
-    if (url.pathname.startsWith("/api/") && backendUrl) {
+    // Proxy /api/* to FastAPI backend (Railway in prod, localhost:8001 in dev)
+    const backendUrl = env?.BACKEND_URL ?? "http://localhost:8001";
+    if (url.pathname.startsWith("/api/")) {
       const base = backendUrl.replace(/\/$/, "");
       const target = `${base}${url.pathname}${url.search}`;
       const proxyReq = new Request(target, {
