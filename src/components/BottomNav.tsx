@@ -1,9 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Home, Users, FilePlus2, Wrench, Settings } from "lucide-react";
+import { Home, BarChart3, FilePlus2, Wrench, Settings } from "lucide-react";
 
 const tabs = [
   { to: "/", label: "Home", icon: Home },
-  { to: "/patients", label: "Patients", icon: Users },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/forms", label: "Forms", icon: FilePlus2 },
   { to: "/tools", label: "Tools", icon: Wrench },
   { to: "/settings", label: "Settings", icon: Settings },
