@@ -32,7 +32,7 @@ function Home() {
             {worker.name.split(" ")[0]}.
           </h1>
           <p className="mt-2 text-xs font-semibold uppercase tracking-wider">
-            {worker.village} · {today.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
+            {worker.village} · {today.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
           </p>
 
           <div className="mt-5 grid grid-cols-3 gap-2">
