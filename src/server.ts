@@ -73,7 +73,7 @@ export default {
     const url = new URL(request.url);
 
     // Proxy /api/* to the FastAPI backend (Railway) when BACKEND_URL is set
-    if (url.pathname.startsWith("/api/") && env.BACKEND_URL) {
+    if (url.pathname.startsWith("/api/") && env?.BACKEND_URL) {
       const base = env.BACKEND_URL.replace(/\/$/, "");
       const target = `${base}${url.pathname}${url.search}`;
       const proxyReq = new Request(target, {
