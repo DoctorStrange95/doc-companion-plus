@@ -3,7 +3,7 @@ import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import type { Submission, FormField } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Trash2, X, Download, ChevronRight, AlertTriangle, User } from "lucide-react";
+import { Trash2, X, Download, ChevronRight, AlertTriangle, User, FileJson } from "lucide-react";
 
 export const Route = createFileRoute("/forms/$id/responses")({ component: FormResponses });
 
@@ -63,6 +63,28 @@ function exportCsv(submissions: Submission[], fields: FormField[], formName: str
   const a = document.createElement("a");
   a.href = url;
   a.download = `${formName.replace(/[^a-z0-9]/gi, "_")}_responses.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportJson(submissions: Submission[], fields: FormField[], formName: string) {
+  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break");
+  const payload = {
+    form: formName,
+    exported_at: new Date().toISOString(),
+    fields: dataFields.map((f) => ({ id: f.id, label: f.label, type: f.type })),
+    responses: submissions.map((sub, i) => ({
+      index: i + 1,
+      date: new Date(sub.createdAt).toISOString(),
+      respondent: getRespondentLabel(sub),
+      data: Object.fromEntries(dataFields.map((f) => [f.label, sub.data[f.id] ?? null])),
+    })),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${formName.replace(/[^a-z0-9]/gi, "_")}_responses.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -183,12 +205,22 @@ function FormResponses() {
         back={`/forms/${id}`}
         action={
           submissions.length > 0 ? (
-            <button
-              onClick={() => exportCsv(submissions, form.fields, form.name)}
-              className="btn-brutal inline-flex items-center gap-1.5 text-xs"
-            >
-              <Download className="h-3.5 w-3.5" /> CSV
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => exportCsv(submissions, form.fields, form.name)}
+                className="btn-brutal inline-flex items-center gap-1 text-xs"
+                title="Download CSV"
+              >
+                <Download className="h-3.5 w-3.5" /> CSV
+              </button>
+              <button
+                onClick={() => exportJson(submissions, form.fields, form.name)}
+                className="btn-brutal inline-flex items-center gap-1 text-xs"
+                title="Download JSON"
+              >
+                <FileJson className="h-3.5 w-3.5" /> JSON
+              </button>
+            </div>
           ) : undefined
         }
       />

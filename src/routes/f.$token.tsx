@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { z } from "zod";
 import { evaluateConditions, type FormField } from "@/lib/store";
+import { API_BASE } from "@/lib/api";
 import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2 } from "lucide-react";
 
 const searchSchema = z.object({ preview: z.boolean().optional() });
@@ -161,7 +162,7 @@ function PublicFiller() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/forms/public/${token}`)
+    fetch(`${API_BASE}/api/forms/public/${token}`)
       .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
@@ -258,7 +259,7 @@ function PublicFiller() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/forms/public/${token}/submit`, {
+      const res = await fetch(`${API_BASE}/api/forms/public/${token}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ respondent_name: respondentName || undefined, respondent_email: respondentEmail || undefined, respondent_id: respondentCode || undefined, data }),

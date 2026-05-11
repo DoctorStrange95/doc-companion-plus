@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Edit2, Share2, Copy, ChevronRight } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search } from "lucide-react";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
@@ -22,6 +23,18 @@ function StatusBadge({ status }: { status?: string }) {
 function FormsList() {
   const forms = useStore((s) => s.forms);
   const submissions = useStore((s) => s.submissions);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredForms = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return forms;
+    return forms.filter(
+      (f) =>
+        f.name.toLowerCase().includes(q) ||
+        f.category.toLowerCase().includes(q) ||
+        (f.description ?? "").toLowerCase().includes(q),
+    );
+  }, [forms, searchQuery]);
 
   const countFor = (id: string) => submissions.filter((s) => s.formId === id).length;
 
@@ -40,6 +53,18 @@ function FormsList() {
         }
       />
       <PageShell>
+        {forms.length > 0 && (
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              type="search"
+              placeholder="Search by name, category, or description…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input-brutal w-full pl-8 text-sm"
+            />
+          </div>
+        )}
         {forms.length === 0 ? (
           <div className="brutal-flat p-8 text-center">
             <FileText className="h-10 w-10 mx-auto mb-3 opacity-20" />
@@ -48,9 +73,13 @@ function FormsList() {
               Create first form
             </Link>
           </div>
+        ) : filteredForms.length === 0 ? (
+          <div className="brutal-flat p-8 text-center">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No forms match "{searchQuery}"</p>
+          </div>
         ) : (
           <ul className="grid gap-3">
-            {forms.map((f) => {
+            {filteredForms.map((f) => {
               const responses = countFor(f.id);
               return (
                 <li key={f.id} className="brutal">

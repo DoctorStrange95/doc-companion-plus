@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { useStore, store } from "@/lib/store";
-import { getToken } from "@/lib/api";
+import { getToken, API_BASE } from "@/lib/api";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   Edit2, Copy, Trash2, ExternalLink, BarChart2,
@@ -74,7 +74,7 @@ function FormDetail() {
     const tok = getToken();
     if (!tok) return;
     setSharesLoading(true);
-    fetch(`/api/forms/${formId}/shares`, { headers: { Authorization: `Bearer ${tok}` } })
+    fetch(`${API_BASE}/api/forms/${formId}/shares`, { headers: { Authorization: `Bearer ${tok}` } })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: Array<{ id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean }>) => {
         if (!cancelled) setShares(data.map((s) => ({ id: s.id, email: s.shared_with_email, canFill: s.can_fill, canView: s.can_view, canEdit: s.can_edit })));
@@ -108,7 +108,7 @@ function FormDetail() {
     setInviteWorking(true);
     setInviteMsg(null);
     try {
-      const res = await fetch("/api/shares", {
+      const res = await fetch(`${API_BASE}/api/shares`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ resource_type: "form", resource_id: form.id, email: inviteEmail, can_fill: invitePerms.fill, can_view: invitePerms.view, can_edit: invitePerms.edit }),
@@ -137,7 +137,7 @@ function FormDetail() {
   const handleRemoveShare = async (shareId: string) => {
     const tok = getToken();
     if (!tok) return;
-    await fetch(`/api/shares/${shareId}`, { method: "DELETE", headers: { Authorization: `Bearer ${tok}` } }).catch(() => {});
+    await fetch(`${API_BASE}/api/shares/${shareId}`, { method: "DELETE", headers: { Authorization: `Bearer ${tok}` } }).catch(() => {});
     setShares((prev) => prev.filter((s) => s.id !== shareId));
   };
 
@@ -625,7 +625,7 @@ function FormDetail() {
                             const tok = getToken();
                             if (!tok) { setTransferMsg("Not authenticated."); return; }
                             try {
-                              const res = await fetch("/api/forms/transfer", {
+                              const res = await fetch(`${API_BASE}/api/forms/transfer`, {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
                                 body: JSON.stringify({ form_id: form.id, new_owner_email: transferEmail }),

@@ -59,24 +59,34 @@ function PatientDetail() {
     const buildChart = (points: GrowthPoint[], metric: "weight" | "height") => {
       if (points.length === 0) return null;
       const ref = getWhoReference(sex, metric);
-      // Build reference curve at 3-month intervals from 0 to 60
+      // Only include finite-age points to avoid NaN keys in map
+      const validPoints = points.filter((p) => Number.isFinite(p.age));
+      if (validPoints.length === 0) return null;
+      // Build reference curve at 3-month intervals across the patient's age range
       const refCurve: Array<{ age: number; sd3n: number; sd2n: number; median: number; sd2p: number; sd3p: number }> = [];
-      const minAge = Math.max(0, Math.floor(Math.min(...points.map((p) => p.age)) / 3) * 3 - 3);
-      const maxAge = Math.min(60, Math.ceil(Math.max(...points.map((p) => p.age)) / 3) * 3 + 3);
+      const minAge = Math.max(0, Math.floor(Math.min(...validPoints.map((p) => p.age)) / 3) * 3 - 3);
+      const maxAge = Math.min(60, Math.ceil(Math.max(...validPoints.map((p) => p.age)) / 3) * 3 + 3);
       for (let mo = minAge; mo <= maxAge; mo += 3) {
         const row = interpolateWho(ref, mo);
         if (!row) continue;
         refCurve.push({ age: mo, sd3n: row[1], sd2n: row[2], median: row[3], sd2p: row[4], sd3p: row[5] });
       }
-      // Merge patient points into the dataset
-      const patientByAge = new Map(points.map((p) => [p.age, p.value]));
-      const allAges = Array.from(new Set([...refCurve.map((r) => r.age), ...points.map((p) => p.age)])).sort((a, b) => a - b);
+      // Merge patient points into the dataset; use null (not undefined) so recharts skips them in domain calc
+      const patientByAge = new Map(validPoints.map((p) => [p.age, p.value]));
+      const allAges = Array.from(new Set([...refCurve.map((r) => r.age), ...validPoints.map((p) => p.age)])).sort((a, b) => a - b);
       const merged = allAges.map((age) => {
         const refRow = interpolateWho(ref, age);
         const refData = refRow ? { sd3n: refRow[1], sd2n: refRow[2], median: refRow[3], sd2p: refRow[4], sd3p: refRow[5] } : {};
-        return { age, ...refData, child: patientByAge.get(age) };
+        return { age, ...refData, child: patientByAge.get(age) ?? null };
       });
-      return { data: merged, points };
+      // Compute explicit Y domain from all real reference + child values (prevents 0/-5 on height axis)
+      const allVals = merged.flatMap((d) => [
+        (d as Record<string, unknown>).sd3n, (d as Record<string, unknown>).sd2n, (d as Record<string, unknown>).median,
+        (d as Record<string, unknown>).sd2p, (d as Record<string, unknown>).sd3p, (d as Record<string, unknown>).child,
+      ]).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+      const yMin = allVals.length > 0 ? Math.floor(Math.min(...allVals) * 0.97) : 0;
+      const yMax = allVals.length > 0 ? Math.ceil(Math.max(...allVals) * 1.03) : 100;
+      return { data: merged, points: validPoints, yDomain: [yMin, yMax] as [number, number] };
     };
 
     return {
@@ -164,7 +174,7 @@ function PatientDetail() {
                             stroke="var(--foreground)"
                             label={{ value: "Age (months)", position: "insideBottomRight", offset: -5, fontSize: 9 }}
                           />
-                          <YAxis fontSize={9} stroke="var(--foreground)" domain={["auto", "auto"]} unit={` ${yLabel}`} width={38} />
+                          <YAxis fontSize={9} stroke="var(--foreground)" domain={chart.yDomain} unit={` ${yLabel}`} width={40} />
                           <Tooltip
                             formatter={(val: number, name: string) => {
                               const labels: Record<string, string> = { child: "Child", median: "Median", sd2n: "-2 SD", sd3n: "-3 SD", sd2p: "+2 SD", sd3p: "+3 SD" };
@@ -185,7 +195,8 @@ function PatientDetail() {
                             dataKey="child"
                             stroke="var(--primary)"
                             strokeWidth={2.5}
-                            dot={{ r: 5, fill: "var(--primary)", stroke: "var(--background)", strokeWidth: 2 }}
+                            dot={{ r: 7, fill: "var(--primary)", stroke: "var(--background)", strokeWidth: 2 }}
+                            activeDot={{ r: 9 }}
                             connectNulls
                             name="child"
                           />
