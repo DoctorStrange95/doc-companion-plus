@@ -111,6 +111,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  // In SSR (Cloudflare Workers) mode this renders the full HTML document.
+  // In SPA mode (Vercel) index.html provides the shell and this renders the body content.
+  if (typeof document !== "undefined") {
+    // Client-side / SPA: skip the html/head/body wrapper
+    return <>{children}</>;
+  }
   return (
     <html lang="en">
       <head>

@@ -58,8 +58,6 @@ function FormDetail() {
   const [transferMsg, setTransferMsg] = useState("");
 
   // Share modal state
-  const [tokenWorking, setTokenWorking] = useState<"fill" | "analytics" | null>(null);
-  const [tokenError, setTokenError] = useState("");
   const [shares, setShares] = useState<FormShareEntry[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -85,44 +83,18 @@ function FormDetail() {
     return () => { cancelled = true; };
   }, [showShare, formId]);
 
-  const handleGenerateToken = async (type: "fill" | "analytics") => {
-    const tok = getToken();
-    if (!tok || !form) return;
-    setTokenWorking(type);
-    setTokenError("");
-    try {
-      const res = await fetch(`/api/forms/${form.id}/share-token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
-        body: JSON.stringify({ type }),
-      });
-      if (!res.ok) throw new Error("Failed to generate link");
-      const data = await res.json();
-      store.updateForm(form.id, type === "fill" ? { shareToken: data.token } : { analyticsToken: data.token });
-    } catch {
-      setTokenError("Could not generate link. Try again.");
-    } finally {
-      setTokenWorking(null);
-    }
+  const handleGenerateToken = (type: "fill" | "analytics") => {
+    if (!form) return;
+    const bytes = new Uint8Array(12);
+    crypto.getRandomValues(bytes);
+    const prefix = type === "fill" ? "sh" : "an";
+    const token = `${prefix}_${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+    store.updateForm(form.id, type === "fill" ? { shareToken: token } : { analyticsToken: token });
   };
 
-  const handleRevokeToken = async (type: "fill" | "analytics") => {
-    const tok = getToken();
-    if (!tok || !form) return;
-    setTokenWorking(type);
-    setTokenError("");
-    try {
-      const res = await fetch(`/api/forms/${form.id}/share-token?type=${type}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${tok}` },
-      });
-      if (!res.ok) throw new Error("Failed");
-      store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
-    } catch {
-      setTokenError("Could not revoke link. Try again.");
-    } finally {
-      setTokenWorking(null);
-    }
+  const handleRevokeToken = (type: "fill" | "analytics") => {
+    if (!form) return;
+    store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
   };
 
   const handleInvite = async () => {
@@ -376,10 +348,6 @@ function FormDetail() {
             </div>
 
             <div className="p-4 space-y-5">
-              {tokenError && (
-                <p className="text-[10px] font-bold text-destructive">{tokenError}</p>
-              )}
-
               {/* ── Public fill link ── */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -405,20 +373,18 @@ function FormDetail() {
                       </a>
                       <button
                         onClick={() => handleRevokeToken("fill")}
-                        disabled={tokenWorking === "fill"}
-                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
                       >
-                        {tokenWorking === "fill" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
+                        <Link2Off className="h-3 w-3" /> Revoke
                       </button>
                     </div>
                   </>
                 ) : (
                   <button
                     onClick={() => handleGenerateToken("fill")}
-                    disabled={tokenWorking === "fill"}
-                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
                   >
-                    {tokenWorking === "fill" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    <Link2 className="h-3.5 w-3.5" />
                     Generate public fill link
                   </button>
                 )}
@@ -440,19 +406,17 @@ function FormDetail() {
                     </div>
                     <button
                       onClick={() => handleRevokeToken("analytics")}
-                      disabled={tokenWorking === "analytics"}
-                      className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
+                      className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
                     >
-                      {tokenWorking === "analytics" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
+                      <Link2Off className="h-3 w-3" /> Revoke
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={() => handleGenerateToken("analytics")}
-                    disabled={tokenWorking === "analytics"}
-                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
                   >
-                    {tokenWorking === "analytics" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    <Link2 className="h-3.5 w-3.5" />
                     Generate analytics link
                   </button>
                 )}

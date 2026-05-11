@@ -4,6 +4,7 @@ import { useStore, store, ageFromDob } from "@/lib/store";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { ClipboardPlus, Phone, MapPin, Calendar, Trash2, Activity } from "lucide-react";
+import { getWhoReference, interpolateWho } from "@/lib/who-data";
 
 export const Route = createFileRoute("/patients/$id")({ component: PatientDetail });
 
@@ -19,24 +20,70 @@ function PatientDetail() {
   const forms = useStore((s) => s.forms);
   const [picker, setPicker] = useState(false);
 
-  const numericSeries = useMemo(() => {
-    if (!patient) return [];
-    const byField: Record<string, { label: string; data: { t: number; v: number }[] }> = {};
+  const dobMs = patient ? new Date(patient.dob).getTime() : 0;
+  const sex = patient?.sex ?? "";
+
+  // WHO growth chart data: weight-for-age and height/length-for-age
+  const growthCharts = useMemo(() => {
+    if (!patient) return { weight: null, height: null };
+
+    // Collect patient's actual measurements keyed by age in months
+    interface GrowthPoint {
+      age: number; // months, 1 decimal
+      value: number;
+      date: number;
+    }
+    const weightPoints: GrowthPoint[] = [];
+    const heightPoints: GrowthPoint[] = [];
+
     for (const s of submissions) {
       const form = forms.find((f) => f.id === s.formId);
       if (!form) continue;
+      const ageMonths = (s.createdAt - dobMs) / (1000 * 60 * 60 * 24 * 30.4375);
+      if (ageMonths < 0 || ageMonths > 60) continue;
+      const ageMo = Math.round(ageMonths * 10) / 10;
       for (const f of form.fields) {
         if (f.type !== "number") continue;
         const raw = s.data[f.id];
         const v = typeof raw === "number" ? raw : parseFloat(String(raw ?? ""));
         if (!Number.isFinite(v)) continue;
-        const key = f.label + (f.unit ? ` (${f.unit})` : "");
-        if (!byField[key]) byField[key] = { label: key, data: [] };
-        byField[key].data.push({ t: s.createdAt, v });
+        const lbl = f.label.toLowerCase();
+        if (lbl.includes("weight") || lbl.includes("wt") || lbl.includes("wgt")) {
+          weightPoints.push({ age: ageMo, value: v, date: s.createdAt });
+        } else if (lbl.includes("height") || lbl.includes("length") || lbl.includes("ht") || lbl.includes("len")) {
+          heightPoints.push({ age: ageMo, value: v, date: s.createdAt });
+        }
       }
     }
-    return Object.values(byField).filter((s) => s.data.length >= 2).slice(0, 4);
-  }, [submissions, forms, patient]);
+
+    const buildChart = (points: GrowthPoint[], metric: "weight" | "height") => {
+      if (points.length === 0) return null;
+      const ref = getWhoReference(sex, metric);
+      // Build reference curve at 3-month intervals from 0 to 60
+      const refCurve: Array<{ age: number; sd3n: number; sd2n: number; median: number; sd2p: number; sd3p: number }> = [];
+      const minAge = Math.max(0, Math.floor(Math.min(...points.map((p) => p.age)) / 3) * 3 - 3);
+      const maxAge = Math.min(60, Math.ceil(Math.max(...points.map((p) => p.age)) / 3) * 3 + 3);
+      for (let mo = minAge; mo <= maxAge; mo += 3) {
+        const row = interpolateWho(ref, mo);
+        if (!row) continue;
+        refCurve.push({ age: mo, sd3n: row[1], sd2n: row[2], median: row[3], sd2p: row[4], sd3p: row[5] });
+      }
+      // Merge patient points into the dataset
+      const patientByAge = new Map(points.map((p) => [p.age, p.value]));
+      const allAges = Array.from(new Set([...refCurve.map((r) => r.age), ...points.map((p) => p.age)])).sort((a, b) => a - b);
+      const merged = allAges.map((age) => {
+        const refRow = interpolateWho(ref, age);
+        const refData = refRow ? { sd3n: refRow[1], sd2n: refRow[2], median: refRow[3], sd2p: refRow[4], sd3p: refRow[5] } : {};
+        return { age, ...refData, child: patientByAge.get(age) };
+      });
+      return { data: merged, points };
+    };
+
+    return {
+      weight: buildChart(weightPoints, "weight"),
+      height: buildChart(heightPoints, "height"),
+    };
+  }, [submissions, forms, patient, dobMs, sex]);
 
   if (!patient) {
     return (
@@ -95,34 +142,72 @@ function PatientDetail() {
           </div>
         </section>
 
-        {numericSeries.length > 0 && (
+        {(growthCharts.weight || growthCharts.height) && (
           <section className="mt-6">
-            <SectionTitle kicker="Trends">Vitals</SectionTitle>
+            <SectionTitle kicker="WHO 2006">Growth charts</SectionTitle>
             <div className="grid gap-3">
-              {numericSeries.map((s) => (
-                <div key={s.label} className="brutal p-3">
-                  <div className="mb-1 px-1 text-[11px] font-bold uppercase tracking-widest">{s.label}</div>
-                  <div className="h-32">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={s.data} margin={{ top: 5, right: 8, left: -16, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                        <XAxis
-                          dataKey="t"
-                          tickFormatter={(t) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                          fontSize={10}
-                          stroke="var(--foreground)"
-                        />
-                        <YAxis fontSize={10} stroke="var(--foreground)" domain={["auto", "auto"]} />
-                        <Tooltip
-                          labelFormatter={(t) => new Date(t as number).toLocaleString()}
-                          contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 12 }}
-                        />
-                        <Line type="monotone" dataKey="v" stroke="var(--secondary)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--primary)", stroke: "var(--secondary)", strokeWidth: 2 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
+              {[
+                { chart: growthCharts.weight, label: "Weight-for-age (kg)", yLabel: "kg" },
+                { chart: growthCharts.height, label: "Height/Length-for-age (cm)", yLabel: "cm" },
+              ].map(({ chart, label, yLabel }) =>
+                chart ? (
+                  <div key={label} className="brutal p-3">
+                    <div className="mb-1 px-1 text-[11px] font-bold uppercase tracking-widest">{label}</div>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chart.data} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis
+                            dataKey="age"
+                            tickFormatter={(v) => `${v}m`}
+                            fontSize={9}
+                            stroke="var(--foreground)"
+                            label={{ value: "Age (months)", position: "insideBottomRight", offset: -5, fontSize: 9 }}
+                          />
+                          <YAxis fontSize={9} stroke="var(--foreground)" domain={["auto", "auto"]} unit={` ${yLabel}`} width={38} />
+                          <Tooltip
+                            formatter={(val: number, name: string) => {
+                              const labels: Record<string, string> = { child: "Child", median: "Median", sd2n: "-2 SD", sd3n: "-3 SD", sd2p: "+2 SD", sd3p: "+3 SD" };
+                              return [`${val.toFixed(1)} ${yLabel}`, labels[name] ?? name];
+                            }}
+                            labelFormatter={(v) => `Age: ${v} months`}
+                            contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }}
+                          />
+                          {/* WHO reference bands */}
+                          <Line type="monotone" dataKey="sd3n" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 2" dot={false} name="sd3n" />
+                          <Line type="monotone" dataKey="sd2n" stroke="#f97316" strokeWidth={1} strokeDasharray="4 2" dot={false} name="sd2n" />
+                          <Line type="monotone" dataKey="median" stroke="#22c55e" strokeWidth={1.5} strokeDasharray="6 2" dot={false} name="median" />
+                          <Line type="monotone" dataKey="sd2p" stroke="#f97316" strokeWidth={1} strokeDasharray="4 2" dot={false} name="sd2p" />
+                          <Line type="monotone" dataKey="sd3p" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 2" dot={false} name="sd3p" />
+                          {/* Child's actual measurements */}
+                          <Line
+                            type="monotone"
+                            dataKey="child"
+                            stroke="var(--primary)"
+                            strokeWidth={2.5}
+                            dot={{ r: 5, fill: "var(--primary)", stroke: "var(--background)", strokeWidth: 2 }}
+                            connectNulls
+                            name="child"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-2 px-1">
+                      {[
+                        { color: "#ef4444", label: "±3 SD" },
+                        { color: "#f97316", label: "±2 SD" },
+                        { color: "#22c55e", label: "Median" },
+                        { color: "var(--primary)", label: "Child" },
+                      ].map(({ color, label: l }) => (
+                        <span key={l} className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <span className="inline-block h-2 w-4 shrink-0" style={{ backgroundColor: color }} />
+                          {l}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ) : null,
+              )}
             </div>
           </section>
         )}
