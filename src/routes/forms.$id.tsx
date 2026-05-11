@@ -189,13 +189,15 @@ function FormDetail() {
         subtitle={`${form.category}${form.longitudinal ? " · Longitudinal" : ""}`}
         variant="yellow"
         action={
-          <Link
-            to="/forms/new"
-            search={{ edit: form.id }}
-            className="btn-brutal inline-flex items-center gap-1.5 text-xs"
-          >
-            <Edit2 className="h-3.5 w-3.5" /> Edit
-          </Link>
+          !form.shared ? (
+            <Link
+              to="/forms/new"
+              search={{ edit: form.id }}
+              className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+            >
+              <Edit2 className="h-3.5 w-3.5" /> Edit
+            </Link>
+          ) : undefined
         }
       />
 
@@ -230,29 +232,31 @@ function FormDetail() {
             </div>
           </div>
 
-          {/* Status control */}
-          <div className="brutal p-4 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Form status</div>
-            <div className="grid grid-cols-3 gap-2">
-              {(["draft", "active", "closed"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => handleStatusChange(s)}
-                  disabled={statusSaving}
-                  className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                    (form.status ?? "active") === s ? "bg-primary" : "bg-card hover:bg-primary/30"
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
+          {/* Status control — owner only */}
+          {!form.shared && (
+            <div className="brutal p-4 space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Form status</div>
+              <div className="grid grid-cols-3 gap-2">
+                {(["draft", "active", "closed"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleStatusChange(s)}
+                    disabled={statusSaving}
+                    className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
+                      (form.status ?? "active") === s ? "bg-primary" : "bg-card hover:bg-primary/30"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[9px] text-muted-foreground">
+                {form.status === "draft" && "Draft — fill link shows 'not published'. Use for testing."}
+                {(form.status === "active" || !form.status) && "Active — anyone with the link can submit responses."}
+                {form.status === "closed" && "Closed — new responses are blocked. Existing data is preserved."}
+              </p>
             </div>
-            <p className="text-[9px] text-muted-foreground">
-              {form.status === "draft" && "Draft — fill link shows 'not published'. Use for testing."}
-              {(form.status === "active" || !form.status) && "Active — anyone with the link can submit responses."}
-              {form.status === "closed" && "Closed — new responses are blocked. Existing data is preserved."}
-            </p>
-          </div>
+          )}
 
           {/* Quick actions */}
           <div className="grid grid-cols-2 gap-2">
@@ -263,25 +267,37 @@ function FormDetail() {
             >
               <Edit2 className="h-4 w-4" /> Fill form
             </Link>
-            <button
-              onClick={() => setShowShare(true)}
-              className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-            >
-              <Share2 className="h-4 w-4" /> Share
-            </button>
-            <Link
-              to="/forms/$id/responses"
-              params={{ id: form.id }}
-              className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-            >
-              <List className="h-4 w-4" /> Responses
-            </Link>
-            <button
-              onClick={handleDuplicate}
-              className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-            >
-              <Copy className="h-4 w-4" /> Duplicate
-            </button>
+            {form.shared ? (
+              <Link
+                to="/forms/$id/responses"
+                params={{ id: form.id }}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              >
+                <List className="h-4 w-4" /> Responses
+              </Link>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowShare(true)}
+                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                >
+                  <Share2 className="h-4 w-4" /> Share
+                </button>
+                <Link
+                  to="/forms/$id/responses"
+                  params={{ id: form.id }}
+                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                >
+                  <List className="h-4 w-4" /> Responses
+                </Link>
+                <button
+                  onClick={handleDuplicate}
+                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                >
+                  <Copy className="h-4 w-4" /> Duplicate
+                </button>
+              </>
+            )}
             <Link
               to="/analytics/$id"
               params={{ id: form.id }}
@@ -291,8 +307,8 @@ function FormDetail() {
             </Link>
           </div>
 
-          {/* Danger zone */}
-          <div className="brutal border-destructive p-4 space-y-3">
+          {/* Danger zone — owner only */}
+          {!form.shared && <div className="brutal border-destructive p-4 space-y-3">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-destructive">
               <AlertTriangle className="h-3.5 w-3.5" /> Danger zone
             </div>
@@ -332,12 +348,12 @@ function FormDetail() {
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </div>
       </PageShell>
 
-      {/* Share modal */}
-      {showShare && (
+      {/* Share modal — owner only */}
+      {showShare && !form.shared && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowShare(false)}>
           <div className="w-full max-w-md border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
@@ -348,311 +364,312 @@ function FormDetail() {
               </button>
             </div>
 
-            <div className="p-4 space-y-5">
+            <div className="p-4 space-y-6">
 
-              {/* ── 1. Visibility ── */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  <Globe className="h-3.5 w-3.5" /> Visibility
+              {/* ── Section 1: Who can fill? ── */}
+              <div className="space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">1</span>
+                  Who can fill this form?
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => store.updateForm(form.id, { isPublic: true })}
-                    className={`flex items-center justify-center gap-1.5 border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${(form.isPublic ?? true) ? "bg-primary" : "bg-card hover:bg-primary/30"}`}
-                  >
-                    <Globe className="h-3 w-3" /> Public
-                  </button>
-                  <button
-                    onClick={() => store.updateForm(form.id, { isPublic: false })}
-                    className={`flex items-center justify-center gap-1.5 border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${!(form.isPublic ?? true) ? "bg-primary" : "bg-card hover:bg-primary/30"}`}
-                  >
-                    <Lock className="h-3 w-3" /> Private
-                  </button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {(form.isPublic ?? true)
-                    ? "Anyone with the fill link can submit responses — no email required."
-                    : "Only people in your Data Collectors list can fill this form."}
-                </p>
-              </div>
 
-              {/* ── 2. Fill link ── */}
-              <div className="space-y-2 border-t border-border pt-4">
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  <Link2 className="h-3.5 w-3.5" /> Fill link
-                </div>
-                {fillLink ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
-                      <button onClick={() => copyToClipboard(fillLink, "fill")} className="btn-brutal shrink-0 text-[10px]">
-                        {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
-                      </button>
-                    </div>
-                    <div className="flex gap-2">
-                      <a
-                        href={`https://wa.me/?text=${encodeURIComponent(`Hi! Please fill this form for the *${form.name}* study.\n\nFill here: ${fillLink}\n\nNo login required.`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 flex items-center justify-center gap-1.5 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
-                      >
-                        <ExternalLink className="h-3 w-3" /> WhatsApp
-                      </a>
-                      <button
-                        onClick={() => handleRevokeToken("fill")}
-                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
-                      >
-                        <Link2Off className="h-3 w-3" /> Revoke
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleGenerateToken("fill")}
-                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                    Generate fill link
-                  </button>
-                )}
-              </div>
-
-              {/* ── 3. Data Collectors (private only) ── */}
-              {!(form.isPublic ?? true) && (
-                <div className="space-y-2 border-t border-border pt-4">
-                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <Lock className="h-3.5 w-3.5" /> Data Collectors
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Only these emails can access the fill link. No account needed — they verify via email at the gate.
-                  </p>
-                  <div className="flex gap-2">
+                {/* Radio options */}
+                <div className="space-y-2">
+                  <label className={`flex cursor-pointer items-start gap-3 border-2 p-3 transition-colors ${(form.isPublic ?? true) ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}>
                     <input
-                      type="email"
-                      placeholder="collector@example.com"
-                      value={fillerEmailInput}
-                      onChange={(e) => setFillerEmailInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
+                      type="radio"
+                      name={`vis-${form.id}`}
+                      checked={form.isPublic ?? true}
+                      onChange={() => store.updateForm(form.id, { isPublic: true })}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <Globe className="h-3 w-3" /> Anyone with the link
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">No login or email required — open access.</div>
+                    </div>
+                  </label>
+                  <label className={`flex cursor-pointer items-start gap-3 border-2 p-3 transition-colors ${!(form.isPublic ?? true) ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}>
+                    <input
+                      type="radio"
+                      name={`vis-${form.id}`}
+                      checked={!(form.isPublic ?? true)}
+                      onChange={() => store.updateForm(form.id, { isPublic: false })}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <Lock className="h-3 w-3" /> Only specific people
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">Fillers verify their email at the gate before accessing.</div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Allowed filler emails (private mode only) */}
+                {!(form.isPublic ?? true) && (
+                  <div className="space-y-2 pl-3 border-l-2 border-border">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Allowed filler emails</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="email"
+                        placeholder="collector@example.com"
+                        value={fillerEmailInput}
+                        onChange={(e) => setFillerEmailInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const trimmed = fillerEmailInput.trim();
+                            if (!trimmed.includes("@")) return;
+                            const current = form.allowedFillerEmails ?? [];
+                            if (current.some((x) => x.toLowerCase() === trimmed.toLowerCase())) return;
+                            store.updateForm(form.id, { allowedFillerEmails: [...current, trimmed] });
+                            setFillerEmailInput("");
+                          }
+                        }}
+                        className="input-brutal flex-1 text-sm"
+                      />
+                      <button
+                        onClick={() => {
                           const trimmed = fillerEmailInput.trim();
                           if (!trimmed.includes("@")) return;
                           const current = form.allowedFillerEmails ?? [];
                           if (current.some((x) => x.toLowerCase() === trimmed.toLowerCase())) return;
                           store.updateForm(form.id, { allowedFillerEmails: [...current, trimmed] });
                           setFillerEmailInput("");
-                        }
-                      }}
-                      className="input-brutal flex-1 text-sm"
-                    />
-                    <button
-                      onClick={() => {
-                        const trimmed = fillerEmailInput.trim();
-                        if (!trimmed.includes("@")) return;
-                        const current = form.allowedFillerEmails ?? [];
-                        if (current.some((x) => x.toLowerCase() === trimmed.toLowerCase())) return;
-                        store.updateForm(form.id, { allowedFillerEmails: [...current, trimmed] });
-                        setFillerEmailInput("");
-                      }}
-                      className="btn-brutal shrink-0"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {(form.allowedFillerEmails ?? []).length > 0 ? (
-                    <div className="space-y-1">
-                      {(form.allowedFillerEmails ?? []).map((email) => (
-                        <div key={email} className="flex items-center gap-2 border border-border px-3 py-2">
-                          <span className="flex-1 text-[11px] font-mono truncate">{email}</span>
-                          <button
-                            onClick={() => store.updateForm(form.id, { allowedFillerEmails: (form.allowedFillerEmails ?? []).filter((e) => e !== email) })}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      No collectors yet — add emails above.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ── 4. Collaborators ── */}
-              {!form.shared && (
-                <div className="border-t-2 border-border pt-4 space-y-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                    <User className="h-3.5 w-3.5" /> Collaborators
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Add registered users who can view, fill, or edit this form in their account.
-                  </p>
-                  <input
-                    type="email"
-                    placeholder="user@example.com"
-                    value={inviteEmail}
-                    onChange={(e) => { setInviteEmail(e.target.value); setInviteMsg(null); }}
-                    className="input-brutal w-full text-sm"
-                  />
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Permissions:</span>
-                    {(["fill", "view", "edit"] as const).map((p) => {
-                      const labels = { fill: "Enter data", view: "See data", edit: "Edit form" };
-                      return (
-                        <label key={p} className="flex items-center gap-1 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="h-3.5 w-3.5"
-                            checked={invitePerms[p]}
-                            onChange={(e) => setInvitePerms((prev) => ({ ...prev, [p]: e.target.checked }))}
-                          />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">{labels[p]}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <button
-                    onClick={handleInvite}
-                    disabled={inviteWorking}
-                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
-                  >
-                    {inviteWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Add collaborator
-                  </button>
-                  {inviteMsg && (
-                    <p className={`text-[10px] font-bold ${inviteMsg.ok ? "text-primary" : "text-destructive"}`}>{inviteMsg.text}</p>
-                  )}
-                  {sharesLoading ? (
-                    <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-                  ) : shares.length > 0 ? (
-                    <div className="space-y-1">
-                      <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Shared with</div>
-                      {shares.map((s) => (
-                        <div key={s.id} className="flex items-center gap-2 border border-border px-3 py-2">
-                          <span className="flex-1 text-[11px] font-mono truncate">{s.email}</span>
-                          <div className="flex gap-1">
-                            {s.canFill && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Fill</span>}
-                            {s.canView && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">View</span>}
-                            {s.canEdit && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Edit</span>}
-                          </div>
-                          <button
-                            onClick={() => handleRemoveShare(s.id)}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              )}
-
-              {/* ── 5. Analytics link ── */}
-              <div className="space-y-2 border-t border-border pt-4">
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  <BarChart2 className="h-3.5 w-3.5" /> Analytics link
-                </div>
-                <p className="text-[11px] text-muted-foreground">Share read-only stats — no login required.</p>
-                {analyticsLink ? (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
-                      <button onClick={() => copyToClipboard(analyticsLink, "analytics")} className="btn-brutal shrink-0 text-[10px]">
-                        {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                        }}
+                        className="btn-brutal shrink-0"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <button
-                      onClick={() => handleRevokeToken("analytics")}
-                      className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
-                    >
-                      <Link2Off className="h-3 w-3" /> Revoke
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => handleGenerateToken("analytics")}
-                    className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
-                  >
-                    <Link2 className="h-3.5 w-3.5" />
-                    Generate analytics link
-                  </button>
+                    {(form.allowedFillerEmails ?? []).length > 0 ? (
+                      <div className="space-y-1">
+                        {(form.allowedFillerEmails ?? []).map((email) => (
+                          <div key={email} className="flex items-center gap-2 border border-border px-3 py-2">
+                            <span className="flex-1 text-[11px] font-mono truncate">{email}</span>
+                            <button
+                              onClick={() => store.updateForm(form.id, { allowedFillerEmails: (form.allowedFillerEmails ?? []).filter((e) => e !== email) })}
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-muted-foreground">No fillers yet — add emails above.</p>
+                    )}
+                  </div>
                 )}
+
+                {/* Fill link */}
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <Link2 className="h-3.5 w-3.5" /> Fill link
+                  </div>
+                  {fillLink ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{fillLink}</code>
+                        <button onClick={() => copyToClipboard(fillLink, "fill")} className="btn-brutal shrink-0 text-[10px]">
+                          {copied === "fill" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(`Hi! Please fill this form for the *${form.name}* study.\n\nFill here: ${fillLink}\n\nNo login required.`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 flex items-center justify-center gap-1.5 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                        >
+                          <ExternalLink className="h-3 w-3" /> WhatsApp
+                        </a>
+                        <button
+                          onClick={() => handleRevokeToken("fill")}
+                          className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
+                        >
+                          <Link2Off className="h-3 w-3" /> Revoke
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleGenerateToken("fill")}
+                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                    >
+                      <Link2 className="h-3.5 w-3.5" /> Generate fill link
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* ── 6. Transfer ownership ── */}
-              {!form.shared && (
-                <div className="border-t-2 border-border pt-4 space-y-2">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                    <ArrowRight className="h-3.5 w-3.5" /> Transfer ownership
+              {/* ── Section 2: Who can see responses & analytics? ── */}
+              <div className="border-t-2 border-border pt-5 space-y-3">
+                <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">2</span>
+                  Who can see responses & analytics?
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Add registered users who can view, fill, or edit this form in their account.
+                </p>
+                <input
+                  type="email"
+                  placeholder="user@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => { setInviteEmail(e.target.value); setInviteMsg(null); }}
+                  className="input-brutal w-full text-sm"
+                />
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Permissions:</span>
+                  {(["fill", "view", "edit"] as const).map((p) => {
+                    const labels = { fill: "Enter data", view: "See data", edit: "Edit form" };
+                    return (
+                      <label key={p} className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5"
+                          checked={invitePerms[p]}
+                          onChange={(e) => setInvitePerms((prev) => ({ ...prev, [p]: e.target.checked }))}
+                        />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{labels[p]}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={handleInvite}
+                  disabled={inviteWorking}
+                  className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
+                >
+                  {inviteWorking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Add collaborator
+                </button>
+                {inviteMsg && (
+                  <p className={`text-[10px] font-bold ${inviteMsg.ok ? "text-primary" : "text-destructive"}`}>{inviteMsg.text}</p>
+                )}
+                {sharesLoading ? (
+                  <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                ) : shares.length > 0 ? (
+                  <div className="space-y-1">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Shared with</div>
+                    {shares.map((s) => (
+                      <div key={s.id} className="flex items-center gap-2 border border-border px-3 py-2">
+                        <span className="flex-1 text-[11px] font-mono truncate">{s.email}</span>
+                        <div className="flex gap-1">
+                          {s.canFill && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Fill</span>}
+                          {s.canView && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">View</span>}
+                          {s.canEdit && <span className="border border-border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">Edit</span>}
+                        </div>
+                        <button onClick={() => handleRemoveShare(s.id)} className="text-muted-foreground hover:text-destructive">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                  {transferStep === 0 ? (
+                ) : null}
+
+                {/* Analytics link */}
+                <div className="space-y-2 border-t border-border pt-3">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <BarChart2 className="h-3.5 w-3.5" /> Analytics link (read-only, no login)
+                  </div>
+                  {analyticsLink ? (
                     <>
-                      <input
-                        type="email"
-                        placeholder="New owner email"
-                        value={transferEmail}
-                        onChange={(e) => { setTransferEmail(e.target.value); setTransferMsg(""); }}
-                        className="input-brutal w-full text-sm"
-                      />
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 truncate rounded border border-border bg-muted px-2 py-1.5 text-[10px] font-mono">{analyticsLink}</code>
+                        <button onClick={() => copyToClipboard(analyticsLink, "analytics")} className="btn-brutal shrink-0 text-[10px]">
+                          {copied === "analytics" ? <CheckCircle2 className="h-3.5 w-3.5" /> : "Copy"}
+                        </button>
+                      </div>
                       <button
-                        onClick={() => {
-                          if (!transferEmail.includes("@")) { setTransferMsg("Enter a valid email."); return; }
-                          setTransferStep(1);
-                          setTransferMsg("");
-                        }}
-                        className="w-full border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                        onClick={() => handleRevokeToken("analytics")}
+                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
                       >
-                        Transfer to {transferEmail || "…"}
+                        <Link2Off className="h-3 w-3" /> Revoke
                       </button>
                     </>
                   ) : (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-destructive">
-                        Transfer "{form.name}" to {transferEmail}? You become a viewer and cannot undo this.
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => { setTransferStep(0); setTransferMsg(""); }}
-                          className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={async () => {
-                            const tok = getToken();
-                            if (!tok) { setTransferMsg("Not authenticated."); return; }
-                            try {
-                              const res = await fetch(`${API_BASE}/api/forms/transfer`, {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
-                                body: JSON.stringify({ form_id: form.id, new_owner_email: transferEmail }),
-                              });
-                              if (!res.ok) {
-                                const body = await res.json().catch(() => ({ detail: "Transfer failed" }));
-                                setTransferMsg(body.detail ?? "Transfer failed");
-                                setTransferStep(0);
-                              } else {
-                                setShowShare(false);
-                                nav({ to: "/forms" });
-                              }
-                            } catch {
-                              setTransferMsg("Transfer failed. Check your connection.");
-                              setTransferStep(0);
-                            }
-                          }}
-                          className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground"
-                        >
-                          Confirm transfer
-                        </button>
-                      </div>
-                    </div>
+                    <button
+                      onClick={() => handleGenerateToken("analytics")}
+                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                    >
+                      <Link2 className="h-3.5 w-3.5" /> Generate analytics link
+                    </button>
                   )}
-                  {transferMsg && <p className="text-[10px] text-destructive font-bold">{transferMsg}</p>}
                 </div>
-              )}
+              </div>
+
+              {/* ── Section 3: Transfer ownership ── */}
+              <div className="border-t-2 border-border pt-5 space-y-2">
+                <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">3</span>
+                  Transfer ownership
+                </div>
+                {transferStep === 0 ? (
+                  <>
+                    <input
+                      type="email"
+                      placeholder="New owner email"
+                      value={transferEmail}
+                      onChange={(e) => { setTransferEmail(e.target.value); setTransferMsg(""); }}
+                      className="input-brutal w-full text-sm"
+                    />
+                    <button
+                      onClick={() => {
+                        if (!transferEmail.includes("@")) { setTransferMsg("Enter a valid email."); return; }
+                        setTransferStep(1);
+                        setTransferMsg("");
+                      }}
+                      className="w-full border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                    >
+                      Transfer to {transferEmail || "…"}
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-destructive">
+                      Transfer "{form.name}" to {transferEmail}? You become a viewer and cannot undo this.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setTransferStep(0); setTransferMsg(""); }}
+                        className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const tok = getToken();
+                          if (!tok) { setTransferMsg("Not authenticated."); return; }
+                          try {
+                            const res = await fetch(`${API_BASE}/api/forms/transfer`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+                              body: JSON.stringify({ form_id: form.id, new_owner_email: transferEmail }),
+                            });
+                            if (!res.ok) {
+                              const body = await res.json().catch(() => ({ detail: "Transfer failed" }));
+                              setTransferMsg(body.detail ?? "Transfer failed");
+                              setTransferStep(0);
+                            } else {
+                              setShowShare(false);
+                              nav({ to: "/forms" });
+                            }
+                          } catch {
+                            setTransferMsg("Transfer failed. Check your connection.");
+                            setTransferStep(0);
+                          }
+                        }}
+                        className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground"
+                      >
+                        Confirm transfer
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {transferMsg && <p className="text-[10px] text-destructive font-bold">{transferMsg}</p>}
+              </div>
             </div>
 
             <div className="border-t-2 border-border p-4">

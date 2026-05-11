@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List } from "lucide-react";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
@@ -124,26 +124,38 @@ function FormsList() {
                     >
                       <Edit2 className="h-3 w-3" /> Fill
                     </Link>
-                    <Link
-                      to="/forms/new"
-                      search={{ edit: f.id }}
-                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
-                    >
-                      <Edit2 className="h-3 w-3" /> Edit
-                    </Link>
-                    <button
-                      onClick={() => { store.duplicateForm(f.id); }}
-                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
-                    >
-                      <Copy className="h-3 w-3" /> Duplicate
-                    </button>
-                    <Link
-                      to="/forms/$id"
-                      params={{ id: f.id }}
-                      className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
-                    >
-                      <Share2 className="h-3 w-3" /> Share
-                    </Link>
+                    {f.shared ? (
+                      <Link
+                        to="/forms/$id/responses"
+                        params={{ id: f.id }}
+                        className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+                      >
+                        <List className="h-3 w-3" /> Responses
+                      </Link>
+                    ) : (
+                      <>
+                        <Link
+                          to="/forms/new"
+                          search={{ edit: f.id }}
+                          className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                        >
+                          <Edit2 className="h-3 w-3" /> Edit
+                        </Link>
+                        <button
+                          onClick={() => { store.duplicateForm(f.id); }}
+                          className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                        >
+                          <Copy className="h-3 w-3" /> Duplicate
+                        </button>
+                        <Link
+                          to="/forms/$id"
+                          params={{ id: f.id }}
+                          className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+                        >
+                          <Share2 className="h-3 w-3" /> Share
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </li>
               );
