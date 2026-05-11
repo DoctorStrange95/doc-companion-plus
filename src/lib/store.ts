@@ -190,6 +190,8 @@ export interface FormDef {
   status?: "draft" | "active" | "closed";
   shareToken?: string;
   analyticsToken?: string;
+  isPublic?: boolean;
+  allowedFillerEmails?: string[];
   responseCount?: number;
   requireRespondentInfo?: boolean;
   requireRespondentId?: boolean;
@@ -415,6 +417,8 @@ interface SrvForm {
   shared?: boolean;
   share_token?: string | null;
   analytics_token?: string | null;
+  is_public?: boolean | null;
+  allowed_filler_emails?: string[] | null;
   status?: string | null;
   form_role?: string | null;
   parent_form_id?: string | null;
@@ -456,6 +460,8 @@ const mapForm = (s: SrvForm): FormDef => ({
   shared: !!s.shared,
   shareToken: s.share_token ?? undefined,
   analyticsToken: s.analytics_token ?? undefined,
+  isPublic: s.is_public ?? true,
+  allowedFillerEmails: s.allowed_filler_emails ?? [],
   status: (s.status as FormDef["status"]) ?? "active",
   formRole: (s.form_role as FormRole) ?? "standalone",
   parentFormId: s.parent_form_id ?? undefined,
@@ -683,7 +689,24 @@ async function drain() {
         method: "POST",
         body: JSON.stringify({
           patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, ...rest }) => rest),
-          forms: forms.map(({ ownerId: _o, shared: _s, createdAt: _c, ...rest }) => rest),
+          forms: forms.map(({
+            ownerId: _o, shared: _s, createdAt: _c,
+            shareToken, analyticsToken, isPublic, allowedFillerEmails,
+            formRole, parentFormId, subjectIdentifierFieldId, parentLinkFieldId,
+            responseCount: _rc,
+            requireRespondentInfo: _rri, requireRespondentId: _rrid,
+            ...rest
+          }) => ({
+            ...rest,
+            share_token: shareToken ?? null,
+            analytics_token: analyticsToken ?? null,
+            is_public: isPublic ?? true,
+            allowed_filler_emails: allowedFillerEmails ?? [],
+            form_role: formRole ?? "standalone",
+            parent_form_id: parentFormId ?? null,
+            subject_identifier_field_id: subjectIdentifierFieldId ?? null,
+            parent_link_field_id: parentLinkFieldId ?? null,
+          })),
           submissions: submissions.map(({ ownerId: _o, createdAt: _c, ...rest }) => ({
             id: rest.id,
             patient_id: rest.patientId,

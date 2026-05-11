@@ -79,6 +79,8 @@ class FormDef(Base):
     status = Column(String(16), nullable=False, server_default="active")
     share_token = Column(String(64), nullable=True, unique=True, index=True)
     analytics_token = Column(String(64), nullable=True, unique=True, index=True)
+    is_public = Column(Boolean, nullable=False, server_default="true")
+    allowed_filler_emails = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     form_role = Column(String(16), nullable=False, server_default="standalone")
     parent_form_id = Column(String(64), ForeignKey("forms.id", ondelete="SET NULL"), nullable=True)
     subject_identifier_field_id = Column(String(64), nullable=True)

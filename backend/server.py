@@ -85,6 +85,8 @@ async def ensure_form_extra_columns():
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_analytics_token ON forms(analytics_token) WHERE analytics_token IS NOT NULL"))
         await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_fill BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_view BOOLEAN NOT NULL DEFAULT TRUE"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE"))
+        await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS allowed_filler_emails JSONB NOT NULL DEFAULT '[]'::jsonb"))
 
 
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
@@ -236,6 +238,8 @@ class FormIn(BaseModel):
     parent_form_id: Optional[str] = None
     subject_identifier_field_id: Optional[str] = None
     parent_link_field_id: Optional[str] = None
+    is_public: bool = True
+    allowed_filler_emails: list[str] = []
 
 
 class FormOut(FormIn):
@@ -256,6 +260,8 @@ class PublicFormOut(BaseModel):
     fields: list[dict[str, Any]] = []
     longitudinal: bool = False
     status: str
+    is_public: bool = True
+    allowed_filler_emails: list[str] = []
     require_respondent_info: bool = False
     require_respondent_id: bool = False
 
@@ -1055,6 +1061,8 @@ async def get_public_form(share_token: str, db: AsyncSession = Depends(get_db)):
         fields=fields,
         longitudinal=form.longitudinal,
         status=getattr(form, "status", "active"),
+        is_public=getattr(form, "is_public", True),
+        allowed_filler_emails=getattr(form, "allowed_filler_emails", []) or [],
     )
 
 

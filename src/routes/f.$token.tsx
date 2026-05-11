@@ -24,6 +24,8 @@ interface PublicFormDef {
   fields: FormField[];
   longitudinal: boolean;
   status: string;
+  is_public: boolean;
+  allowed_filler_emails: string[];
   require_respondent_info?: boolean;
   require_respondent_id?: boolean;
 }
@@ -72,6 +74,70 @@ function evalCalc(formula: string, values: Record<string, unknown>, fields: Form
   } catch { return "—"; }
 }
 
+function EmailVerificationGate({
+  form,
+  token,
+  onVerified,
+}: {
+  form: PublicFormDef;
+  token: string;
+  onVerified: (email: string) => void;
+}) {
+  const [emailInput, setEmailInput] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = emailInput.trim();
+    if (!trimmed.includes("@")) { setError("Enter a valid email address."); return; }
+    const allowed = form.allowed_filler_emails.map((a) => a.toLowerCase());
+    if (!allowed.includes(trimmed.toLowerCase())) {
+      setError("Your email is not authorized to fill this form. Contact the form owner.");
+      return;
+    }
+    sessionStorage.setItem(`form_access_${token}`, trimmed);
+    onVerified(trimmed);
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="border-b-4 border-border bg-primary px-4 py-5">
+        <div className="mx-auto max-w-xl">
+          <h1 className="font-display text-3xl uppercase leading-tight">{form.name}</h1>
+          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-foreground/70">
+            {form.category}
+          </p>
+        </div>
+      </div>
+      <div className="mx-auto max-w-xl px-4 pt-10">
+        <div className="brutal p-6 space-y-4">
+          <div className="space-y-1">
+            <div className="font-display text-lg uppercase tracking-widest">Private form</div>
+            <p className="text-sm text-muted-foreground">
+              This form is restricted. Enter your email address to continue.
+            </p>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Email address</label>
+              <input
+                type="email"
+                autoFocus
+                value={emailInput}
+                onChange={(e) => { setEmailInput(e.target.value); setError(""); }}
+                className="input-brutal w-full"
+                placeholder="you@example.com"
+              />
+            </div>
+            {error && <p className="text-xs font-bold uppercase tracking-wider text-destructive">{error}</p>}
+            <button type="submit" className="btn-brutal w-full">Continue →</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublicFiller() {
   const { token } = Route.useParams();
   const { preview } = Route.useSearch();
@@ -90,6 +156,9 @@ function PublicFiller() {
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
+  // null = not yet determined; "" = public (no gate); string = verified email
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/forms/public/${token}`)
@@ -99,13 +168,32 @@ function PublicFiller() {
           const body = await r.json().catch(() => ({ detail: "Form not found" }));
           if (!cancelled) setLoadError(body.detail ?? "Form not found");
         } else {
-          if (!cancelled) setForm(await r.json());
+          const data: PublicFormDef = await r.json();
+          if (!cancelled) setForm(data);
         }
       })
       .catch(() => { if (!cancelled) setLoadError("Could not load form. Check your connection."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [token]);
+
+  // Once form loads, check access
+  useEffect(() => {
+    if (!form) return;
+    if (form.is_public) { setVerifiedEmail(""); return; }
+    const cached = sessionStorage.getItem(`form_access_${token}`);
+    if (cached && form.allowed_filler_emails.some((e) => e.toLowerCase() === cached.toLowerCase())) {
+      setVerifiedEmail(cached);
+      setRespondentEmail(cached);
+    } else {
+      setVerifiedEmail(null); // show gate
+    }
+  }, [form, token]);
+
+  const handleEmailVerified = (email: string) => {
+    setVerifiedEmail(email);
+    setRespondentEmail(email);
+  };
 
   const set = (fieldId: string, val: unknown) =>
     setValues((prev) => ({ ...prev, [fieldId]: val }));
@@ -221,6 +309,11 @@ function PublicFiller() {
   }
 
   if (!form) return null;
+
+  // Private form gate: show email verification if not yet confirmed
+  if (!form.is_public && verifiedEmail === null) {
+    return <EmailVerificationGate form={form} token={token} onVerified={handleEmailVerified} />;
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
