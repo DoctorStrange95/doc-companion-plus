@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { useStore, store } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List } from "lucide-react";
+import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
@@ -89,7 +90,10 @@ function FormsList() {
                     params={{ id: f.id }}
                     className="flex items-start gap-3 p-4 hover:bg-primary/5 transition-colors"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-border bg-primary">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center border-2 border-border"
+                      style={{ background: getFormColor(f.id) }}
+                    >
                       <FileText className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">

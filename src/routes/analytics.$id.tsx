@@ -13,6 +13,7 @@ import {
   type NumericStats, type FrequencyRow,
 } from "@/lib/analytics";
 import { Download, List } from "lucide-react";
+import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/analytics/$id")({ component: FormAnalytics });
 
@@ -29,9 +30,12 @@ function filterByDate(subs: Submission[], range: DateRange): Submission[] {
 
 function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission[]) {
   const dataFields = form.fields.filter((f) => f.type !== "section_header" && f.type !== "page_break");
-  const headers = ["#", "Date", ...dataFields.map((f) => f.variableName ?? f.label)];
+  const headers = ["#", "Date", "Time", "Respondent Email", ...dataFields.map((f) => f.variableName ?? f.label)];
   const rows = subs.map((s, i) => {
-    const date = new Date(s.createdAt).toLocaleDateString("en-GB");
+    const dt = new Date(s.createdAt);
+    const date = dt.toLocaleDateString("en-GB");
+    const time = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    const email = (s.data["__respondent_email"] as string | undefined) ?? "";
     const vals = dataFields.map((f) => {
       const v = s.data[f.id];
       if (v === null || v === undefined) return "";
@@ -39,7 +43,7 @@ function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission
       if (typeof v === "object") return `"${JSON.stringify(v)}"`;
       return `"${String(v).replace(/"/g, '""')}"`;
     });
-    return [String(i + 1), date, ...vals].join(",");
+    return [String(i + 1), date, time, `"${email.replace(/"/g, '""')}"`, ...vals].join(",");
   });
   const csv = [headers.join(","), ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -56,6 +60,7 @@ function FormAnalytics() {
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const formColor = getFormColor(id);
 
   const allSubs = useMemo(
     () => rawSubs.filter((x) => x.formId === id).sort((a, b) => a.createdAt - b.createdAt),
@@ -123,12 +128,12 @@ function FormAnalytics() {
           </div>
         ) : (
           <>
-            <TimelineCard submissions={submissions} />
+            <TimelineCard submissions={submissions} color={formColor} />
             <div className="mt-4 grid gap-4">
               {form.fields
                 .filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "location")
                 .map((field) => (
-                  <FieldBlock key={field.id} field={field} submissions={submissions} isLongitudinal={!!form.longitudinal} />
+                  <FieldBlock key={field.id} field={field} submissions={submissions} isLongitudinal={!!form.longitudinal} color={formColor} />
                 ))}
             </div>
           </>
@@ -138,7 +143,7 @@ function FormAnalytics() {
   );
 }
 
-function TimelineCard({ submissions }: { submissions: Submission[] }) {
+function TimelineCard({ submissions, color }: { submissions: Submission[]; color: string }) {
   const data = useMemo(() => {
     const days: { date: string; n: number }[] = [];
     const now = new Date();
@@ -166,7 +171,7 @@ function TimelineCard({ submissions }: { submissions: Submission[] }) {
             <XAxis dataKey="date" fontSize={9} stroke="var(--foreground)" />
             <YAxis fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
             <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-            <Bar dataKey="n" fill="var(--primary)" stroke="var(--secondary)" strokeWidth={2} name="Responses" />
+            <Bar dataKey="n" fill={color} stroke="var(--border)" strokeWidth={2} name="Responses" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -228,7 +233,7 @@ function FrequencyTable({ rows }: { rows: FrequencyRow[] }) {
   );
 }
 
-function FieldBlock({ field, submissions, isLongitudinal }: { field: FormField; submissions: Submission[]; isLongitudinal: boolean }) {
+function FieldBlock({ field, submissions, isLongitudinal, color }: { field: FormField; submissions: Submission[]; isLongitudinal: boolean; color: string }) {
   const raw = submissions.map((s) => s.data[field.id]);
   const nonEmpty = raw.filter((v) => v !== undefined && v !== null && v !== "");
 
@@ -267,7 +272,7 @@ function FieldBlock({ field, submissions, isLongitudinal }: { field: FormField; 
                 <XAxis dataKey="date" fontSize={9} stroke="var(--foreground)" />
                 <YAxis fontSize={9} stroke="var(--foreground)" />
                 <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Line type="monotone" dataKey="value" stroke="var(--secondary)" strokeWidth={2} dot={{ fill: "var(--primary)", r: 3, stroke: "var(--secondary)", strokeWidth: 2 }} name={field.label} />
+                <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ fill: color, r: 3, stroke: "var(--border)", strokeWidth: 2 }} name={field.label} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -286,7 +291,7 @@ function FieldBlock({ field, submissions, isLongitudinal }: { field: FormField; 
               <XAxis dataKey="bin" fontSize={8} stroke="var(--foreground)" angle={-35} textAnchor="end" height={36} />
               <YAxis fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
               <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-              <Bar dataKey="count" fill="var(--primary)" stroke="var(--secondary)" strokeWidth={2} name="Count" />
+              <Bar dataKey="count" fill={color} stroke="var(--border)" strokeWidth={2} name="Count" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -358,7 +363,7 @@ function FieldBlock({ field, submissions, isLongitudinal }: { field: FormField; 
                 <XAxis type="number" fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
                 <YAxis type="category" dataKey="name" fontSize={9} stroke="var(--foreground)" width={90} />
                 <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Bar dataKey="value" fill="var(--primary)" stroke="var(--secondary)" strokeWidth={2} name="Count" />
+                <Bar dataKey="value" fill={color} stroke="var(--border)" strokeWidth={2} name="Count" />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -736,8 +736,8 @@ async function drain() {
       }
     }
 
-    // Clear queue, refresh from server
-    state = { ...state, queue: [], syncing: false };
+    // Remove only the ops we just sent; preserve any items enqueued during drain
+    state = { ...state, queue: state.queue.filter((op) => !batch.includes(op)), syncing: false };
     persist();
     await pullSnapshot();
   } catch (e) {

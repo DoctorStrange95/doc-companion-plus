@@ -181,8 +181,9 @@ function DataTable({ submissions, fields, onRowClick }: {
         <thead className="bg-[#171e19] text-white" style={{ position: "sticky", top: 0, zIndex: 2 }}>
           <tr>
             <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[36px]">#</th>
-            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[90px]">Date</th>
-            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[120px]">Respondent</th>
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[80px]">Date</th>
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[60px]">Time</th>
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[150px]">Respondent Email</th>
             {dataFields.map((f) => (
               <th key={f.id} className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[90px] max-w-[160px]" title={f.label}>
                 <div className="truncate">{f.variableName ?? (f.label.length > 14 ? f.label.slice(0, 14) + "…" : f.label)}</div>
@@ -200,10 +201,15 @@ function DataTable({ submissions, fields, onRowClick }: {
               onClick={() => onRowClick(sub)}
             >
               <td className="px-3 py-2 border-r border-border text-muted-foreground font-mono text-[10px]">{submissions.length - i}</td>
-              <td className="px-3 py-2 border-r border-border text-[11px]">
-                {new Date(sub.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+              <td className="px-3 py-2 border-r border-border text-[11px] whitespace-nowrap">
+                {new Date(sub.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}
               </td>
-              <td className="px-3 py-2 border-r border-border text-[11px] max-w-[140px] truncate">{getRespondentLabel(sub)}</td>
+              <td className="px-3 py-2 border-r border-border text-[11px] font-mono whitespace-nowrap">
+                {new Date(sub.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+              </td>
+              <td className="px-3 py-2 border-r border-border text-[11px] max-w-[160px] truncate">
+                {(sub.data["__respondent_email"] as string | undefined) || <span className="text-muted-foreground">—</span>}
+              </td>
               {dataFields.map((f) => {
                 const display = formatCellValue(sub.data[f.id], f);
                 return (

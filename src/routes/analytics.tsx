@@ -4,6 +4,7 @@ import { PageHeader, PageShell } from "@/components/PageShell";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from "recharts";
 import { useMemo } from "react";
 import { ArrowRight, ClipboardList } from "lucide-react";
+import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/analytics")({ component: Analytics });
 
@@ -72,7 +73,10 @@ function Analytics() {
                   params={{ id: form.id }}
                   className="brutal flex items-center gap-3 p-4 hover:bg-primary/30"
                 >
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-border bg-primary">
+                  <div
+                    className="flex h-11 w-11 shrink-0 items-center justify-center border-2 border-border"
+                    style={{ background: getFormColor(form.id) }}
+                  >
                     <ClipboardList className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">

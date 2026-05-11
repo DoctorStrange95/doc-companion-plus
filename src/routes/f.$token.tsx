@@ -167,13 +167,18 @@ function PublicFiller() {
         if (cancelled) return;
         if (!r.ok) {
           const body = await r.json().catch(() => ({ detail: "Form not found" }));
-          if (!cancelled) setLoadError(body.detail ?? "Form not found");
+          const msg = body.detail ?? "Form not found";
+          console.error(`[PublicFiller] ${r.status} loading form token=${token}:`, msg);
+          if (!cancelled) setLoadError(msg);
         } else {
           const data: PublicFormDef = await r.json();
           if (!cancelled) setForm(data);
         }
       })
-      .catch(() => { if (!cancelled) setLoadError("Could not load form. Check your connection."); })
+      .catch((err) => {
+        console.error(`[PublicFiller] Network error loading form token=${token}:`, err);
+        if (!cancelled) setLoadError("Could not load form. Check your connection.");
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [token]);
@@ -287,11 +292,21 @@ function PublicFiller() {
   }
 
   if (loadError) {
+    const isDraft = loadError.toLowerCase().includes("not yet published");
+    const isClosed = loadError.toLowerCase().includes("closed");
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="max-w-sm text-center">
-          <h1 className="font-display text-2xl uppercase tracking-widest">{loadError}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">This form may have been closed or the link may be incorrect.</p>
+        <div className="max-w-sm text-center space-y-2">
+          <h1 className="font-display text-2xl uppercase tracking-widest">
+            {isDraft ? "Not Yet Published" : isClosed ? "Form Closed" : "Form Not Found"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isDraft
+              ? "This form is still in draft mode and is not yet accepting responses."
+              : isClosed
+              ? "This form is no longer accepting responses. Existing data has been preserved."
+              : "The link may be incorrect or the form may have been removed."}
+          </p>
         </div>
       </div>
     );
