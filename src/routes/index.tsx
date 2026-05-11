@@ -3,7 +3,7 @@ import { useStore } from "@/lib/store";
 import { PageShell, SectionTitle } from "@/components/PageShell";
 import {
   Users, FilePlus2, ClipboardList, BarChart3, ArrowRight, Stethoscope,
-  Wrench, Activity,
+  Wrench, Activity, TrendingUp,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({ component: Home });
@@ -46,8 +46,8 @@ function Home() {
       <PageShell>
         <SectionTitle kicker="Quick">Actions</SectionTitle>
         <div className="grid grid-cols-2 gap-3">
-          <QuickAction to="/patients/new" icon={Users} label="Register patient" tone="primary" />
-          <QuickAction to="/patients" icon={ClipboardList} label="Find patient" />
+          <QuickAction to="/tools/growth" icon={TrendingUp} label="Growth chart" tone="primary" />
+          <QuickAction to="/tools/growth" icon={Users} label="Tracked patients" />
           <QuickAction to="/forms" icon={FilePlus2} label="Form library" />
           <QuickAction to="/tools" icon={Wrench} label="Clinical tools" />
         </div>
