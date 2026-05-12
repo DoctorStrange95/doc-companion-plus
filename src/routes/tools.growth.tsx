@@ -1098,6 +1098,13 @@ function PatientSharePanel({
     const tok = getToken();
     if (!tok) return;
     setWorking(true);
+    // Step 1: flush all pending visit submissions to DB so the public link shows current data
+    setMsg({ text: "Syncing visit data to server…", ok: true });
+    try {
+      await sync.drain();
+    } catch {
+      // drain logs internally; continue — partial sync is better than nothing
+    }
     setMsg(null);
     const doGenerate = () =>
       fetch(`${API_BASE}/api/patients/${patient.id}/share-token`, {
@@ -1117,6 +1124,8 @@ function PatientSharePanel({
       }
       const { token } = await res.json() as { token: string };
       store.updatePatient(patient.id, { shareToken: token });
+      // Drain again to push the updated patient (with shareToken from server) back
+      void sync.drain();
     } catch {
       setMsg({ text: "Network error — check your connection.", ok: false });
     } finally {
