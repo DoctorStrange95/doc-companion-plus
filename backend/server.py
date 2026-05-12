@@ -87,6 +87,7 @@ async def ensure_form_extra_columns():
         await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_view BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS allowed_filler_emails JSONB NOT NULL DEFAULT '[]'::jsonb"))
+        await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(256)"))
 
 
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
@@ -210,6 +211,7 @@ class PatientIn(BaseModel):
     sex: Literal["Male", "Female", "Other"]
     village: str
     phone: Optional[str] = None
+    guardian_name: Optional[str] = None
     tags: list[str] = []
     status: str = "Active"
 

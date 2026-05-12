@@ -115,13 +115,18 @@ function GrowthTool() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // After adding a new patient, hold it here so we can immediately show Add Visit
+  const [justAdded, setJustAdded] = useState<Patient | null>(null);
 
   const filteredPatients = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const active = patients.filter((p) => p.status === "Active");
     if (!q) return active;
     return active.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.village.toLowerCase().includes(q),
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.village.toLowerCase().includes(q) ||
+        (p.guardianName ?? "").toLowerCase().includes(q),
     );
   }, [patients, searchQuery]);
 
@@ -143,7 +148,7 @@ function GrowthTool() {
         <div className="mb-3 flex gap-2">
           <button
             className="btn-brutal flex shrink-0 items-center gap-1.5 text-xs"
-            onClick={() => { setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); }}
+            onClick={() => { setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); setJustAdded(null); }}
           >
             <Plus className="h-3.5 w-3.5" /> Track new patient
           </button>
@@ -153,7 +158,7 @@ function GrowthTool() {
               type="search"
               placeholder="Search name or village…"
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setShowAddPatient(false); }}
+              onChange={(e) => { setSearchQuery(e.target.value); setShowAddPatient(false); setJustAdded(null); }}
               className="input-brutal w-full pl-8 text-xs"
             />
           </div>
@@ -161,13 +166,38 @@ function GrowthTool() {
 
         {showAddPatient && (
           <AddPatientForm
-            onSave={(p) => { setShowAddPatient(false); setExpandedId(p.id); setSearchQuery(""); }}
+            onSave={(p) => {
+              setShowAddPatient(false);
+              setJustAdded(p);     // immediately show their card with Add Visit open
+              setExpandedId(p.id);
+              setSearchQuery("");
+            }}
             onCancel={() => setShowAddPatient(false)}
           />
         )}
 
+        {/* Just-added patient — shown immediately with Add Visit pre-opened */}
+        {justAdded && !showAddPatient && (
+          <div className="mb-4">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">
+              ✓ Patient added — record their first visit below
+            </div>
+            <ul className="grid gap-2">
+              <PatientAccordion
+                key={justAdded.id}
+                patient={justAdded}
+                visits={getVisits(submissions, justAdded.id)}
+                isExpanded
+                openAddVisit
+                onToggle={() => {}}
+                onVisitSaved={() => setJustAdded(null)}
+              />
+            </ul>
+          </div>
+        )}
+
         {/* Patient list — only when searching */}
-        {showList && !showAddPatient && (
+        {showList && !showAddPatient && !justAdded && (
           filteredPatients.length === 0 ? (
             <div className="brutal-flat mb-4 p-6 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
               No patients match "{searchQuery}"
@@ -188,7 +218,7 @@ function GrowthTool() {
         )}
 
         {/* Idle state — no search yet */}
-        {!showList && !showAddPatient && (
+        {!showList && !showAddPatient && !justAdded && (
           <div className="brutal-flat mb-6 flex flex-col items-center gap-2 py-8 text-center">
             <Search className="h-8 w-8 opacity-20" />
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
@@ -225,14 +255,16 @@ function GrowthTool() {
 // ── PatientAccordion ───────────────────────────────────────────────────────────
 
 function PatientAccordion({
-  patient, visits, isExpanded, onToggle,
+  patient, visits, isExpanded, onToggle, openAddVisit = false, onVisitSaved,
 }: {
   patient: Patient;
   visits: GrowthVisit[];
   isExpanded: boolean;
   onToggle: () => void;
+  openAddVisit?: boolean;
+  onVisitSaved?: () => void;
 }) {
-  const [showAddVisit, setShowAddVisit] = useState(false);
+  const [showAddVisit, setShowAddVisit] = useState(openAddVisit);
   const latest = visits.length > 0 ? visits[visits.length - 1] : null;
   const overallStatus = latest?.isSAM ? "SAM" : latest?.isMAM ? "MAM" : latest ? "Normal" : "No data";
   const statusColor = overallStatus === "SAM" ? "#dc2626" : overallStatus === "MAM" ? "#f59e0b" : overallStatus === "Normal" ? "#16a34a" : "#9ca3af";
@@ -255,6 +287,11 @@ function PatientAccordion({
               {sexLabel} · {computeAgeText(patient.dob)}{patient.village ? ` · ${patient.village}` : ""}
             </span>
           </div>
+          {patient.guardianName && (
+            <div className="text-[9px] text-muted-foreground">
+              s/o · d/o {patient.guardianName}
+            </div>
+          )}
           {latest && (
             <div className="mt-0.5 text-[10px] font-mono text-muted-foreground">
               WAZ: <span style={{ color: zColor(latest.waz) }}>{fmt(latest.waz)}</span>
@@ -313,8 +350,8 @@ function PatientAccordion({
           {showAddVisit && (
             <AddVisitForm
               patient={patient}
-              onSave={() => setShowAddVisit(false)}
-              onCancel={() => setShowAddVisit(false)}
+              onSave={() => { setShowAddVisit(false); onVisitSaved?.(); }}
+              onCancel={() => { setShowAddVisit(false); onVisitSaved?.(); }}
             />
           )}
 
@@ -532,6 +569,7 @@ function AddPatientForm({ onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
+  const [guardianName, setGuardianName] = useState("");
   const [dob, setDob] = useState("");
   const [sex, setSex] = useState<"Male" | "Female">("Male");
   const [village, setVillage] = useState("");
@@ -541,7 +579,14 @@ function AddPatientForm({ onSave, onCancel }: {
   const handleSave = () => {
     if (!name.trim()) { alert("Name is required."); return; }
     if (!dob) { alert("Date of birth is required."); return; }
-    const p = store.addPatient({ name: name.trim(), dob, sex, village, phone: phone || undefined });
+    const p = store.addPatient({
+      name: name.trim(),
+      dob,
+      sex,
+      village,
+      phone: phone || undefined,
+      guardianName: guardianName.trim() || undefined,
+    });
     onSave(p);
   };
 
@@ -550,8 +595,13 @@ function AddPatientForm({ onSave, onCancel }: {
       <div className="font-display text-sm uppercase tracking-widest">Track new patient</div>
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2">
-          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Full name *</label>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Child's full name *</label>
           <input type="text" className="input-brutal w-full" placeholder="e.g. Rohit Kumar" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </div>
+        <div className="col-span-2">
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Son / Daughter of (guardian name)</label>
+          <input type="text" className="input-brutal w-full" placeholder="e.g. Ramesh Kumar" value={guardianName} onChange={(e) => setGuardianName(e.target.value)} />
+          <p className="mt-0.5 text-[10px] text-muted-foreground">Helps distinguish children with the same name</p>
         </div>
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Date of birth *</label>
@@ -580,7 +630,7 @@ function AddPatientForm({ onSave, onCancel }: {
       </div>
       <div className="flex gap-2">
         <button type="button" className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn-brutal flex-1" onClick={handleSave}>Save & track →</button>
+        <button type="button" className="btn-brutal flex-1" onClick={handleSave}>Save & add first visit →</button>
       </div>
     </div>
   );

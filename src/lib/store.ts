@@ -209,6 +209,7 @@ export interface Patient {
   sex: "Male" | "Female" | "Other";
   village: string;
   phone?: string;
+  guardianName?: string;
   tags: string[];
   status: "Active" | "Inactive";
   createdAt: number;
@@ -399,6 +400,7 @@ interface SrvPatient {
   sex: "Male" | "Female" | "Other";
   village: string;
   phone?: string | null;
+  guardian_name?: string | null;
   tags: string[];
   status: string;
   owner_id: string;
@@ -442,6 +444,7 @@ const mapPatient = (s: SrvPatient): Patient => ({
   sex: s.sex,
   village: s.village,
   phone: s.phone ?? undefined,
+  guardianName: s.guardian_name ?? undefined,
   tags: s.tags ?? [],
   status: (s.status as Patient["status"]) ?? "Active",
   createdAt: new Date(s.created_at).getTime(),
@@ -688,7 +691,10 @@ async function drain() {
       await api("/api/sync/push", {
         method: "POST",
         body: JSON.stringify({
-          patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, ...rest }) => rest),
+          patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, guardianName, ...rest }) => ({
+            ...rest,
+            guardian_name: guardianName ?? null,
+          })),
           forms: forms.map(({
             ownerId: _o, shared: _s, createdAt: _c,
             shareToken, analyticsToken, isPublic, allowedFillerEmails,

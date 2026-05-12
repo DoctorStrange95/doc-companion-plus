@@ -14,8 +14,8 @@ const tools = [
   },
   {
     to: "/tools/bmi",
-    title: "BMI / MUAC",
-    desc: "Adult BMI · child WFH · MUAC",
+    title: "BMI",
+    desc: "Adult BMI · Asian & WHO cutoffs",
     icon: Scale,
     tone: "card",
   },

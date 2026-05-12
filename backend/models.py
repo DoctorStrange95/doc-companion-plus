@@ -53,6 +53,7 @@ class Patient(Base):
     sex = Column(String(16), nullable=False)
     village = Column(String(255), nullable=False)
     phone = Column(String(64), nullable=True)
+    guardian_name = Column(String(256), nullable=True)
     tags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     status = Column(String(16), nullable=False, default="Active")
     created_at = Column(DateTime(timezone=True), nullable=False, default=now_utc)
