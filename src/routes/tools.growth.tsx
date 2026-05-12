@@ -82,6 +82,14 @@ function getVisits(submissions: Submission[], patientId: string): GrowthVisit[] 
     .sort((a, b) => new Date(a.visitDate).getTime() - new Date(b.visitDate).getTime());
 }
 
+function ageLabel(months: number): string {
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  if (y === 0) return `${m}m`;
+  if (m === 0) return `${y}y`;
+  return `${y}y ${m}m`;
+}
+
 function fmt(z: number | null): string {
   if (z === null || isNaN(z)) return "—";
   return (z > 0 ? "+" : "") + z.toFixed(2);
@@ -350,7 +358,7 @@ function PatientAccordion({
           {showAddVisit && (
             <AddVisitForm
               patient={patient}
-              onSave={() => { setShowAddVisit(false); onVisitSaved?.(); }}
+              onSave={() => setShowAddVisit(false)}
               onCancel={() => { setShowAddVisit(false); onVisitSaved?.(); }}
             />
           )}
@@ -545,7 +553,7 @@ function VisitTable({ visits }: { visits: GrowthVisit[] }) {
               <td className="px-2 py-1.5">
                 {new Date(v.visitDate + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
               </td>
-              <td className="px-2 py-1.5 text-center text-muted-foreground">{v.ageMonths}m</td>
+              <td className="px-2 py-1.5 text-center text-muted-foreground">{ageLabel(v.ageMonths)}</td>
               <td className="px-2 py-1.5 text-right font-mono">{v.weight}</td>
               <td className={`px-2 py-1.5 text-right font-mono ${v.height < 30 ? "font-bold text-destructive" : ""}`}>
                 {v.height}{v.height < 30 ? " ⚠" : ""}
