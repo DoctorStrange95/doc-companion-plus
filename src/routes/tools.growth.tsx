@@ -1,22 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useStore, store } from "@/lib/store";
 import type { Patient, Submission } from "@/lib/store";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { Search, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend,
+  Tooltip,
 } from "recharts";
 import {
   computeVisitZScores, applyPositionCorrection,
   buildHAZRef, buildWAZRef, zColor,
   type ChartRefPoint,
 } from "@/lib/who-lms";
-import {
-  charts, refTables, interpolated, classify,
-  type ChartKey, type Sex,
-} from "@/lib/who-growth";
 
 export const Route = createFileRoute("/tools/growth")({ component: GrowthTool });
 
@@ -24,7 +20,6 @@ export const Route = createFileRoute("/tools/growth")({ component: GrowthTool })
 
 const GROWTH_FORM_ID = "__growth_visit__";
 const GROWTH_FORM_NAME = "Growth Visit";
-const chartOrder: ChartKey[] = ["wfa", "hfa", "wfh", "bfa", "muac", "hcfa"];
 
 // ── Age helpers ────────────────────────────────────────────────────────────────
 
@@ -121,15 +116,6 @@ function GrowthTool() {
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Quick calculator state — preserved across accordion interactions
-  const [chartKey, setChartKey] = useState<ChartKey>("wfa");
-  const [sex, setSex] = useState<Sex>("boys");
-  const [pointsByChart, setPointsByChart] = useState<Record<ChartKey, { x: number; y: number }[]>>(
-    () => Object.fromEntries(chartOrder.map((k) => [k, []])) as unknown as Record<ChartKey, { x: number; y: number }[]>,
-  );
-  const [xVal, setXVal] = useState(12);
-  const [yVal, setYVal] = useState(9);
-
   const filteredPatients = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const active = patients.filter((p) => p.status === "Active");
@@ -138,6 +124,8 @@ function GrowthTool() {
       (p) => p.name.toLowerCase().includes(q) || p.village.toLowerCase().includes(q),
     );
   }, [patients, searchQuery]);
+
+  const showList = searchQuery.trim().length > 0;
 
   return (
     <>
@@ -149,13 +137,13 @@ function GrowthTool() {
       />
       <PageShell>
 
-        {/* ── SECTION A: Tracked Patients ──────────────────────────── */}
+        {/* ── SECTION A: Patient search ──────────────────────────── */}
         <SectionTitle kicker="A">Tracked Patients</SectionTitle>
 
         <div className="mb-3 flex gap-2">
           <button
             className="btn-brutal flex shrink-0 items-center gap-1.5 text-xs"
-            onClick={() => { setShowAddPatient(true); setExpandedId(null); }}
+            onClick={() => { setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); }}
           >
             <Plus className="h-3.5 w-3.5" /> Track new patient
           </button>
@@ -165,7 +153,7 @@ function GrowthTool() {
               type="search"
               placeholder="Search name or village…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setShowAddPatient(false); }}
               className="input-brutal w-full pl-8 text-xs"
             />
           </div>
@@ -173,48 +161,52 @@ function GrowthTool() {
 
         {showAddPatient && (
           <AddPatientForm
-            onSave={(p) => { setShowAddPatient(false); setExpandedId(p.id); }}
+            onSave={(p) => { setShowAddPatient(false); setExpandedId(p.id); setSearchQuery(""); }}
             onCancel={() => setShowAddPatient(false)}
           />
         )}
 
-        {filteredPatients.length === 0 && !showAddPatient ? (
-          <div className="brutal-flat mb-4 p-6 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            {searchQuery
-              ? `No patients match "${searchQuery}"`
-              : "No patients tracked yet — tap + Track new patient to begin."}
-          </div>
-        ) : (
-          <ul className="mb-6 grid gap-2">
-            {filteredPatients.map((patient) => (
-              <PatientAccordion
-                key={patient.id}
-                patient={patient}
-                visits={getVisits(submissions, patient.id)}
-                isExpanded={expandedId === patient.id}
-                onToggle={() => setExpandedId(expandedId === patient.id ? null : patient.id)}
-              />
-            ))}
-          </ul>
+        {/* Patient list — only when searching */}
+        {showList && !showAddPatient && (
+          filteredPatients.length === 0 ? (
+            <div className="brutal-flat mb-4 p-6 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              No patients match "{searchQuery}"
+            </div>
+          ) : (
+            <ul className="mb-6 grid gap-2">
+              {filteredPatients.map((patient) => (
+                <PatientAccordion
+                  key={patient.id}
+                  patient={patient}
+                  visits={getVisits(submissions, patient.id)}
+                  isExpanded={expandedId === patient.id}
+                  onToggle={() => setExpandedId(expandedId === patient.id ? null : patient.id)}
+                />
+              ))}
+            </ul>
+          )
         )}
 
-        {/* ── SECTION B: Quick Calculator ──────────────────────────── */}
+        {/* Idle state — no search yet */}
+        {!showList && !showAddPatient && (
+          <div className="brutal-flat mb-6 flex flex-col items-center gap-2 py-8 text-center">
+            <Search className="h-8 w-8 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Search a patient by name or village to view their chart
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {patients.filter((p) => p.status === "Active").length} patient
+              {patients.filter((p) => p.status === "Active").length !== 1 ? "s" : ""} tracked
+            </p>
+          </div>
+        )}
+
+        {/* ── SECTION B: Quick Z-Score Calculator ──────────────── */}
         <SectionTitle kicker="B">Quick Z-Score Calculator</SectionTitle>
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
           One-off calculation — results not saved to any patient record.
         </p>
-        <QuickCalculator
-          chartKey={chartKey}
-          sex={sex}
-          xVal={xVal}
-          yVal={yVal}
-          pointsByChart={pointsByChart}
-          onChartKey={(k) => { setChartKey(k); setXVal(initialX(k)); setYVal(initialY(k)); }}
-          onSex={setSex}
-          onXVal={setXVal}
-          onYVal={setYVal}
-          onPointsByChart={setPointsByChart}
-        />
+        <QuickCalculator />
 
       </PageShell>
     </>
@@ -240,7 +232,6 @@ function PatientAccordion({
 
   return (
     <li className="brutal">
-      {/* Collapsed header */}
       <button
         className="flex w-full items-start gap-2 p-3 text-left hover:bg-primary/10 transition-colors"
         onClick={onToggle}
@@ -271,13 +262,12 @@ function PatientAccordion({
         </div>
       </button>
 
-      {/* Expanded body */}
       {isExpanded && (
         <div className="space-y-3 border-t-2 border-border p-3">
 
           {hasSuspectHeight && (
             <div className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-900">
-              ⚠ One or more visits have a height below 30 cm — likely a data entry error (e.g. MUAC value entered in the height field). Please add a corrected visit.
+              ⚠ One or more visits have a height below 30 cm — likely a data entry error. Please add a corrected visit.
             </div>
           )}
 
@@ -352,22 +342,80 @@ function ZScoreCards({ latest }: { latest: GrowthVisitData }) {
 function InlineCharts({ patient, visits }: { patient: Patient; visits: GrowthVisit[] }) {
   const sex = patient.sex === "Male" ? "M" : "F";
   const ages = visits.map((v) => v.ageMonths);
-  const ageMin = Math.max(0, Math.min(...ages) - 2);
-  const ageMax = Math.min(60, Math.max(...ages) + 2);
+  // Wider window so trend lines are clearly visible across multiple visits
+  const ageMin = Math.max(0, Math.min(...ages) - 4);
+  const ageMax = Math.min(60, Math.max(...ages) + 4);
 
   const hazRef = useMemo(() => buildHAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
   const wazRef = useMemo(() => buildWAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
 
+  // Height-for-Age points (exclude suspect values)
   const hazPts = visits
     .filter((v) => v.height >= 30)
     .map((v) => ({ age: v.ageMonths, child: v.height }));
 
+  // Weight-for-Age points
   const wazPts = visits.map((v) => ({ age: v.ageMonths, child: v.weight }));
+
+  // WHZ — show WAZ Z-score trend over time (same age x-axis, Z-score y-axis)
+  const trendPts = visits.map((v) => ({
+    age: v.ageMonths,
+    waz: v.waz,
+    haz: v.haz,
+    whz: v.whz,
+  }));
 
   return (
     <div className="space-y-3">
+      {visits.length > 1 && (
+        <ZScoreTrendChart visits={trendPts} />
+      )}
       <MiniWHOChart title="Height-for-Age" refData={hazRef} childPts={hazPts} unit="cm" />
       <MiniWHOChart title="Weight-for-Age" refData={wazRef} childPts={wazPts} unit="kg" />
+    </div>
+  );
+}
+
+// ── Z-Score trend chart (only when ≥2 visits) ─────────────────────────────────
+
+function ZScoreTrendChart({ visits }: { visits: { age: number; waz: number | null; haz: number | null; whz: number | null }[] }) {
+  const data = visits.map((v) => ({
+    age: v.age,
+    WAZ: v.waz !== null && isFinite(v.waz) ? +v.waz.toFixed(2) : null,
+    HAZ: v.haz !== null && isFinite(v.haz) ? +v.haz.toFixed(2) : null,
+    WHZ: v.whz !== null && isFinite(v.whz) ? +v.whz.toFixed(2) : null,
+  }));
+
+  return (
+    <div className="brutal p-2">
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest">
+        Z-Score Trend (all visits)
+      </div>
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 12 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)"
+              label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
+            <YAxis fontSize={9} stroke="var(--foreground)" />
+            {/* -2 SD reference line */}
+            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }}
+              formatter={(v: number, name: string) => [`${v > 0 ? "+" : ""}${v}`, name]} />
+            {/* Zero line (median) — approximate via ref */}
+            <Line type="monotone" dataKey="WAZ" stroke="#3b82f6" strokeWidth={2}
+              dot={{ r: 4, fill: "#3b82f6" }} connectNulls name="WAZ" />
+            <Line type="monotone" dataKey="HAZ" stroke="#8b5cf6" strokeWidth={2}
+              dot={{ r: 4, fill: "#8b5cf6" }} connectNulls name="HAZ" />
+            <Line type="monotone" dataKey="WHZ" stroke="#f59e0b" strokeWidth={2}
+              dot={{ r: 4, fill: "#f59e0b" }} connectNulls name="WHZ" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-1 flex gap-3 text-[9px] font-bold uppercase tracking-widest">
+        <span style={{ color: "#3b82f6" }}>● WAZ</span>
+        <span style={{ color: "#8b5cf6" }}>● HAZ</span>
+        <span style={{ color: "#f59e0b" }}>● WHZ</span>
+      </div>
     </div>
   );
 }
@@ -407,15 +455,19 @@ function MiniWHOChart({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 12 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)" label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
+            <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)"
+              label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
             <YAxis domain={[yMin, yMax]} fontSize={9} stroke="var(--foreground)" />
-            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }} formatter={(v: number) => `${v} ${unit}`} />
+            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }}
+              formatter={(v: number) => `${v} ${unit}`} />
             <Line type="monotone" dataKey="sd3n" stroke="#dc2626" dot={false} strokeWidth={1} strokeDasharray="3 2" name="-3 SD" />
             <Line type="monotone" dataKey="sd2n" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="3 2" name="-2 SD" />
             <Line type="monotone" dataKey="med" stroke="#16a34a" dot={false} strokeWidth={1.5} name="Median" />
             <Line type="monotone" dataKey="sd2p" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="3 2" name="+2 SD" />
             <Line type="monotone" dataKey="sd3p" stroke="#dc2626" dot={false} strokeWidth={1} strokeDasharray="3 2" name="+3 SD" />
-            <Line type="monotone" dataKey="child" stroke="var(--primary)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--primary)", stroke: "var(--border)", strokeWidth: 1.5 }} connectNulls name={`Child (${unit})`} />
+            <Line type="monotone" dataKey="child" stroke="var(--primary)" strokeWidth={2.5}
+              dot={{ r: 5, fill: "var(--primary)", stroke: "var(--border)", strokeWidth: 2 }}
+              connectNulls name={`Child (${unit})`} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -543,32 +595,20 @@ function AddVisitForm({ patient, onSave, onCancel }: {
 
   const ageAtVisit = useMemo(() => computeAgeInMonthsAt(patient.dob, visitDate), [patient.dob, visitDate]);
 
-  // Auto-suggest lying/standing when age changes
-  useEffect(() => { setIsLying(ageAtVisit < 24); }, [ageAtVisit]);
-
   function validate(): boolean {
     const errs: Record<string, string> = {};
     const w = parseFloat(weight);
     const h = parseFloat(height);
     const m = muac ? parseFloat(muac) : null;
 
-    if (!weight || isNaN(w) || w <= 0) {
-      errs.weight = "Weight is required.";
-    } else if (w < 0.5 || w > 60) {
-      errs.weight = `Weight ${w} kg is outside the valid range (0.5–60 kg). Please check your entry.`;
-    }
+    if (!weight || isNaN(w) || w <= 0) errs.weight = "Weight is required.";
+    else if (w < 0.5 || w > 60) errs.weight = `Weight ${w} kg is outside the valid range (0.5–60 kg).`;
 
-    if (!height || isNaN(h) || h <= 0) {
-      errs.height = "Height / Length is required.";
-    } else if (h < 30 || h > 130) {
-      errs.height = `Height ${h} cm is outside the valid range (30–130 cm for children under 5).`
-        + (h < 30 ? ` Did you enter MUAC (${h} cm) in the height field by mistake?` : "");
-    }
+    if (!height || isNaN(h) || h <= 0) errs.height = "Height / Length is required.";
+    else if (h < 30 || h > 130) errs.height = `Height ${h} cm is outside the valid range (30–130 cm).`
+      + (h < 30 ? ` Did you enter MUAC in the height field?` : "");
 
-    if (muac && m !== null && (m < 7 || m > 30)) {
-      errs.muac = `MUAC ${m} cm is outside the valid range (7–30 cm).`;
-    }
-
+    if (muac && m !== null && (m < 7 || m > 30)) errs.muac = `MUAC ${m} cm is outside range (7–30 cm).`;
     if (visitDate < patient.dob) errs.visitDate = "Visit date cannot be before the patient's date of birth.";
     if (visitDate > today) errs.visitDate = "Visit date cannot be in the future.";
 
@@ -581,7 +621,6 @@ function AddVisitForm({ patient, onSave, onCancel }: {
     const w = parseFloat(weight);
     const h = parseFloat(height);
     const m = muac ? parseFloat(muac) : undefined;
-
     const correctedH = applyPositionCorrection(h, ageAtVisit, isLying);
     const zScores = computeVisitZScores(patient.sex, ageAtVisit, w, correctedH, m, edema);
 
@@ -590,22 +629,11 @@ function AddVisitForm({ patient, onSave, onCancel }: {
       formId: GROWTH_FORM_ID,
       formName: GROWTH_FORM_NAME,
       data: {
-        visitDate,
-        ageMonths: ageAtVisit,
-        weight: w,
-        height: h,
-        isLying,
-        muac: m,
-        edema,
-        waz: zScores.waz,
-        haz: zScores.haz,
-        whz: zScores.whz,
-        isSAM: zScores.isSAM,
-        isMAM: zScores.isMAM,
-        samCriteria: zScores.samCriteria,
+        visitDate, ageMonths: ageAtVisit, weight: w, height: h, isLying, muac: m, edema,
+        waz: zScores.waz, haz: zScores.haz, whz: zScores.whz,
+        isSAM: zScores.isSAM, isMAM: zScores.isMAM, samCriteria: zScores.samCriteria,
       },
     });
-
     onSave();
   }
 
@@ -624,7 +652,6 @@ function AddVisitForm({ patient, onSave, onCancel }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {/* Weight */}
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Weight (kg) *</label>
           <input type="number" step="0.1" min="0.5" max="60"
@@ -634,7 +661,6 @@ function AddVisitForm({ patient, onSave, onCancel }: {
           {errors.weight && <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.weight}</p>}
         </div>
 
-        {/* Height */}
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">
             {ageAtVisit < 24 ? "Length (cm) — lying *" : "Height (cm) — standing *"}
@@ -649,7 +675,6 @@ function AddVisitForm({ patient, onSave, onCancel }: {
             : <p className="mt-0.5 text-[10px] text-muted-foreground">Expected at {ageAtVisit}m: {expectedHeightRange(ageAtVisit)} cm</p>}
         </div>
 
-        {/* MUAC */}
         <div className="col-span-2">
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">MUAC (cm) — optional</label>
           <input type="number" step="0.1" min="7" max="30"
@@ -658,11 +683,10 @@ function AddVisitForm({ patient, onSave, onCancel }: {
             onChange={(e) => setMuac(e.target.value)} />
           {errors.muac
             ? <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.muac}</p>
-            : <p className="mt-0.5 text-[10px] text-muted-foreground">Mid-upper arm circumference (left arm, midpoint). SAM threshold: &lt;11.5 cm.</p>}
+            : <p className="mt-0.5 text-[10px] text-muted-foreground">SAM threshold: &lt;11.5 cm</p>}
         </div>
       </div>
 
-      {/* Position */}
       <div>
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Measurement position</label>
         <div className="flex gap-2">
@@ -678,12 +702,11 @@ function AddVisitForm({ patient, onSave, onCancel }: {
         </div>
         <p className="mt-0.5 text-[10px] text-muted-foreground">
           {ageAtVisit < 24
-            ? "Under 24 months: measure lying. If standing was used, +0.7 cm added before Z-score calculation."
-            : "24+ months: measure standing. If lying was used, −0.7 cm applied before Z-score calculation."}
+            ? "Under 24m: measure lying. If standing was used, +0.7 cm added before Z-score calc."
+            : "24+m: measure standing. If lying was used, −0.7 cm applied before Z-score calc."}
         </p>
       </div>
 
-      {/* Oedema */}
       <div>
         <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Bilateral pitting oedema</label>
         <div className="flex gap-2">
@@ -706,144 +729,144 @@ function AddVisitForm({ patient, onSave, onCancel }: {
   );
 }
 
-// ── Quick Calculator (Section B — existing functionality preserved) ─────────────
+// ── Quick Z-Score Calculator (Section B) ──────────────────────────────────────
 
-function QuickCalculator({
-  chartKey, sex, xVal, yVal, pointsByChart,
-  onChartKey, onSex, onXVal, onYVal, onPointsByChart,
-}: {
-  chartKey: ChartKey; sex: Sex; xVal: number; yVal: number;
-  pointsByChart: Record<ChartKey, { x: number; y: number }[]>;
-  onChartKey: (k: ChartKey) => void;
-  onSex: (s: Sex) => void;
-  onXVal: (v: number) => void;
-  onYVal: (v: number) => void;
-  onPointsByChart: (fn: (p: Record<ChartKey, { x: number; y: number }[]>) => Record<ChartKey, { x: number; y: number }[]>) => void;
-}) {
-  const meta = charts[chartKey];
-  const points = pointsByChart[chartKey];
-  const ref = refTables[chartKey][sex];
+function QuickCalculator() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [sex, setSex] = useState<"Male" | "Female">("Male");
+  const [dob, setDob] = useState("");
+  const [manualAge, setManualAge] = useState("");
+  const [weight, setWeight] = useState("");
+  const [height, setHeight] = useState("");
+  const [muac, setMuac] = useState("");
 
-  const data = useMemo(() => {
-    const map = new Map<number, { x: number; SDneg2: number; median: number; SDpos2: number; child?: number }>();
-    ref.forEach((r) => map.set(r.x, { x: r.x, SDneg2: r.SDneg2, median: r.median, SDpos2: r.SDpos2 }));
-    points.forEach((p) => {
-      const base = map.get(p.x) ?? interpolated(ref, p.x);
-      map.set(p.x, { x: p.x, SDneg2: base.SDneg2, median: base.median, SDpos2: base.SDpos2, child: p.y });
-    });
-    return Array.from(map.values()).sort((a, b) => a.x - b.x);
-  }, [ref, points]);
+  const ageMonths = useMemo<number | null>(() => {
+    if (dob) {
+      const m = computeAgeInMonths(dob);
+      return m >= 0 && m <= 228 ? m : null;
+    }
+    const m = parseInt(manualAge, 10);
+    return !isNaN(m) && m >= 0 && m <= 228 ? m : null;
+  }, [dob, manualAge]);
 
-  const cls = useMemo(() => {
-    const i = interpolated(ref, xVal);
-    return classify(chartKey, i, yVal);
-  }, [ref, xVal, yVal, chartKey]);
-
-  const addPoint = () =>
-    onPointsByChart((prev) => {
-      const arr = (prev[chartKey] ?? []).filter((p) => p.x !== xVal);
-      return { ...prev, [chartKey]: [...arr, { x: xVal, y: yVal }].sort((a, b) => a.x - b.x) };
-    });
-
-  const clearPoints = () => onPointsByChart((prev) => ({ ...prev, [chartKey]: [] }));
-
-  const xInputLabel =
-    chartKey === "bfa" ? "Age (years)" : chartKey === "wfh" ? "Height (cm)" : "Age (months)";
+  const results = useMemo(() => {
+    if (ageMonths === null) return null;
+    const w = parseFloat(weight);
+    const h = parseFloat(height);
+    const m = muac ? parseFloat(muac) : undefined;
+    if (isNaN(w) || w <= 0 || isNaN(h) || h <= 0) return null;
+    try {
+      return computeVisitZScores(sex, ageMonths, w, h, m, false);
+    } catch {
+      return null;
+    }
+  }, [sex, ageMonths, weight, height, muac]);
 
   return (
     <div className="space-y-4">
-      <div className="brutal grid grid-cols-3 overflow-hidden">
-        {chartOrder.map((k, i) => (
-          <button key={k} onClick={() => onChartKey(k)}
-            className={`px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider ${chartKey === k ? "bg-primary" : "bg-card hover:bg-primary/30"} ${i % 3 !== 2 ? "border-r-2 border-border" : ""} ${i < 3 ? "border-b-2 border-border" : ""}`}>
-            {charts[k].shortLabel}
+      {/* Sex */}
+      <div className="brutal grid grid-cols-2 overflow-hidden">
+        {(["Male", "Female"] as const).map((s, i) => (
+          <button key={s} onClick={() => setSex(s)}
+            className={`py-3 text-sm font-bold uppercase tracking-wide ${sex === s ? "bg-primary" : "bg-card hover:bg-primary/30"} ${i === 0 ? "border-r-2 border-border" : ""}`}>
+            {s === "Male" ? "Boys" : "Girls"}
           </button>
         ))}
       </div>
 
-      <div className="brutal grid grid-cols-2">
-        {(["boys", "girls"] as const).map((s, i) => (
-          <button key={s} onClick={() => onSex(s)}
-            className={`px-3 py-3 text-sm font-bold uppercase tracking-wide ${sex === s ? "bg-primary" : "bg-card hover:bg-primary/30"} ${i === 0 ? "border-r-2 border-border" : ""}`}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      <div className="brutal space-y-3 p-4">
-        <SectionTitle kicker="Plot">Add point</SectionTitle>
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-xs font-bold uppercase tracking-wider">{xInputLabel}</span>
-          <input type="number" value={xVal}
-            step={chartKey === "bfa" ? 1 : meta.xUnit === "cm" ? 0.5 : 1}
-            min={meta.xMin} max={meta.xMax}
-            onChange={(e) => onXVal(Number(e.target.value))}
-            className="input-brutal w-32 text-right font-mono" />
-        </label>
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-xs font-bold uppercase tracking-wider">{meta.yLabel}</span>
-          <input type="number" value={yVal} step={meta.yStep} min={0} max={300}
-            onChange={(e) => onYVal(Number(e.target.value))}
-            className="input-brutal w-32 text-right font-mono" />
-        </label>
-        <button onClick={addPoint} className="btn-brutal w-full">Add to chart</button>
-        {points.length > 0 && (
-          <button onClick={clearPoints} className="text-[11px] font-bold uppercase tracking-wider underline">
-            Clear points ({points.length})
-          </button>
+      {/* Age */}
+      <div className="brutal p-3 space-y-2">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Age</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Date of birth</label>
+            <input type="date" max={today} value={dob}
+              onChange={(e) => { setDob(e.target.value); setManualAge(""); }}
+              className="input-brutal w-full text-sm" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Or age in months</label>
+            <input type="number" min="0" max="228" placeholder="e.g. 24"
+              value={manualAge}
+              onChange={(e) => { setManualAge(e.target.value); setDob(""); }}
+              className="input-brutal w-full font-mono" />
+          </div>
+        </div>
+        {ageMonths !== null && (
+          <p className="text-[11px] font-bold text-muted-foreground">
+            Age: {ageMonths} months ({Math.floor(ageMonths / 12)}y {ageMonths % 12}m)
+            {ageMonths < 24 ? " — measure lying" : " — measure standing"}
+          </p>
         )}
       </div>
 
-      <div className="brutal p-3">
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="x" type="number" domain={[meta.xMin, meta.xMax]} stroke="var(--foreground)" fontSize={10}
-                label={{ value: meta.xLabel, position: "insideBottom", offset: -2, fontSize: 10 }} />
-              <YAxis stroke="var(--foreground)" fontSize={10} />
-              <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 12 }} />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
-              <Line type="monotone" dataKey="SDneg2" stroke="var(--destructive)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="−2 SD" />
-              <Line type="monotone" dataKey="median" stroke="var(--secondary)" dot={false} strokeWidth={2} name="Median" />
-              <Line type="monotone" dataKey="SDpos2" stroke="var(--chart-5)" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="+2 SD" />
-              <Line type="monotone" dataKey="child" stroke="var(--primary)" strokeWidth={3}
-                dot={{ r: 4, stroke: "var(--secondary)", strokeWidth: 2, fill: "var(--primary)" }}
-                connectNulls name="Child" />
-            </LineChart>
-          </ResponsiveContainer>
+      {/* Measurements */}
+      <div className="brutal p-3 space-y-3">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Measurements</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Weight (kg)</label>
+            <input type="number" step="0.1" min="0.5" max="60" placeholder="e.g. 10.5"
+              value={weight} onChange={(e) => setWeight(e.target.value)}
+              className="input-brutal w-full font-mono" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">
+              {ageMonths !== null && ageMonths < 24 ? "Length (cm) — lying" : "Height (cm)"}
+            </label>
+            <input type="number" step="0.1" min="30" max="200" placeholder="e.g. 75"
+              value={height} onChange={(e) => setHeight(e.target.value)}
+              className="input-brutal w-full font-mono" />
+          </div>
+          <div className="col-span-2">
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">MUAC (cm) — optional</label>
+            <input type="number" step="0.1" min="7" max="30" placeholder="e.g. 13.5"
+              value={muac} onChange={(e) => setMuac(e.target.value)}
+              className="input-brutal w-48 font-mono" />
+            <p className="mt-0.5 text-[10px] text-muted-foreground">Mid-upper arm circumference · SAM threshold: &lt;11.5 cm</p>
+          </div>
         </div>
       </div>
 
-      <div className={`brutal-lg p-4 ${cls.tone === "success" ? "bg-success" : cls.tone === "warning" ? "bg-primary" : "bg-destructive text-destructive-foreground"}`}>
-        <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">
-          {meta.label} · current input
+      {/* Live results */}
+      {results ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            {([
+              { key: "WAZ", z: results.waz },
+              { key: "HAZ", z: results.haz },
+              { key: "WHZ", z: results.whz },
+            ] as const).map(({ key, z }) => {
+              const color = zColor(z);
+              return (
+                <div key={key} className="border-2 p-2 text-center" style={{ borderColor: color }}>
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{key}</div>
+                  <div className="mt-0.5 font-display text-xl leading-tight" style={{ color }}>{fmt(z)}</div>
+                  <div className="text-[9px] font-bold uppercase" style={{ color }}>{classifyZ(key, z)}</div>
+                </div>
+              );
+            })}
+          </div>
+          {results.isSAM && (
+            <div className="border-2 border-destructive bg-destructive/10 px-3 py-2 text-[11px] font-bold text-destructive">
+              ⚠ SAM — Refer to NRC immediately · {results.samCriteria}
+            </div>
+          )}
+          {!results.isSAM && results.isMAM && (
+            <div className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-900">
+              ⚠ MAM — Monitor closely, nutritional support indicated
+            </div>
+          )}
         </div>
-        <div className="mt-1 font-display text-3xl uppercase leading-none">{cls.label}</div>
-      </div>
+      ) : (
+        <div className="brutal-flat p-5 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Enter age + weight + height above to see Z-scores instantly
+        </div>
+      )}
 
       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-        Reference values approximate WHO standards (0–5 y) and 2007 references (5–19 y). For screening only.
+        Reference: WHO 2006 standards (0–5 y). For screening only — not a clinical diagnosis.
       </p>
     </div>
   );
-}
-
-function initialX(k: ChartKey): number {
-  switch (k) {
-    case "bfa": return 10;
-    case "wfh": return 80;
-    default: return 12;
-  }
-}
-
-function initialY(k: ChartKey): number {
-  switch (k) {
-    case "wfa": return 9;
-    case "hfa": return 75;
-    case "wfh": return 10;
-    case "bfa": return 16;
-    case "muac": return 14;
-    case "hcfa": return 46;
-  }
 }
