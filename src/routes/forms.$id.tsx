@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
-import { useStore, store } from "@/lib/store";
+import { useStore, store, sync } from "@/lib/store";
 import { getToken, API_BASE } from "@/lib/api";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
@@ -65,6 +65,9 @@ function FormDetail() {
   const [inviteWorking, setInviteWorking] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [fillerEmailInput, setFillerEmailInput] = useState("");
+
+  // Fetch latest form definition on mount so all users see owner's updates
+  useEffect(() => { void sync.pull(); }, []);
 
   const formId = form?.id;
 

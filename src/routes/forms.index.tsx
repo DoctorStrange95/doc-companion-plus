@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
-import { useStore, store } from "@/lib/store";
+import { useState, useMemo, useEffect } from "react";
+import { useStore, store, sync } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
@@ -25,6 +25,8 @@ function FormsList() {
   const forms = useStore((s) => s.forms);
   const submissions = useStore((s) => s.submissions);
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => { void sync.pull(); }, []);
 
   const filteredForms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

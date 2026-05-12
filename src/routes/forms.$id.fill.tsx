@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { z } from "zod";
-import { useStore, store, type FormField, evaluateConditions } from "@/lib/store";
+import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { PatientPicker } from "@/components/PatientPicker";
 import { AlertTriangle, MapPin, Loader2, X, Image } from "lucide-react";
@@ -89,6 +89,9 @@ function FillForm() {
   const [error, setError] = useState("");
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+
+  // Always fetch the latest form definition so data collectors see owner's updates
+  useEffect(() => { void sync.pull(); }, []);
 
   const set = (fieldId: string, val: unknown) =>
     setValues((prev) => ({ ...prev, [fieldId]: val }));
