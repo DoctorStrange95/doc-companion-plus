@@ -73,9 +73,9 @@ function FormDetail() {
 
   const formId = form?.id;
 
-  // When the share modal opens: sync to ensure the form is in the DB before any share ops
+  // When the share modal opens: drain the queue so any pending form ops reach the DB
   useEffect(() => {
-    if (showShare) void sync.pull();
+    if (showShare) void sync.drain();
   }, [showShare]);
 
   useEffect(() => {
@@ -100,18 +100,22 @@ function FormDetail() {
     if (!tok) return;
     setTokenWorking(type);
     setTokenMsg(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/forms/${form.id}/share-token`, {
+    const doGenerate = async () =>
+      fetch(`${API_BASE}/api/forms/${form.id}/share-token`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ type }),
       });
+    try {
+      let res = await doGenerate();
+      // 403 = form not yet in DB. Push it now and retry once.
+      if (res.status === 403) {
+        await sync.pushForm(form);
+        res = await doGenerate();
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: "Failed" }));
-        const msg = res.status === 403
-          ? "Form not yet synced — reload the page and try again."
-          : (body.detail ?? "Failed to generate link");
-        setTokenMsg({ text: msg, ok: false });
+        setTokenMsg({ text: body.detail ?? "Failed to generate link", ok: false });
         return;
       }
       const { token } = await res.json() as { token: string };
@@ -129,12 +133,20 @@ function FormDetail() {
     if (!tok) return;
     setTokenWorking(type);
     setTokenMsg(null);
-    try {
-      await fetch(`${API_BASE}/api/forms/${form.id}/share-token?type=${type}`, {
+    const doRevoke = () =>
+      fetch(`${API_BASE}/api/forms/${form.id}/share-token?type=${type}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${tok}` },
       });
-      store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
+    try {
+      let res = await doRevoke();
+      if (res.status === 403) {
+        await sync.pushForm(form);
+        res = await doRevoke();
+      }
+      if (res.ok) {
+        store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
+      }
     } catch {
       setTokenMsg({ text: "Network error — check your connection.", ok: false });
     } finally {
@@ -151,17 +163,24 @@ function FormDetail() {
     if (!tok || !form) return;
     setInviteWorking(true);
     setInviteMsg(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/shares`, {
+    const doInvite = () =>
+      fetch(`${API_BASE}/api/shares`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
         body: JSON.stringify({ resource_type: "form", resource_id: form.id, email: inviteEmail, can_fill: invitePerms.fill, can_view: invitePerms.view, can_edit: invitePerms.edit }),
       });
+    try {
+      let res = await doInvite();
+      // 403 = form not yet in DB — push it now and retry once, silently
+      if (res.status === 403) {
+        await sync.pushForm(form);
+        res = await doInvite();
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: "Failed" }));
         let msg = body.detail ?? "Failed";
         if (res.status === 403) {
-          msg = "This form isn't on the server yet — wait a moment for sync to complete, then try again.";
+          msg = "Could not verify ownership — check your connection and try again.";
         } else if (res.status === 404 && typeof msg === "string" && msg.toLowerCase().includes("no user registered")) {
           msg = `${inviteEmail} hasn't signed up yet. Ask them to create an account first, then share.`;
         }

@@ -750,9 +750,41 @@ async function drain() {
   }
 }
 
+function serializeFormForApi(f: FormDef) {
+  const {
+    ownerId: _o, shared: _s, createdAt: _c,
+    shareToken, analyticsToken, isPublic, allowedFillerEmails,
+    formRole, parentFormId, subjectIdentifierFieldId, parentLinkFieldId,
+    responseCount: _rc,
+    requireRespondentInfo: _rri, requireRespondentId: _rrid,
+    ...rest
+  } = f;
+  return {
+    ...rest,
+    share_token: shareToken ?? null,
+    analytics_token: analyticsToken ?? null,
+    is_public: isPublic ?? true,
+    allowed_filler_emails: allowedFillerEmails ?? [],
+    form_role: formRole ?? "standalone",
+    parent_form_id: parentFormId ?? null,
+    subject_identifier_field_id: subjectIdentifierFieldId ?? null,
+    parent_link_field_id: parentLinkFieldId ?? null,
+  };
+}
+
 export const sync = {
   drain,
   pull: pullSnapshot,
+  /** Force-push a single form directly to the backend, bypassing the queue.
+   *  Use this before share-token ops to ensure the form exists in the DB. */
+  pushForm: async (f: FormDef) => {
+    const token = getToken();
+    if (!token) return;
+    await api("/api/sync/push", {
+      method: "POST",
+      body: JSON.stringify({ patients: [], forms: [serializeFormForApi(f)], submissions: [] }),
+    });
+  },
 };
 
 // ---------- Online listener -----------------------------------------------
