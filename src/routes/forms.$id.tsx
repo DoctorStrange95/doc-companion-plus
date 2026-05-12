@@ -65,11 +65,18 @@ function FormDetail() {
   const [inviteWorking, setInviteWorking] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [fillerEmailInput, setFillerEmailInput] = useState("");
+  const [tokenWorking, setTokenWorking] = useState<"fill" | "analytics" | null>(null);
+  const [tokenMsg, setTokenMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Fetch latest form definition on mount so all users see owner's updates
   useEffect(() => { void sync.pull(); }, []);
 
   const formId = form?.id;
+
+  // When the share modal opens: sync to ensure the form is in the DB before any share ops
+  useEffect(() => {
+    if (showShare) void sync.pull();
+  }, [showShare]);
 
   useEffect(() => {
     if (!showShare || !formId) return;
@@ -87,18 +94,52 @@ function FormDetail() {
     return () => { cancelled = true; };
   }, [showShare, formId]);
 
-  const handleGenerateToken = (type: "fill" | "analytics") => {
+  const handleGenerateToken = async (type: "fill" | "analytics") => {
     if (!form) return;
-    const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
-    const prefix = type === "fill" ? "sh" : "an";
-    const token = `${prefix}_${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
-    store.updateForm(form.id, type === "fill" ? { shareToken: token } : { analyticsToken: token });
+    const tok = getToken();
+    if (!tok) return;
+    setTokenWorking(type);
+    setTokenMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/forms/${form.id}/share-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ type }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Failed" }));
+        const msg = res.status === 403
+          ? "Form not yet synced — reload the page and try again."
+          : (body.detail ?? "Failed to generate link");
+        setTokenMsg({ text: msg, ok: false });
+        return;
+      }
+      const { token } = await res.json() as { token: string };
+      store.updateForm(form.id, type === "fill" ? { shareToken: token } : { analyticsToken: token });
+    } catch {
+      setTokenMsg({ text: "Network error — check your connection.", ok: false });
+    } finally {
+      setTokenWorking(null);
+    }
   };
 
-  const handleRevokeToken = (type: "fill" | "analytics") => {
+  const handleRevokeToken = async (type: "fill" | "analytics") => {
     if (!form) return;
-    store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
+    const tok = getToken();
+    if (!tok) return;
+    setTokenWorking(type);
+    setTokenMsg(null);
+    try {
+      await fetch(`${API_BASE}/api/forms/${form.id}/share-token?type=${type}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
+    } catch {
+      setTokenMsg({ text: "Network error — check your connection.", ok: false });
+    } finally {
+      setTokenWorking(null);
+    }
   };
 
   const handleInvite = async () => {
@@ -118,7 +159,13 @@ function FormDetail() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: "Failed" }));
-        setInviteMsg({ text: body.detail ?? "Failed", ok: false });
+        let msg = body.detail ?? "Failed";
+        if (res.status === 403) {
+          msg = "This form isn't on the server yet — wait a moment for sync to complete, then try again.";
+        } else if (res.status === 404 && typeof msg === "string" && msg.toLowerCase().includes("no user registered")) {
+          msg = `${inviteEmail} hasn't signed up yet. Ask them to create an account first, then share.`;
+        }
+        setInviteMsg({ text: msg, ok: false });
       } else {
         const shareData: { id: string; shared_with_email: string; can_fill: boolean; can_view: boolean; can_edit: boolean } = await res.json();
         const newShare = { id: shareData.id, email: shareData.shared_with_email, canFill: shareData.can_fill, canView: shareData.can_view, canEdit: shareData.can_edit };
@@ -490,20 +537,25 @@ function FormDetail() {
                           <ExternalLink className="h-3 w-3" /> WhatsApp
                         </a>
                         <button
-                          onClick={() => handleRevokeToken("fill")}
-                          className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
+                          disabled={tokenWorking === "fill"}
+                          onClick={() => void handleRevokeToken("fill")}
+                          className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
                         >
-                          <Link2Off className="h-3 w-3" /> Revoke
+                          {tokenWorking === "fill" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
                         </button>
                       </div>
                     </>
                   ) : (
                     <button
-                      onClick={() => handleGenerateToken("fill")}
-                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                      disabled={tokenWorking === "fill"}
+                      onClick={() => void handleGenerateToken("fill")}
+                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
                     >
-                      <Link2 className="h-3.5 w-3.5" /> Generate fill link
+                      {tokenWorking === "fill" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />} Generate fill link
                     </button>
+                  )}
+                  {tokenMsg && (
+                    <p className={`text-[10px] font-bold ${tokenMsg.ok ? "text-primary" : "text-destructive"}`}>{tokenMsg.text}</p>
                   )}
                 </div>
               </div>
@@ -586,18 +638,20 @@ function FormDetail() {
                         </button>
                       </div>
                       <button
-                        onClick={() => handleRevokeToken("analytics")}
-                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10"
+                        disabled={tokenWorking === "analytics"}
+                        onClick={() => void handleRevokeToken("analytics")}
+                        className="flex items-center gap-1.5 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-40"
                       >
-                        <Link2Off className="h-3 w-3" /> Revoke
+                        {tokenWorking === "analytics" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2Off className="h-3 w-3" />} Revoke
                       </button>
                     </>
                   ) : (
                     <button
-                      onClick={() => handleGenerateToken("analytics")}
-                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                      disabled={tokenWorking === "analytics"}
+                      onClick={() => void handleGenerateToken("analytics")}
+                      className="flex w-full items-center justify-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 disabled:opacity-40"
                     >
-                      <Link2 className="h-3.5 w-3.5" /> Generate analytics link
+                      {tokenWorking === "analytics" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />} Generate analytics link
                     </button>
                   )}
                 </div>
