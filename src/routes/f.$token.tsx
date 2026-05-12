@@ -75,29 +75,23 @@ function evalCalc(formula: string, values: Record<string, unknown>, fields: Form
   } catch { return "—"; }
 }
 
-function EmailVerificationGate({
+function EmailConsentStep({
   form,
-  token,
-  onVerified,
+  onContinue,
 }: {
   form: PublicFormDef;
-  token: string;
-  onVerified: (email: string) => void;
+  onContinue: (email: string) => void;
 }) {
   const [emailInput, setEmailInput] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = emailInput.trim();
-    if (!trimmed.includes("@")) { setError("Enter a valid email address."); return; }
-    const allowed = form.allowed_filler_emails.map((a) => a.toLowerCase());
-    if (!allowed.includes(trimmed.toLowerCase())) {
-      setError("Your email is not authorized to fill this form. Contact the form owner.");
+  const proceed = (email: string) => {
+    const trimmed = email.trim();
+    if (trimmed && !trimmed.includes("@")) {
+      setError("Please enter a valid email address, or leave it blank to continue anonymously.");
       return;
     }
-    sessionStorage.setItem(`form_access_${token}`, trimmed);
-    onVerified(trimmed);
+    onContinue(trimmed);
   };
 
   return (
@@ -113,26 +107,42 @@ function EmailVerificationGate({
       <div className="mx-auto max-w-xl px-4 pt-10">
         <div className="brutal p-6 space-y-4">
           <div className="space-y-1">
-            <div className="font-display text-lg uppercase tracking-widest">Private form</div>
+            <div className="font-display text-lg uppercase tracking-widest">Share your email?</div>
             <p className="text-sm text-muted-foreground">
-              This form is restricted. Enter your email address to continue.
+              You can optionally share your email so the form owner can identify your response.
+              This is not required — you can fill the form anonymously.
             </p>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Email address</label>
-              <input
-                type="email"
-                autoFocus
-                value={emailInput}
-                onChange={(e) => { setEmailInput(e.target.value); setError(""); }}
-                className="input-brutal w-full"
-                placeholder="you@example.com"
-              />
-            </div>
-            {error && <p className="text-xs font-bold uppercase tracking-wider text-destructive">{error}</p>}
-            <button type="submit" className="btn-brutal w-full">Continue →</button>
-          </form>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">
+              Email address <span className="font-normal normal-case tracking-normal text-muted-foreground">(optional)</span>
+            </label>
+            <input
+              type="email"
+              autoFocus
+              value={emailInput}
+              onChange={(e) => { setEmailInput(e.target.value); setError(""); }}
+              className="input-brutal w-full"
+              placeholder="you@example.com"
+            />
+          </div>
+          {error && <p className="text-xs font-bold uppercase tracking-wider text-destructive">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onContinue("")}
+              className="flex-1 border-2 border-border bg-card px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider hover:bg-muted"
+            >
+              Fill anonymously
+            </button>
+            <button
+              type="button"
+              onClick={() => proceed(emailInput)}
+              className="btn-brutal flex-1"
+            >
+              Continue →
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -183,22 +193,26 @@ function PublicFiller() {
     return () => { cancelled = true; };
   }, [token]);
 
-  // Once form loads, check access
+  // Once form loads: public forms proceed immediately; private forms show optional email consent.
   useEffect(() => {
     if (!form) return;
-    if (form.is_public) { setVerifiedEmail(""); return; }
-    const cached = sessionStorage.getItem(`form_access_${token}`);
-    if (cached && form.allowed_filler_emails.some((e) => e.toLowerCase() === cached.toLowerCase())) {
-      setVerifiedEmail(cached);
-      setRespondentEmail(cached);
+    if (form.is_public) {
+      setVerifiedEmail("");
     } else {
-      setVerifiedEmail(null); // show gate
+      // Check session cache — if user already consented this session, skip the step
+      const cached = sessionStorage.getItem(`form_consent_${token}`);
+      if (cached !== null) {
+        setVerifiedEmail(cached);
+        if (cached) setRespondentEmail(cached);
+      }
+      // else: leave verifiedEmail as null → show consent step
     }
   }, [form, token]);
 
-  const handleEmailVerified = (email: string) => {
+  const handleEmailConsent = (email: string) => {
+    sessionStorage.setItem(`form_consent_${token}`, email);
     setVerifiedEmail(email);
-    setRespondentEmail(email);
+    if (email) setRespondentEmail(email);
   };
 
   const set = (fieldId: string, val: unknown) =>
@@ -326,9 +340,9 @@ function PublicFiller() {
 
   if (!form) return null;
 
-  // Private form gate: show email verification if not yet confirmed
+  // Private form: show optional email consent step once per session
   if (!form.is_public && verifiedEmail === null) {
-    return <EmailVerificationGate form={form} token={token} onVerified={handleEmailVerified} />;
+    return <EmailConsentStep form={form} onContinue={handleEmailConsent} />;
   }
 
   return (
