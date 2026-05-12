@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useStore, store } from "@/lib/store";
+import { useStore, store, sync } from "@/lib/store";
 import type { Patient, Submission } from "@/lib/store";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
-import { Search, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, Plus, ChevronDown, ChevronRight, Trash2, Pencil, Download, Share2, X } from "lucide-react";
+import { API_BASE, getToken } from "@/lib/api";
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
   Tooltip,
@@ -123,7 +124,6 @@ function GrowthTool() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  // After adding a new patient, hold it here so we can immediately show Add Visit
   const [justAdded, setJustAdded] = useState<Patient | null>(null);
 
   const filteredPatients = useMemo(() => {
@@ -176,7 +176,7 @@ function GrowthTool() {
           <AddPatientForm
             onSave={(p) => {
               setShowAddPatient(false);
-              setJustAdded(p);     // immediately show their card with Add Visit open
+              setJustAdded(p);
               setExpandedId(p.id);
               setSearchQuery("");
             }}
@@ -273,11 +273,87 @@ function PatientAccordion({
   onVisitSaved?: () => void;
 }) {
   const [showAddVisit, setShowAddVisit] = useState(openAddVisit);
+  const [editingVisit, setEditingVisit] = useState<GrowthVisit | null>(null);
+  const [showSharePanel, setShowSharePanel] = useState(false);
+
+  // Live share token from store (updates after generate/revoke without needing prop drilling)
+  const shareToken = useStore((s) => s.patients.find((p) => p.id === patient.id)?.shareToken);
+
   const latest = visits.length > 0 ? visits[visits.length - 1] : null;
   const overallStatus = latest?.isSAM ? "SAM" : latest?.isMAM ? "MAM" : latest ? "Normal" : "No data";
   const statusColor = overallStatus === "SAM" ? "#dc2626" : overallStatus === "MAM" ? "#f59e0b" : overallStatus === "Normal" ? "#16a34a" : "#9ca3af";
   const hasSuspectHeight = visits.some((v) => v.height < 30);
   const sexLabel = patient.sex === "Male" ? "♂" : "♀";
+
+  function handleDownload() {
+    const sortedVisits = [...visits].sort((a, b) => new Date(a.visitDate).getTime() - new Date(b.visitDate).getTime());
+    const rows = sortedVisits.map((v) => {
+      const status = v.isSAM ? "SAM" : v.isMAM ? "MAM" : "Normal";
+      const color = v.isSAM ? "#dc2626" : v.isMAM ? "#f59e0b" : "#16a34a";
+      return `<tr>
+        <td>${new Date(v.visitDate + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td>
+        <td>${ageLabel(v.ageMonths)}</td>
+        <td>${v.weight}</td>
+        <td>${v.height}</td>
+        <td>${v.muac ?? "—"}</td>
+        <td>${fmt(v.waz)}</td>
+        <td>${fmt(v.haz)}</td>
+        <td>${fmt(v.whz)}</td>
+        <td style="color:${color};font-weight:bold">${status}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Growth Chart — ${patient.name}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 820px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 20px; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 4px; }
+    .sub { font-size: 12px; color: #666; margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #1a1a1a; color: #fff; padding: 6px 10px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    td { padding: 5px 10px; border-bottom: 1px solid #eee; }
+    tr:nth-child(even) { background: #f9f9f9; }
+    .footer { margin-top: 16px; font-size: 10px; color: #999; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <h1>${patient.name}</h1>
+  <div class="sub">
+    DOB: ${patient.dob} &nbsp;·&nbsp; ${patient.sex}
+    ${patient.guardianName ? `&nbsp;·&nbsp; s/o · d/o ${patient.guardianName}` : ""}
+    ${patient.village ? `&nbsp;·&nbsp; ${patient.village}` : ""}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th><th>Age</th><th>Wt (kg)</th><th>Ht (cm)</th>
+        <th>MUAC (cm)</th><th>WAZ</th><th>HAZ</th><th>WHZ</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">
+    Reference: WHO 2006 standards (0–5 years) · CommunityMed Pro · Generated ${new Date().toLocaleDateString()}
+  </div>
+  <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) { alert("Please allow pop-ups to print the growth chart."); return; }
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function handleDeleteVisit(id: string) {
+    if (window.confirm("Delete this visit? This cannot be undone.")) {
+      store.deleteSubmission(id);
+    }
+  }
 
   return (
     <li className="brutal">
@@ -321,7 +397,7 @@ function PatientAccordion({
 
           {hasSuspectHeight && (
             <div className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-900">
-              ⚠ One or more visits have a height below 30 cm — likely a data entry error. Please add a corrected visit.
+              ⚠ One or more visits have a height below 30 cm — likely a data entry error. Edit or delete the affected visit.
             </div>
           )}
 
@@ -339,12 +415,28 @@ function PatientAccordion({
 
           {latest && <ZScoreCards latest={latest} />}
 
-          <div className="flex gap-2">
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2">
             <button
               className="btn-brutal flex-1 text-xs"
-              onClick={() => setShowAddVisit((v) => !v)}
+              onClick={() => { setShowAddVisit((v) => !v); setEditingVisit(null); }}
             >
               {showAddVisit ? "Cancel" : "+ Add visit"}
+            </button>
+            {visits.length > 0 && (
+              <button
+                className="flex items-center gap-1.5 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                onClick={handleDownload}
+                title="Print / Save as PDF"
+              >
+                <Download className="h-3.5 w-3.5" /> Print
+              </button>
+            )}
+            <button
+              className={`flex items-center gap-1.5 border-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${showSharePanel ? "border-primary bg-primary/10" : "border-border hover:bg-primary/20"}`}
+              onClick={() => setShowSharePanel((v) => !v)}
+            >
+              <Share2 className="h-3.5 w-3.5" /> Share
             </button>
             <Link
               to="/patients/$id"
@@ -363,8 +455,31 @@ function PatientAccordion({
             />
           )}
 
+          {editingVisit && (
+            <EditVisitModal
+              patient={patient}
+              visit={editingVisit}
+              onSave={() => setEditingVisit(null)}
+              onCancel={() => setEditingVisit(null)}
+            />
+          )}
+
+          {showSharePanel && (
+            <PatientSharePanel
+              patient={patient}
+              shareToken={shareToken}
+              onClose={() => setShowSharePanel(false)}
+            />
+          )}
+
           {visits.length > 0 && <InlineCharts patient={patient} visits={visits} />}
-          {visits.length > 0 && <VisitTable visits={visits} />}
+          {visits.length > 0 && (
+            <VisitTable
+              visits={visits}
+              onEdit={(v) => { setEditingVisit(v); setShowAddVisit(false); }}
+              onDelete={handleDeleteVisit}
+            />
+          )}
         </div>
       )}
     </li>
@@ -396,22 +511,18 @@ function ZScoreCards({ latest }: { latest: GrowthVisitData }) {
 function InlineCharts({ patient, visits }: { patient: Patient; visits: GrowthVisit[] }) {
   const sex = patient.sex === "Male" ? "M" : "F";
   const ages = visits.map((v) => v.ageMonths);
-  // Wider window so trend lines are clearly visible across multiple visits
   const ageMin = Math.max(0, Math.min(...ages) - 4);
   const ageMax = Math.min(60, Math.max(...ages) + 4);
 
   const hazRef = useMemo(() => buildHAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
   const wazRef = useMemo(() => buildWAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
 
-  // Height-for-Age points (exclude suspect values)
   const hazPts = visits
     .filter((v) => v.height >= 30)
     .map((v) => ({ age: v.ageMonths, child: v.height }));
 
-  // Weight-for-Age points
   const wazPts = visits.map((v) => ({ age: v.ageMonths, child: v.weight }));
 
-  // WHZ — show WAZ Z-score trend over time (same age x-axis, Z-score y-axis)
   const trendPts = visits.map((v) => ({
     age: v.ageMonths,
     waz: v.waz,
@@ -452,10 +563,8 @@ function ZScoreTrendChart({ visits }: { visits: { age: number; waz: number | nul
             <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)"
               label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
             <YAxis fontSize={9} stroke="var(--foreground)" />
-            {/* -2 SD reference line */}
             <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }}
               formatter={(v: number, name: string) => [`${v > 0 ? "+" : ""}${v}`, name]} />
-            {/* Zero line (median) — approximate via ref */}
             <Line type="monotone" dataKey="WAZ" stroke="#3b82f6" strokeWidth={2}
               dot={{ r: 4, fill: "#3b82f6" }} connectNulls name="WAZ" />
             <Line type="monotone" dataKey="HAZ" stroke="#8b5cf6" strokeWidth={2}
@@ -531,7 +640,15 @@ function MiniWHOChart({
 
 // ── Visit history table ────────────────────────────────────────────────────────
 
-function VisitTable({ visits }: { visits: GrowthVisit[] }) {
+function VisitTable({
+  visits,
+  onEdit,
+  onDelete,
+}: {
+  visits: GrowthVisit[];
+  onEdit: (v: GrowthVisit) => void;
+  onDelete: (id: string) => void;
+}) {
   return (
     <div className="overflow-x-auto border-2 border-border">
       <table className="min-w-full border-collapse text-[10px]">
@@ -545,6 +662,7 @@ function VisitTable({ visits }: { visits: GrowthVisit[] }) {
             <th className="px-2 py-1.5 text-right font-bold uppercase tracking-wider">WAZ</th>
             <th className="px-2 py-1.5 text-right font-bold uppercase tracking-wider">HAZ</th>
             <th className="px-2 py-1.5 text-right font-bold uppercase tracking-wider">WHZ</th>
+            <th className="px-2 py-1.5 text-center font-bold uppercase tracking-wider">Edit</th>
           </tr>
         </thead>
         <tbody>
@@ -562,6 +680,24 @@ function VisitTable({ visits }: { visits: GrowthVisit[] }) {
               <td className="px-2 py-1.5 text-right font-mono" style={{ color: zColor(v.waz) }}>{fmt(v.waz)}</td>
               <td className="px-2 py-1.5 text-right font-mono" style={{ color: zColor(v.haz) }}>{fmt(v.haz)}</td>
               <td className="px-2 py-1.5 text-right font-mono" style={{ color: zColor(v.whz) }}>{fmt(v.whz)}</td>
+              <td className="px-2 py-1.5">
+                <div className="flex items-center justify-center gap-1">
+                  <button
+                    className="rounded p-1 hover:text-primary"
+                    onClick={() => onEdit(v)}
+                    title="Edit this visit"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  <button
+                    className="rounded p-1 hover:text-destructive"
+                    onClick={() => onDelete(v.id)}
+                    title="Delete this visit"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -792,6 +928,283 @@ function AddVisitForm({ patient, onSave, onCancel }: {
         <button type="button" className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted" onClick={onCancel}>Cancel</button>
         <button type="button" className="btn-brutal flex-1" onClick={handleSave}>Save visit & update chart</button>
       </div>
+    </div>
+  );
+}
+
+// ── Edit Visit Modal ───────────────────────────────────────────────────────────
+
+function EditVisitModal({ patient, visit, onSave, onCancel }: {
+  patient: Patient;
+  visit: GrowthVisit;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [visitDate, setVisitDate] = useState(visit.visitDate);
+  const [weight, setWeight] = useState(String(visit.weight));
+  const [height, setHeight] = useState(String(visit.height));
+  const [muac, setMuac] = useState(visit.muac !== undefined ? String(visit.muac) : "");
+  const [edema, setEdema] = useState(visit.edema);
+  const [isLying, setIsLying] = useState(visit.isLying);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const ageAtVisit = useMemo(() => computeAgeInMonthsAt(patient.dob, visitDate), [patient.dob, visitDate]);
+
+  function validate(): boolean {
+    const errs: Record<string, string> = {};
+    const w = parseFloat(weight);
+    const h = parseFloat(height);
+    const m = muac ? parseFloat(muac) : null;
+
+    if (!weight || isNaN(w) || w <= 0) errs.weight = "Weight is required.";
+    else if (w < 0.5 || w > 60) errs.weight = `Weight ${w} kg is outside valid range (0.5–60 kg).`;
+
+    if (!height || isNaN(h) || h <= 0) errs.height = "Height / Length is required.";
+    else if (h < 30 || h > 130) errs.height = `Height ${h} cm is outside valid range (30–130 cm).`;
+
+    if (muac && m !== null && (m < 7 || m > 30)) errs.muac = `MUAC ${m} cm is outside range (7–30 cm).`;
+    if (visitDate < patient.dob) errs.visitDate = "Visit date cannot be before date of birth.";
+    if (visitDate > today) errs.visitDate = "Visit date cannot be in the future.";
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
+  function handleSave() {
+    if (!validate()) return;
+    const w = parseFloat(weight);
+    const h = parseFloat(height);
+    const m = muac ? parseFloat(muac) : undefined;
+    const correctedH = applyPositionCorrection(h, ageAtVisit, isLying);
+    const zScores = computeVisitZScores(patient.sex, ageAtVisit, w, correctedH, m, edema);
+
+    store.deleteSubmission(visit.id);
+    store.addSubmission({
+      patientId: patient.id,
+      formId: GROWTH_FORM_ID,
+      formName: GROWTH_FORM_NAME,
+      data: {
+        visitDate, ageMonths: ageAtVisit, weight: w, height: h, isLying, muac: m, edema,
+        waz: zScores.waz, haz: zScores.haz, whz: zScores.whz,
+        isSAM: zScores.isSAM, isMAM: zScores.isMAM, samCriteria: zScores.samCriteria,
+      },
+    });
+    onSave();
+  }
+
+  return (
+    <div className="border-2 border-primary p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="font-display text-sm uppercase tracking-widest text-primary">
+          Edit visit — {new Date(visit.visitDate + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+        </div>
+        <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Date of visit</label>
+        <input type="date" className={`input-brutal w-full ${errors.visitDate ? "border-destructive" : ""}`}
+          value={visitDate} min={patient.dob} max={today}
+          onChange={(e) => setVisitDate(e.target.value)} />
+        {errors.visitDate
+          ? <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.visitDate}</p>
+          : <p className="mt-0.5 text-[10px] text-muted-foreground">Age at this visit: {ageAtVisit} months</p>}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Weight (kg) *</label>
+          <input type="number" step="0.1" min="0.5" max="60"
+            className={`input-brutal w-full font-mono ${errors.weight ? "border-destructive" : ""}`}
+            value={weight} onChange={(e) => setWeight(e.target.value)} />
+          {errors.weight && <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.weight}</p>}
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">
+            {ageAtVisit < 24 ? "Length (cm) — lying *" : "Height (cm) — standing *"}
+          </label>
+          <input type="number" step="0.1" min="30" max="130"
+            className={`input-brutal w-full font-mono ${errors.height ? "border-destructive" : ""}`}
+            value={height} onChange={(e) => setHeight(e.target.value)} />
+          {errors.height && <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.height}</p>}
+        </div>
+        <div className="col-span-2">
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">MUAC (cm) — optional</label>
+          <input type="number" step="0.1" min="7" max="30"
+            className={`input-brutal w-48 font-mono ${errors.muac ? "border-destructive" : ""}`}
+            value={muac} onChange={(e) => setMuac(e.target.value)} />
+          {errors.muac && <p className="mt-0.5 text-[10px] font-bold text-destructive">{errors.muac}</p>}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Measurement position</label>
+        <div className="flex gap-2">
+          {(["Lying", "Standing"] as const).map((pos) => {
+            const active = pos === "Lying" ? isLying : !isLying;
+            return (
+              <button key={pos} type="button" onClick={() => setIsLying(pos === "Lying")}
+                className={`flex-1 border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider ${active ? "bg-primary" : "bg-card hover:bg-primary/30"}`}>
+                {pos}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">Bilateral pitting oedema</label>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setEdema(false)}
+            className={`flex-1 border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider ${!edema ? "bg-primary" : "bg-card hover:bg-primary/30"}`}>
+            No
+          </button>
+          <button type="button" onClick={() => setEdema(true)}
+            className={`flex-1 border-2 py-2 text-[10px] font-bold uppercase tracking-wider ${edema ? "border-destructive bg-destructive text-destructive-foreground" : "border-border bg-card hover:bg-destructive/10"}`}>
+            Yes — present
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button type="button" className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn-brutal flex-1" onClick={handleSave}>Save corrected visit</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Patient Share Panel ────────────────────────────────────────────────────────
+
+function PatientSharePanel({
+  patient,
+  shareToken,
+  onClose,
+}: {
+  patient: Patient;
+  shareToken: string | undefined;
+  onClose: () => void;
+}) {
+  const [working, setWorking] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const link = shareToken ? `${window.location.origin}/pg/${shareToken}` : null;
+
+  async function handleGenerate() {
+    const tok = getToken();
+    if (!tok) return;
+    setWorking(true);
+    setMsg(null);
+    const doGenerate = () =>
+      fetch(`${API_BASE}/api/patients/${patient.id}/share-token`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+    try {
+      let res = await doGenerate();
+      if (res.status === 403) {
+        await sync.pushPatient(patient);
+        res = await doGenerate();
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Failed" }));
+        setMsg({ text: body.detail ?? "Failed to generate link", ok: false });
+        return;
+      }
+      const { token } = await res.json() as { token: string };
+      store.updatePatient(patient.id, { shareToken: token });
+    } catch {
+      setMsg({ text: "Network error — check your connection.", ok: false });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!window.confirm("Revoke this link? Anyone with it will lose access to this chart.")) return;
+    const tok = getToken();
+    if (!tok) return;
+    setWorking(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/patients/${patient.id}/share-token`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Failed" }));
+        setMsg({ text: body.detail ?? "Failed to revoke link", ok: false });
+        return;
+      }
+      store.updatePatient(patient.id, { shareToken: undefined });
+      setMsg(null);
+    } catch {
+      setMsg({ text: "Network error — check your connection.", ok: false });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function handleCopy() {
+    if (!link) return;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="border-2 border-border p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] font-bold uppercase tracking-widest">Share Growth Chart</div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Anyone with this link can view the patient's growth chart — read-only, no account needed.
+      </p>
+      {link ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={link}
+              className="input-brutal flex-1 text-[10px] font-mono"
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              className="border-2 border-border px-2 py-1.5 text-[10px] font-bold uppercase hover:bg-primary/20"
+              onClick={handleCopy}
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <button
+            className="w-full border-2 border-destructive px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            onClick={handleRevoke}
+            disabled={working}
+          >
+            {working ? "Revoking…" : "Revoke link"}
+          </button>
+        </div>
+      ) : (
+        <button
+          className="btn-brutal w-full text-xs disabled:opacity-50"
+          onClick={handleGenerate}
+          disabled={working}
+        >
+          {working ? "Generating…" : "Generate public link"}
+        </button>
+      )}
+      {msg && (
+        <p className={`text-[10px] font-bold ${msg.ok ? "text-[#16a34a]" : "text-destructive"}`}>
+          {msg.text}
+        </p>
+      )}
     </div>
   );
 }

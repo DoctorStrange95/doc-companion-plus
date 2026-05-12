@@ -88,6 +88,8 @@ async def ensure_form_extra_columns():
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS allowed_filler_emails JSONB NOT NULL DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(256)"))
+        await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_patients_share_token ON patients(share_token) WHERE share_token IS NOT NULL"))
 
 
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
@@ -222,8 +224,19 @@ class PatientOut(PatientIn):
     created_at: datetime
     updated_at: datetime
     shared: bool = False
+    share_token: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class PublicPatientOut(BaseModel):
+    id: str
+    name: str
+    dob: str
+    sex: str
+    guardian_name: Optional[str] = None
+    village: str
+    visits: list[dict]
 
 
 class FormIn(BaseModel):
@@ -642,6 +655,61 @@ async def create_or_upsert_patient(
     await db.commit()
     await db.refresh(p)
     return PatientOut(**{c.name: getattr(p, c.name) for c in p.__table__.columns}, shared=False)
+
+
+@app.get("/api/patients/public/{token}", response_model=PublicPatientOut)
+async def get_public_patient_growth(token: str, db: AsyncSession = Depends(get_db)):
+    """Return patient growth data by share_token — no authentication required."""
+    res = await db.execute(select(Patient).where(Patient.share_token == token))
+    patient = res.scalar_one_or_none()
+    if not patient:
+        raise HTTPException(404, "Patient not found or this link has been revoked")
+    res2 = await db.execute(
+        select(Submission).where(
+            and_(Submission.patient_id == str(patient.id), Submission.form_id == "__growth_visit__")
+        ).order_by(Submission.created_at)
+    )
+    subs = res2.scalars().all()
+    return PublicPatientOut(
+        id=str(patient.id),
+        name=patient.name,
+        dob=patient.dob,
+        sex=patient.sex,
+        guardian_name=patient.guardian_name,
+        village=patient.village,
+        visits=[s.data for s in subs],
+    )
+
+
+@app.post("/api/patients/{pid}/share-token")
+async def generate_patient_share_token(
+    pid: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Patient).where(Patient.id == pid))
+    patient = res.scalar_one_or_none()
+    if not patient or str(patient.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can generate links")
+    token = f"pg_{secrets.token_urlsafe(16)}"
+    patient.share_token = token
+    await db.commit()
+    return {"token": token}
+
+
+@app.delete("/api/patients/{pid}/share-token")
+async def revoke_patient_share_token(
+    pid: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(select(Patient).where(Patient.id == pid))
+    patient = res.scalar_one_or_none()
+    if not patient or str(patient.owner_id) != str(user.id):
+        raise HTTPException(403, "Only the owner can revoke links")
+    patient.share_token = None
+    await db.commit()
+    return {"ok": True}
 
 
 @app.delete("/api/patients/{pid}")

@@ -26,6 +26,7 @@ import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as FormsNewRouteImport } from './routes/forms.new'
 import { Route as FormsIdRouteImport } from './routes/forms.$id'
 import { Route as FTokenRouteImport } from './routes/f.$token'
+import { Route as PgTokenRouteImport } from './routes/pg.$token'
 import { Route as AnalyticsIdRouteImport } from './routes/analytics.$id'
 import { Route as FormsIdResponsesRouteImport } from './routes/forms.$id.responses'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
@@ -115,6 +116,11 @@ const FTokenRoute = FTokenRouteImport.update({
   path: '/f/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PgTokenRoute = PgTokenRouteImport.update({
+  id: '/pg/$token',
+  path: '/pg/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AnalyticsIdRoute = AnalyticsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
+  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
+  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
+  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
+    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
+    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
+    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
@@ -273,6 +285,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   FTokenRoute: typeof FTokenRoute
+  PgTokenRoute: typeof PgTokenRoute
   FormsIdRoute: typeof FormsIdRouteWithChildren
   FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
@@ -408,6 +421,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pg/$token': {
+      id: '/pg/$token'
+      path: '/pg/$token'
+      fullPath: '/pg/$token'
+      preLoaderRoute: typeof PgTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/analytics/$id': {
       id: '/analytics/$id'
       path: '/$id'
@@ -463,6 +483,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   FTokenRoute: FTokenRoute,
+  PgTokenRoute: PgTokenRoute,
   FormsIdRoute: FormsIdRouteWithChildren,
   FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,

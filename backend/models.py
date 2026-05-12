@@ -54,6 +54,7 @@ class Patient(Base):
     village = Column(String(255), nullable=False)
     phone = Column(String(64), nullable=True)
     guardian_name = Column(String(256), nullable=True)
+    share_token = Column(String(64), nullable=True, unique=True, index=True)
     tags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
     status = Column(String(16), nullable=False, default="Active")
     created_at = Column(DateTime(timezone=True), nullable=False, default=now_utc)

@@ -210,6 +210,7 @@ export interface Patient {
   village: string;
   phone?: string;
   guardianName?: string;
+  shareToken?: string;
   tags: string[];
   status: "Active" | "Inactive";
   createdAt: number;
@@ -401,6 +402,7 @@ interface SrvPatient {
   village: string;
   phone?: string | null;
   guardian_name?: string | null;
+  share_token?: string | null;
   tags: string[];
   status: string;
   owner_id: string;
@@ -445,6 +447,7 @@ const mapPatient = (s: SrvPatient): Patient => ({
   village: s.village,
   phone: s.phone ?? undefined,
   guardianName: s.guardian_name ?? undefined,
+  shareToken: s.share_token ?? undefined,
   tags: s.tags ?? [],
   status: (s.status as Patient["status"]) ?? "Active",
   createdAt: new Date(s.created_at).getTime(),
@@ -596,12 +599,8 @@ export const store = {
   deleteSubmission: (id: string) => {
     state = { ...state, submissions: state.submissions.filter((s) => s.id !== id) };
     persist();
-    const token = getToken();
-    if (token && isOnline()) {
-      fetch(`/api/submissions/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {});
+    if (getToken() && isOnline()) {
+      api(`/api/submissions/${id}`, { method: "DELETE" }).catch(() => {});
     }
   },
 
@@ -691,7 +690,7 @@ async function drain() {
       await api("/api/sync/push", {
         method: "POST",
         body: JSON.stringify({
-          patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, guardianName, ...rest }) => ({
+          patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, guardianName, shareToken: _st, ...rest }) => ({
             ...rest,
             guardian_name: guardianName ?? null,
           })),
@@ -781,14 +780,25 @@ function serializeFormForApi(f: FormDef) {
 export const sync = {
   drain,
   pull: pullSnapshot,
-  /** Force-push a single form directly to the backend, bypassing the queue.
-   *  Use this before share-token ops to ensure the form exists in the DB. */
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;
     await api("/api/sync/push", {
       method: "POST",
       body: JSON.stringify({ patients: [], forms: [serializeFormForApi(f)], submissions: [] }),
+    });
+  },
+  pushPatient: async (p: Patient) => {
+    const token = getToken();
+    if (!token) return;
+    const { ownerId: _o, shared: _s, createdAt: _c, guardianName, shareToken: _st, ...rest } = p;
+    await api("/api/sync/push", {
+      method: "POST",
+      body: JSON.stringify({
+        patients: [{ ...rest, guardian_name: guardianName ?? null }],
+        forms: [],
+        submissions: [],
+      }),
     });
   },
 };
