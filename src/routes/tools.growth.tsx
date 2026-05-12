@@ -208,6 +208,15 @@ function GrowthTool() {
         </p>
         <QuickCalculator />
 
+        {/* ── SECTION C: MUAC Screening ────────────────────────── */}
+        <div className="mt-8">
+          <SectionTitle kicker="C">MUAC Screening</SectionTitle>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Children 6–59 months · WHO 2009 thresholds
+          </p>
+          <MUACScreening />
+        </div>
+
       </PageShell>
     </>
   );
@@ -866,6 +875,74 @@ function QuickCalculator() {
 
       <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
         Reference: WHO 2006 standards (0–5 y). For screening only — not a clinical diagnosis.
+      </p>
+    </div>
+  );
+}
+
+// ── MUAC Screening (Section C) ─────────────────────────────────────────────────
+
+function MUACScreening() {
+  const [muac, setMuac] = useState("");
+
+  const result = useMemo(() => {
+    const v = parseFloat(muac);
+    if (isNaN(v) || v <= 0) return null;
+    if (v < 11.5) return { label: "Severe Acute Malnutrition (SAM)", tone: "destructive" as const, detail: "Refer to NRC/NTC immediately. Confirm with WHZ or oedema check." };
+    if (v < 12.5) return { label: "Moderate Acute Malnutrition (MAM)", tone: "warning" as const, detail: "Nutritional support indicated. Monitor closely and reassess in 2 weeks." };
+    return { label: "Normal", tone: "success" as const, detail: "Continue routine growth monitoring." };
+  }, [muac]);
+
+  const toneClass = result?.tone === "success"
+    ? "border-[#16a34a] bg-[#16a34a]/10 text-[#16a34a]"
+    : result?.tone === "warning"
+    ? "border-amber-400 bg-amber-50 text-amber-900"
+    : "border-destructive bg-destructive/10 text-destructive";
+
+  return (
+    <div className="space-y-4">
+      <div className="brutal p-4 space-y-3">
+        <div>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest">
+            Mid-upper arm circumference (cm)
+          </label>
+          <input
+            type="number"
+            step="0.1"
+            min="5"
+            max="30"
+            placeholder="e.g. 13.5"
+            value={muac}
+            onChange={(e) => setMuac(e.target.value)}
+            className="input-brutal w-full font-mono text-lg"
+          />
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            Measure left arm, midpoint between shoulder and elbow, relaxed
+          </p>
+        </div>
+
+        {/* Colour-coded reference bands */}
+        <div className="grid grid-cols-3 gap-1 text-center text-[9px] font-bold uppercase tracking-widest">
+          <div className="border-2 border-destructive bg-destructive/10 py-1.5 text-destructive">&lt;11.5 cm<br />SAM</div>
+          <div className="border-2 border-amber-400 bg-amber-50 py-1.5 text-amber-900">11.5–12.4<br />MAM</div>
+          <div className="border-2 border-[#16a34a] bg-[#16a34a]/10 py-1.5 text-[#16a34a]">≥12.5 cm<br />Normal</div>
+        </div>
+      </div>
+
+      {result ? (
+        <div className={`brutal border-2 p-4 ${toneClass}`}>
+          <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Result — {muac} cm</div>
+          <div className="mt-1 font-display text-2xl uppercase leading-tight">{result.label}</div>
+          <div className="mt-2 text-[11px] font-semibold uppercase tracking-wider opacity-90">{result.detail}</div>
+        </div>
+      ) : (
+        <div className="brutal-flat p-5 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          Enter MUAC measurement above to classify
+        </div>
+      )}
+
+      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        Thresholds: WHO 2009 · applies to children 6–59 months · not for adults.
       </p>
     </div>
   );

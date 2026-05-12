@@ -18,18 +18,10 @@ function classifyAdult(bmi: number, asian: boolean) {
   return { label: "Obese", tone: "destructive" as const };
 }
 
-function classifyMUAC(muac: number) {
-  if (muac < 11.5) return { label: "Severe Acute Malnutrition (SAM)", tone: "destructive" as const };
-  if (muac < 12.5) return { label: "Moderate Acute Malnutrition (MAM)", tone: "warning" as const };
-  return { label: "Normal", tone: "success" as const };
-}
-
 function BMITool() {
-  const [tab, setTab] = useState<"adult" | "muac">("adult");
   const [weight, setWeight] = useState(60);
   const [height, setHeight] = useState(165);
   const [asian, setAsian] = useState(true);
-  const [muac, setMuac] = useState(13);
 
   const bmi = useMemo(() => {
     const m = height / 100;
@@ -37,74 +29,36 @@ function BMITool() {
   }, [weight, height]);
 
   const ad = classifyAdult(bmi, asian);
-  const mu = classifyMUAC(muac);
 
   return (
     <>
-      <PageHeader title="BMI / MUAC" back="/tools" variant="yellow" />
+      <PageHeader title="BMI" back="/tools" variant="yellow" />
       <PageShell>
-        <div className="brutal mb-4 grid grid-cols-2">
-          {[
-            { k: "adult" as const, l: "Adult BMI" },
-            { k: "muac" as const, l: "MUAC (6–59 mo)" },
-          ].map((t, i) => (
-            <button
-              key={t.k}
-              onClick={() => setTab(t.k)}
-              className={`px-3 py-3 text-sm font-bold uppercase tracking-wide ${
-                tab === t.k ? "bg-primary" : "bg-card hover:bg-primary/30"
-              } ${i === 0 ? "border-r-2 border-border" : ""}`}
-            >
-              {t.l}
-            </button>
-          ))}
+        <div className="brutal space-y-3 p-4">
+          <SectionTitle kicker="Inputs">Body</SectionTitle>
+          <Row label="Weight (kg)">
+            <NumInput value={weight} onChange={setWeight} step={0.1} min={1} />
+          </Row>
+          <Row label="Height (cm)">
+            <NumInput value={height} onChange={setHeight} step={0.5} min={30} />
+          </Row>
+          <label className="flex items-center justify-between gap-3 pt-2">
+            <span className="text-xs font-bold uppercase tracking-wider">Asian cutoffs</span>
+            <input
+              type="checkbox"
+              checked={asian}
+              onChange={(e) => setAsian(e.target.checked)}
+              className="h-5 w-5 border-2 border-border accent-yellow-300"
+            />
+          </label>
         </div>
-
-        {tab === "adult" ? (
-          <>
-            <div className="brutal space-y-3 p-4">
-              <SectionTitle kicker="Inputs">Body</SectionTitle>
-              <Row label="Weight (kg)">
-                <NumInput value={weight} onChange={setWeight} step={0.1} min={1} />
-              </Row>
-              <Row label="Height (cm)">
-                <NumInput value={height} onChange={setHeight} step={0.5} min={30} />
-              </Row>
-              <label className="flex items-center justify-between gap-3 pt-2">
-                <span className="text-xs font-bold uppercase tracking-wider">Asian cutoffs</span>
-                <input
-                  type="checkbox"
-                  checked={asian}
-                  onChange={(e) => setAsian(e.target.checked)}
-                  className="h-5 w-5 border-2 border-border accent-yellow-300"
-                />
-              </label>
-            </div>
-            <ResultCard
-              big={bmi.toFixed(1)}
-              caption="kg/m²"
-              label={ad.label}
-              tone={ad.tone}
-              note={asian ? "Asian-Pacific cutoffs (WHO 2004)" : "WHO international cutoffs"}
-            />
-          </>
-        ) : (
-          <>
-            <div className="brutal space-y-3 p-4">
-              <SectionTitle kicker="Inputs">MUAC</SectionTitle>
-              <Row label="Mid-upper arm circumference (cm)">
-                <NumInput value={muac} onChange={setMuac} step={0.1} min={5} max={30} />
-              </Row>
-            </div>
-            <ResultCard
-              big={muac.toFixed(1)}
-              caption="cm"
-              label={mu.label}
-              tone={mu.tone}
-              note="WHO 2009: <11.5 SAM · 11.5–12.4 MAM · ≥12.5 normal"
-            />
-          </>
-        )}
+        <ResultCard
+          big={bmi.toFixed(1)}
+          caption="kg/m²"
+          label={ad.label}
+          tone={ad.tone}
+          note={asian ? "Asian-Pacific cutoffs (WHO 2004)" : "WHO international cutoffs"}
+        />
       </PageShell>
     </>
   );
@@ -123,7 +77,7 @@ function ResultCard({
       <div className="text-[10px] font-bold uppercase tracking-widest opacity-90">Result</div>
       <div className="mt-1 flex items-baseline gap-2">
         <span className="font-display text-7xl uppercase leading-none">{big}</span>
-        <span className="text-sm font-bold uppercase tracking-widest">{caption}</span>
+        <span className="text-sm font-bold uppercase tracking-wider">{caption}</span>
       </div>
       <div className="mt-3 font-display text-2xl uppercase leading-none">{label}</div>
       <div className="mt-2 text-[11px] font-semibold uppercase tracking-wider opacity-90">{note}</div>
