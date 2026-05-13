@@ -648,42 +648,44 @@ async function pullSnapshot() {
     const serverForms = data.forms.map(mapForm);
     const serverSubs = data.submissions.map(mapSubmission);
 
-    // Collect IDs that have pending queue entries — these must NOT be overwritten
-    // by a stale server response that hasn't seen our push yet.
-    const pendingFormIds = new Set(
-      state.queue
-        .filter((op): op is { kind: "form"; payload: FormDef } => op.kind === "form")
-        .map((op) => op.payload.id),
-    );
-    const pendingPatientIds = new Set(
-      state.queue
-        .filter((op): op is { kind: "patient"; payload: Patient } => op.kind === "patient")
-        .map((op) => op.payload.id),
-    );
-
-    // Merge: server is source of truth for visible records, but keep local-only
-    // (queued, not-yet-synced) rows by union with current cache.
-    const sIds = new Set(serverPatients.map((p) => p.id));
-    // Exclude pending IDs to avoid double-counting: pending forms appear in pendingLocalForms only
-    const localOnlyPatients = state.patients.filter((p) => !sIds.has(p.id) && !p.ownerId && !pendingPatientIds.has(p.id));
-    const pendingLocalPatients = state.patients.filter((p) => pendingPatientIds.has(p.id));
-    const safeServerPatients = serverPatients.filter((p) => !pendingPatientIds.has(p.id));
+    // Build canonical Maps of pending items directly from the queue payload.
+    // Using the queue as the source (not state.forms/patients) guarantees exactly
+    // one entry per ID and eliminates any duplicates that accumulated in local state.
+    const pendingFormMap = new Map<string, FormDef>();
+    const pendingPatientMap = new Map<string, Patient>();
+    for (const op of state.queue) {
+      if (op.kind === "form") pendingFormMap.set(op.payload.id, op.payload);
+      if (op.kind === "patient") pendingPatientMap.set(op.payload.id, op.payload);
+    }
 
     const fIds = new Set(serverForms.map((f) => f.id));
-    // Exclude pending IDs to avoid double-counting: pending forms appear in pendingLocalForms only
-    const localOnlyForms = state.forms.filter((f) => !fIds.has(f.id) && !f.ownerId && !pendingFormIds.has(f.id));
-    const pendingLocalForms = state.forms.filter((f) => pendingFormIds.has(f.id));
-    const safeServerForms = serverForms.filter((f) => !pendingFormIds.has(f.id));
-
+    const sIds = new Set(serverPatients.map((p) => p.id));
     const subIds = new Set(serverSubs.map((s) => s.id));
+
+    // Local-only: not on server, no ownerId, not in pending queue.
+    // Use a Map to deduplicate by ID in case local state has stale duplicates.
+    const localOnlyFormMap = new Map(
+      state.forms
+        .filter((f) => !fIds.has(f.id) && !f.ownerId && !pendingFormMap.has(f.id))
+        .map((f) => [f.id, f]),
+    );
+    const localOnlyPatientMap = new Map(
+      state.patients
+        .filter((p) => !sIds.has(p.id) && !p.ownerId && !pendingPatientMap.has(p.id))
+        .map((p) => [p.id, p]),
+    );
     const localOnlySubs = state.submissions.filter(
       (s) => !subIds.has(s.id) && !s.ownerId,
     );
 
+    // Server data for items that have no pending local update
+    const safeServerForms = serverForms.filter((f) => !pendingFormMap.has(f.id));
+    const safeServerPatients = serverPatients.filter((p) => !pendingPatientMap.has(p.id));
+
     state = {
       ...state,
-      patients: [...localOnlyPatients, ...safeServerPatients, ...pendingLocalPatients],
-      forms: [...localOnlyForms, ...safeServerForms, ...pendingLocalForms],
+      patients: [...localOnlyPatientMap.values(), ...safeServerPatients, ...pendingPatientMap.values()],
+      forms: [...localOnlyFormMap.values(), ...safeServerForms, ...pendingFormMap.values()],
       submissions: [...localOnlySubs, ...serverSubs],
       lastSync: Date.now(),
     };
