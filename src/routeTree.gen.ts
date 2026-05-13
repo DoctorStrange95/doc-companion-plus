@@ -21,12 +21,12 @@ import { Route as ToolsNutritionRouteImport } from './routes/tools.nutrition'
 import { Route as ToolsImnciRouteImport } from './routes/tools.imnci'
 import { Route as ToolsGrowthRouteImport } from './routes/tools.growth'
 import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
+import { Route as PgTokenRouteImport } from './routes/pg.$token'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
 import { Route as FormsNewRouteImport } from './routes/forms.new'
 import { Route as FormsIdRouteImport } from './routes/forms.$id'
 import { Route as FTokenRouteImport } from './routes/f.$token'
-import { Route as PgTokenRouteImport } from './routes/pg.$token'
 import { Route as AnalyticsIdRouteImport } from './routes/analytics.$id'
 import { Route as FormsIdResponsesRouteImport } from './routes/forms.$id.responses'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
@@ -91,6 +91,11 @@ const ToolsBmiRoute = ToolsBmiRouteImport.update({
   path: '/tools/bmi',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PgTokenRoute = PgTokenRouteImport.update({
+  id: '/pg/$token',
+  path: '/pg/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PatientsNewRoute = PatientsNewRouteImport.update({
   id: '/patients/new',
   path: '/patients/new',
@@ -116,11 +121,6 @@ const FTokenRoute = FTokenRouteImport.update({
   path: '/f/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PgTokenRoute = PgTokenRouteImport.update({
-  id: '/pg/$token',
-  path: '/pg/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AnalyticsIdRoute = AnalyticsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -144,11 +144,11 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
-  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
@@ -167,11 +167,11 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
-  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
@@ -191,11 +191,11 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
-  '/pg/$token': typeof PgTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
   '/forms/new': typeof FormsNewRoute
   '/patients/$id': typeof PatientsIdRoute
   '/patients/new': typeof PatientsNewRoute
+  '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
@@ -216,11 +216,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
-    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/pg/$token'
     | '/tools/bmi'
     | '/tools/growth'
     | '/tools/imnci'
@@ -239,11 +239,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
-    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/pg/$token'
     | '/tools/bmi'
     | '/tools/growth'
     | '/tools/imnci'
@@ -262,11 +262,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/analytics/$id'
     | '/f/$token'
-    | '/pg/$token'
     | '/forms/$id'
     | '/forms/new'
     | '/patients/$id'
     | '/patients/new'
+    | '/pg/$token'
     | '/tools/bmi'
     | '/tools/growth'
     | '/tools/imnci'
@@ -285,11 +285,11 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   FTokenRoute: typeof FTokenRoute
-  PgTokenRoute: typeof PgTokenRoute
   FormsIdRoute: typeof FormsIdRouteWithChildren
   FormsNewRoute: typeof FormsNewRoute
   PatientsIdRoute: typeof PatientsIdRoute
   PatientsNewRoute: typeof PatientsNewRoute
+  PgTokenRoute: typeof PgTokenRoute
   ToolsBmiRoute: typeof ToolsBmiRoute
   ToolsGrowthRoute: typeof ToolsGrowthRoute
   ToolsImnciRoute: typeof ToolsImnciRoute
@@ -386,6 +386,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsBmiRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pg/$token': {
+      id: '/pg/$token'
+      path: '/pg/$token'
+      fullPath: '/pg/$token'
+      preLoaderRoute: typeof PgTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/patients/new': {
       id: '/patients/new'
       path: '/patients/new'
@@ -419,13 +426,6 @@ declare module '@tanstack/react-router' {
       path: '/f/$token'
       fullPath: '/f/$token'
       preLoaderRoute: typeof FTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pg/$token': {
-      id: '/pg/$token'
-      path: '/pg/$token'
-      fullPath: '/pg/$token'
-      preLoaderRoute: typeof PgTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/analytics/$id': {
@@ -483,11 +483,11 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   FTokenRoute: FTokenRoute,
-  PgTokenRoute: PgTokenRoute,
   FormsIdRoute: FormsIdRouteWithChildren,
   FormsNewRoute: FormsNewRoute,
   PatientsIdRoute: PatientsIdRoute,
   PatientsNewRoute: PatientsNewRoute,
+  PgTokenRoute: PgTokenRoute,
   ToolsBmiRoute: ToolsBmiRoute,
   ToolsGrowthRoute: ToolsGrowthRoute,
   ToolsImnciRoute: ToolsImnciRoute,
@@ -500,3 +500,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

@@ -38,3 +38,7 @@ backend/.env
 *.sln
 *.sw?
 .vercel
+
+# Python compiled
+__pycache__/
+*.pyc
