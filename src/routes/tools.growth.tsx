@@ -8,7 +8,7 @@ import { Search, Plus, ChevronDown, ChevronRight, Trash2, Pencil, Download, Shar
 import { API_BASE, getToken } from "@/lib/api";
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid,
-  Tooltip,
+  Tooltip, ReferenceArea, ReferenceLine,
 } from "recharts";
 import {
   computeVisitZScores, applyPositionCorrection,
@@ -511,133 +511,180 @@ function ZScoreCards({ latest }: { latest: GrowthVisitData }) {
   );
 }
 
-// ── Inline WHO Charts ──────────────────────────────────────────────────────────
+// ── AnthroPlus-style WHO Charts ────────────────────────────────────────────────
+
+// SD line colors matching WHO AnthroPlus standard
+const SD_COLORS = {
+  sd3n: "#000000",   // −3 SD  black
+  sd2n: "#cc0000",   // −2 SD  dark red
+  sd1n: "#ff6600",   // −1 SD  orange
+  med:  "#007700",   // 0 SD   dark green
+  sd1p: "#ff6600",   // +1 SD  orange
+  sd2p: "#ff8800",   // +2 SD  orange-red
+  sd3p: "#cc0000",   // +3 SD  dark red
+};
 
 function InlineCharts({ patient, visits }: { patient: Patient; visits: GrowthVisit[] }) {
   const sex = patient.sex === "Male" ? "M" : "F";
+  const isMale = sex === "M";
+  // child data color: blue for boys, pink for girls (WHO standard)
+  const childColor = isMale ? "#1d4ed8" : "#db2777";
+
   const ages = visits.map((v) => v.ageMonths);
-  const ageMin = Math.max(0, Math.min(...ages) - 4);
-  const ageMax = Math.min(60, Math.max(...ages) + 4);
+  const ageMin = Math.max(0, Math.min(...ages) - 2);
+  const ageMax = Math.min(60, Math.max(...ages) + 2);
 
   const hazRef = useMemo(() => buildHAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
   const wazRef = useMemo(() => buildWAZRef(sex, ageMin, ageMax), [sex, ageMin, ageMax]);
 
-  const hazPts = visits
-    .filter((v) => v.height >= 30)
-    .map((v) => ({ age: v.ageMonths, child: v.height }));
-
+  const hazPts = visits.filter((v) => v.height >= 30).map((v) => ({ age: v.ageMonths, child: v.height }));
   const wazPts = visits.map((v) => ({ age: v.ageMonths, child: v.weight }));
 
-  const trendPts = visits.map((v) => ({
-    age: v.ageMonths,
-    waz: v.waz,
-    haz: v.haz,
-    whz: v.whz,
-  }));
-
   return (
-    <div className="space-y-3">
-      {visits.length > 1 && (
-        <ZScoreTrendChart visits={trendPts} />
-      )}
-      <MiniWHOChart title="Height-for-Age" refData={hazRef} childPts={hazPts} unit="cm" />
-      <MiniWHOChart title="Weight-for-Age" refData={wazRef} childPts={wazPts} unit="kg" />
+    <div className="space-y-4">
+      <WHOChart
+        title={`Height-for-Age ${isMale ? "BOYS" : "GIRLS"}`}
+        subtitle="WHO 2006 · 0–60 months (z-scores)"
+        refData={hazRef}
+        childPts={hazPts}
+        unit="cm"
+        yLabel="Height (cm)"
+        childColor={childColor}
+        zones={[
+          { y1Key: "sd3p", y2Key: "sd2p", fill: "#fee2e2", label: "Tall" },
+          { y1Key: "sd2n", y2Key: "sd2p", fill: "#dcfce7", label: "Normal" },
+          { y1Key: "sd3n", y2Key: "sd2n", fill: "#fef3c7", label: "Stunted" },
+        ]}
+      />
+      <WHOChart
+        title={`Weight-for-Age ${isMale ? "BOYS" : "GIRLS"}`}
+        subtitle="WHO 2006 · 0–60 months (z-scores)"
+        refData={wazRef}
+        childPts={wazPts}
+        unit="kg"
+        yLabel="Weight (kg)"
+        childColor={childColor}
+        zones={[
+          { y1Key: "sd2p", y2Key: "sd3p", fill: "#fee2e2", label: "Overweight" },
+          { y1Key: "sd2n", y2Key: "sd2p", fill: "#dcfce7", label: "Normal" },
+          { y1Key: "sd3n", y2Key: "sd2n", fill: "#fef3c7", label: "Underweight" },
+        ]}
+      />
     </div>
   );
 }
 
-// ── Z-Score trend chart (only when ≥2 visits) ─────────────────────────────────
+interface ZoneSpec { y1Key: keyof ChartRefPoint; y2Key: keyof ChartRefPoint; fill: string; label: string; }
 
-function ZScoreTrendChart({ visits }: { visits: { age: number; waz: number | null; haz: number | null; whz: number | null }[] }) {
-  const data = visits.map((v) => ({
-    age: v.age,
-    WAZ: v.waz !== null && isFinite(v.waz) ? +v.waz.toFixed(2) : null,
-    HAZ: v.haz !== null && isFinite(v.haz) ? +v.haz.toFixed(2) : null,
-    WHZ: v.whz !== null && isFinite(v.whz) ? +v.whz.toFixed(2) : null,
-  }));
-
-  return (
-    <div className="brutal p-2">
-      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest">
-        Z-Score Trend (all visits)
-      </div>
-      <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)"
-              label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
-            <YAxis fontSize={9} stroke="var(--foreground)" />
-            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }}
-              formatter={(v: number, name: string) => [`${v > 0 ? "+" : ""}${v}`, name]} />
-            <Line type="monotone" dataKey="WAZ" stroke="#3b82f6" strokeWidth={2}
-              dot={{ r: 4, fill: "#3b82f6" }} connectNulls name="WAZ" />
-            <Line type="monotone" dataKey="HAZ" stroke="#8b5cf6" strokeWidth={2}
-              dot={{ r: 4, fill: "#8b5cf6" }} connectNulls name="HAZ" />
-            <Line type="monotone" dataKey="WHZ" stroke="#f59e0b" strokeWidth={2}
-              dot={{ r: 4, fill: "#f59e0b" }} connectNulls name="WHZ" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="mt-1 flex gap-3 text-[9px] font-bold uppercase tracking-widest">
-        <span style={{ color: "#3b82f6" }}>● WAZ</span>
-        <span style={{ color: "#8b5cf6" }}>● HAZ</span>
-        <span style={{ color: "#f59e0b" }}>● WHZ</span>
-      </div>
-    </div>
-  );
-}
-
-function MiniWHOChart({
-  title, refData, childPts, unit,
+function WHOChart({
+  title, subtitle, refData, childPts, unit, yLabel, childColor, zones,
 }: {
-  title: string;
+  title: string; subtitle: string;
   refData: ChartRefPoint[];
   childPts: { age: number; child: number }[];
-  unit: string;
+  unit: string; yLabel: string; childColor: string;
+  zones: ZoneSpec[];
 }) {
   const chartData = useMemo(() => {
-    const byAge = new Map<number, { age: number; sd3n: number; sd2n: number; med: number; sd2p: number; sd3p: number; child?: number }>();
-    refData.forEach((r) => byAge.set(r.age, { age: r.age, sd3n: r.sd3n, sd2n: r.sd2n, med: r.med, sd2p: r.sd2p, sd3p: r.sd3p }));
+    const byAge = new Map<number, Record<string, number>>();
+    refData.forEach((r) => byAge.set(r.age, {
+      age: r.age, sd3n: r.sd3n, sd2n: r.sd2n, sd1n: r.sd1n,
+      med: r.med, sd1p: r.sd1p, sd2p: r.sd2p, sd3p: r.sd3p,
+    }));
     childPts.forEach((p) => {
-      const base = byAge.get(p.age);
-      if (base) byAge.set(p.age, { ...base, child: p.child });
-      else byAge.set(p.age, { age: p.age, sd3n: 0, sd2n: 0, med: 0, sd2p: 0, sd3p: 0, child: p.child });
+      const base = byAge.get(p.age) ?? { age: p.age, sd3n: 0, sd2n: 0, sd1n: 0, med: 0, sd1p: 0, sd2p: 0, sd3p: 0 };
+      byAge.set(p.age, { ...base, child: p.child });
     });
     return Array.from(byAge.values()).sort((a, b) => a.age - b.age);
   }, [refData, childPts]);
 
   if (chartData.length === 0) return null;
 
-  const finite = chartData
-    .flatMap((d) => [d.sd3n, d.sd3p, d.child ?? null])
+  const finite = chartData.flatMap((d) => [d.sd3n, d.sd3p, d.child ?? null])
     .filter((v): v is number => v !== null && isFinite(v) && v > 0);
   if (finite.length === 0) return null;
-  const yMin = Math.floor(Math.min(...finite) * 0.96);
+  const yMin = Math.floor(Math.min(...finite) * 0.97);
   const yMax = Math.ceil(Math.max(...finite) * 1.02);
 
+  const sdLines: { key: keyof typeof SD_COLORS; label: string; dash?: string; width?: number }[] = [
+    { key: "sd3n", label: "−3", dash: "4 2", width: 1.5 },
+    { key: "sd2n", label: "−2", dash: "4 2", width: 1.5 },
+    { key: "sd1n", label: "−1", dash: "2 2", width: 1 },
+    { key: "med",  label:  "0", width: 2 },
+    { key: "sd1p", label: "+1", dash: "2 2", width: 1 },
+    { key: "sd2p", label: "+2", dash: "4 2", width: 1.5 },
+    { key: "sd3p", label: "+3", dash: "4 2", width: 1.5 },
+  ];
+
   return (
-    <div className="brutal p-2">
-      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest">{title} ({unit})</div>
-      <div className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]} fontSize={9} stroke="var(--foreground)"
-              label={{ value: "months", position: "insideBottom", offset: -4, fontSize: 9 }} />
-            <YAxis domain={[yMin, yMax]} fontSize={9} stroke="var(--foreground)" />
-            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 10 }}
-              formatter={(v: number) => `${v} ${unit}`} />
-            <Line type="monotone" dataKey="sd3n" stroke="#dc2626" dot={false} strokeWidth={1} strokeDasharray="3 2" name="-3 SD" />
-            <Line type="monotone" dataKey="sd2n" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="3 2" name="-2 SD" />
-            <Line type="monotone" dataKey="med" stroke="#16a34a" dot={false} strokeWidth={1.5} name="Median" />
-            <Line type="monotone" dataKey="sd2p" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="3 2" name="+2 SD" />
-            <Line type="monotone" dataKey="sd3p" stroke="#dc2626" dot={false} strokeWidth={1} strokeDasharray="3 2" name="+3 SD" />
-            <Line type="monotone" dataKey="child" stroke="var(--primary)" strokeWidth={2.5}
-              dot={{ r: 5, fill: "var(--primary)", stroke: "var(--border)", strokeWidth: 2 }}
-              connectNulls name={`Child (${unit})`} />
-          </LineChart>
-        </ResponsiveContainer>
+    <div className="brutal overflow-hidden">
+      {/* Header */}
+      <div className={`px-3 py-2 ${childColor === "#1d4ed8" ? "bg-blue-100 border-b-2 border-blue-300" : "bg-pink-100 border-b-2 border-pink-300"}`}>
+        <div className="font-display text-sm uppercase leading-tight">{title}</div>
+        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
+      </div>
+
+      <div className="p-2">
+        {/* Y-axis label */}
+        <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1 pl-8">{yLabel}</div>
+
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 4, right: 36, left: 0, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="2 2" stroke="#e5e7eb" />
+
+              {/* Colored zone backgrounds */}
+              {zones.map((z) => (
+                <ReferenceArea key={z.label} yAxisId={0}
+                  y1={Math.min(...chartData.map((d) => d[z.y1Key] as number ?? 0).filter(Boolean))}
+                  y2={Math.max(...chartData.map((d) => d[z.y2Key] as number ?? 0).filter(Boolean))}
+                  fill={z.fill} fillOpacity={0.6} ifOverflow="hidden" />
+              ))}
+
+              <XAxis dataKey="age" type="number" domain={["dataMin", "dataMax"]}
+                fontSize={9} stroke="#374151"
+                label={{ value: "Age (months)", position: "insideBottom", offset: -12, fontSize: 9, fill: "#374151" }}
+                tickFormatter={(v) => String(v)} />
+              <YAxis domain={[yMin, yMax]} fontSize={9} stroke="#374151" width={36} />
+
+              <Tooltip
+                contentStyle={{ border: "2px solid #374151", borderRadius: 0, fontSize: 10, background: "#fff" }}
+                formatter={(v: number, name: string) => {
+                  if (name === "child") return [`${v} ${unit}`, "Child"];
+                  return [`${v} ${unit}`, name];
+                }}
+                labelFormatter={(l) => `Age: ${l} months`}
+              />
+
+              {/* SD reference lines */}
+              {sdLines.map(({ key, label, dash, width }) => (
+                <Line key={key} type="monotone" dataKey={key}
+                  stroke={SD_COLORS[key]} strokeWidth={width ?? 1}
+                  strokeDasharray={dash} dot={false} name={label}
+                  legendType="none" />
+              ))}
+
+              {/* Child data — prominent dots, sex-colored */}
+              <Line type="monotone" dataKey="child"
+                stroke={childColor} strokeWidth={2}
+                dot={{ r: 6, fill: childColor, stroke: "#fff", strokeWidth: 2 }}
+                activeDot={{ r: 8 }}
+                connectNulls={false} name="child" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* SD legend */}
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 px-1">
+          {sdLines.map(({ key, label }) => (
+            <span key={key} className="text-[9px] font-bold uppercase" style={{ color: SD_COLORS[key] }}>
+              ─ {label} SD
+            </span>
+          ))}
+          <span className="text-[9px] font-bold uppercase" style={{ color: childColor }}>
+            ● Child
+          </span>
+        </div>
       </div>
     </div>
   );

@@ -122,12 +122,14 @@ function findByHeight(table: LMSRow[], heightCm: number): LMSRow | null {
 // ── Chart reference band builder ──────────────────────────────────────────────
 
 export interface ChartRefPoint {
-  age: number;
-  sd3n: number;  // absolute cm or kg at −3 SD
-  sd2n: number;  // absolute cm or kg at −2 SD
-  med:  number;  // median (= M)
-  sd2p: number;  // absolute cm or kg at +2 SD
-  sd3p: number;  // absolute cm or kg at +3 SD
+  age:  number;
+  sd3n: number;  // −3 SD
+  sd2n: number;  // −2 SD
+  sd1n: number;  // −1 SD
+  med:  number;  // 0 SD (median)
+  sd1p: number;  // +1 SD
+  sd2p: number;  // +2 SD
+  sd3p: number;  // +3 SD
   L: number; M: number; S: number;
 }
 
@@ -140,7 +142,9 @@ function buildRef(table: LMSRow[], ageStart: number, ageEnd: number): ChartRefPo
       age:  mo,
       sd3n: getLMSValue(row.L, row.M, row.S, -3),
       sd2n: getLMSValue(row.L, row.M, row.S, -2),
+      sd1n: getLMSValue(row.L, row.M, row.S, -1),
       med:  row.M,
+      sd1p: getLMSValue(row.L, row.M, row.S,  1),
       sd2p: getLMSValue(row.L, row.M, row.S,  2),
       sd3p: getLMSValue(row.L, row.M, row.S,  3),
       L: row.L, M: row.M, S: row.S,
