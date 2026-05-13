@@ -340,6 +340,32 @@ function PublicFiller() {
 
   if (!form) return null;
 
+  if (form.status === "closed") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-sm text-center space-y-2">
+          <h1 className="font-display text-2xl uppercase tracking-widest">Responses Closed</h1>
+          <p className="text-sm text-muted-foreground">
+            This form is no longer accepting responses. Thank you for your interest.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (form.status === "draft") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-sm text-center space-y-2">
+          <h1 className="font-display text-2xl uppercase tracking-widest">Not Yet Published</h1>
+          <p className="text-sm text-muted-foreground">
+            This form is still in draft mode and is not yet accepting responses.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Private form: show optional email consent step once per session
   if (!form.is_public && verifiedEmail === null) {
     return <EmailConsentStep form={form} onContinue={handleEmailConsent} />;
