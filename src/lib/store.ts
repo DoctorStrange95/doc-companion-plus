@@ -560,12 +560,14 @@ export const store = {
   },
 
   updateForm: (id: string, patch: Partial<FormDef>) => {
+    const updated = state.forms.find((f) => f.id === id);
+    if (!updated) return;
+    const patched = { ...updated, ...patch };
     state = {
       ...state,
-      forms: state.forms.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+      forms: [patched, ...state.forms.filter((f) => f.id !== id)],
     };
-    const updated = state.forms.find((f) => f.id === id);
-    if (updated) enqueue({ kind: "form", payload: updated });
+    enqueue({ kind: "form", payload: patched });
     persist();
     void drain();
   },
