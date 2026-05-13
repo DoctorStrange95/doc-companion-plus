@@ -1,10 +1,19 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { API_BASE, ApiError, api, setToken } from "@/lib/api";
 import { Stethoscope, ArrowRight, UserPlus, LogIn, Chrome } from "lucide-react";
 
-export const Route = createFileRoute("/login")({ component: LoginPage });
+const searchSchema = z.object({
+  returnTo: z.string().optional(),
+  mode: z.enum(["login", "register"]).optional(),
+});
+
+export const Route = createFileRoute("/login")({
+  component: LoginPage,
+  validateSearch: (s) => searchSchema.parse(s),
+});
 
 type Mode = "login" | "register";
 type GoogleStatus = "checking" | "enabled" | "not-configured" | "unavailable";
@@ -18,7 +27,9 @@ const BEST_SUITED_ROLES = [
 
 function LoginPage() {
   const { login, register } = useAuth();
-  const [mode, setMode] = useState<Mode>("login");
+  const { returnTo, mode: initialMode } = Route.useSearch();
+  const nav = useNavigate();
+  const [mode, setMode] = useState<Mode>(initialMode ?? "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -75,6 +86,7 @@ function LoginPage() {
           bestSuitedRole.trim(),
         );
       }
+      nav({ to: returnTo ?? "/", replace: true });
     } catch (e) {
       const msg =
         e instanceof ApiError

@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import type { Patient, Submission } from "@/lib/store";
-import { useAuth } from "@/lib/auth";
+import { useAuthGate } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { Search, Plus, ChevronDown, ChevronRight, Trash2, Pencil, Download, Share2, X } from "lucide-react";
 import { API_BASE, getToken } from "@/lib/api";
@@ -126,8 +126,7 @@ function GrowthTool() {
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [justAdded, setJustAdded] = useState<Patient | null>(null);
-  const { user } = useAuth();
-  const nav = useNavigate();
+  const { gate, requireAuth } = useAuthGate({ action: "track a patient" });
 
   const filteredPatients = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -145,6 +144,7 @@ function GrowthTool() {
 
   return (
     <>
+      {gate}
       <PageHeader
         title="Growth Chart"
         back="/tools"
@@ -159,7 +159,7 @@ function GrowthTool() {
         <div className="mb-3 flex gap-2">
           <button
             className="btn-brutal flex shrink-0 items-center gap-1.5 text-xs"
-            onClick={() => { if (!user) { nav({ to: "/login" }); return; } setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); setJustAdded(null); }}
+            onClick={() => requireAuth(() => { setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); setJustAdded(null); })}
           >
             <Plus className="h-3.5 w-3.5" /> Track new patient
           </button>
@@ -276,8 +276,7 @@ function PatientAccordion({
   onVisitSaved?: () => void;
 }) {
   const [showAddVisit, setShowAddVisit] = useState(openAddVisit);
-  const { user } = useAuth();
-  const nav = useNavigate();
+  const { gate: visitGate, requireAuth: requireVisitAuth } = useAuthGate({ action: "add a visit" });
   const [editingVisit, setEditingVisit] = useState<GrowthVisit | null>(null);
   const [showSharePanel, setShowSharePanel] = useState(false);
 
@@ -362,6 +361,7 @@ function PatientAccordion({
 
   return (
     <li className="brutal">
+      {visitGate}
       <button
         className="flex w-full items-start gap-2 p-3 text-left hover:bg-primary/10 transition-colors"
         onClick={onToggle}
@@ -424,7 +424,7 @@ function PatientAccordion({
           <div className="flex flex-wrap gap-2">
             <button
               className="btn-brutal flex-1 text-xs"
-              onClick={() => { if (!user) { nav({ to: "/login" }); return; } setShowAddVisit((v) => !v); setEditingVisit(null); }}
+              onClick={() => requireVisitAuth(() => { setShowAddVisit((v) => !v); setEditingVisit(null); })}
             >
               {showAddVisit ? "Cancel" : "+ Add visit"}
             </button>

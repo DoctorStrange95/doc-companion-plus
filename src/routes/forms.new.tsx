@@ -24,7 +24,7 @@ import {
   type ConditionalLogic, type ConditionalOperator,
   ruleId, normalizeShowIf,
 } from "@/lib/store";
-import { useAuth } from "@/lib/auth";
+import { useAuthGate } from "@/components/AuthGate";
 import { PageHeader } from "@/components/PageShell";
 import {
   Type, AlignLeft, Hash, Calendar, Clock, CalendarDays,
@@ -860,7 +860,7 @@ const CATEGORIES = ["GENERAL", "NUTRITION", "GROWTH", "IMNCI", "RESEARCH", "SCRE
 
 export default function FormBuilderPage() {
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { gate, requireAuth } = useAuthGate({ action: "save a form" });
   const { edit: editId } = Route.useSearch();
   const existingForm = useStore((s) => (editId ? s.forms.find((f) => f.id === editId) : undefined));
 
@@ -945,26 +945,27 @@ export default function FormBuilderPage() {
   };
 
   const save = () => {
-    if (!user) { nav({ to: "/login", replace: false }); return; }
     if (!title.trim()) { alert("Form needs a title."); return; }
     if (fields.length === 0) { alert("Add at least one field."); return; }
-    const formData = {
-      name: title.trim(),
-      category,
-      description: description.trim(),
-      fields,
-      longitudinal,
-      formRole,
-      subjectIdentifierFieldId: formRole === "parent" ? subjectIdentifierFieldId || undefined : undefined,
-      parentFormId: formRole === "child" ? parentFormId || undefined : undefined,
-      parentLinkFieldId: formRole === "child" ? parentLinkFieldId || undefined : undefined,
-    };
-    if (isEditing && editId) {
-      store.updateForm(editId, formData);
-    } else {
-      store.addForm(formData);
-    }
-    nav({ to: "/forms" });
+    requireAuth(() => {
+      const formData = {
+        name: title.trim(),
+        category,
+        description: description.trim(),
+        fields,
+        longitudinal,
+        formRole,
+        subjectIdentifierFieldId: formRole === "parent" ? subjectIdentifierFieldId || undefined : undefined,
+        parentFormId: formRole === "child" ? parentFormId || undefined : undefined,
+        parentLinkFieldId: formRole === "child" ? parentLinkFieldId || undefined : undefined,
+      };
+      if (isEditing && editId) {
+        store.updateForm(editId, formData);
+      } else {
+        store.addForm(formData);
+      }
+      nav({ to: "/forms" });
+    });
   };
 
   const PalettePanel = (
@@ -1005,6 +1006,7 @@ export default function FormBuilderPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
+      {gate}
       {/* Top bar */}
       <div className="flex items-center justify-between border-b-2 border-border bg-primary px-4 py-3 shrink-0">
         <div className="flex items-center gap-3">

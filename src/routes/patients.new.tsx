@@ -1,14 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { store } from "@/lib/store";
-import { useAuth } from "@/lib/auth";
+import { useAuthGate } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 
 export const Route = createFileRoute("/patients/new")({ component: NewPatient });
 
 function NewPatient() {
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { gate, requireAuth } = useAuthGate({ action: "register a patient" });
   const [form, setForm] = useState({
     name: "",
     dob: "",
@@ -21,27 +21,26 @@ function NewPatient() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) {
-      nav({ to: "/login", replace: false });
-      return;
-    }
-    if (!form.name.trim() || !form.dob || !form.village.trim()) {
-      setErr("Name, date of birth, and village are required.");
-      return;
-    }
-    const p = store.addPatient({
-      name: form.name.trim(),
-      dob: form.dob,
-      sex: form.sex,
-      village: form.village.trim(),
-      phone: form.phone.trim() || undefined,
-      tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+    requireAuth(() => {
+      if (!form.name.trim() || !form.dob || !form.village.trim()) {
+        setErr("Name, date of birth, and village are required.");
+        return;
+      }
+      const p = store.addPatient({
+        name: form.name.trim(),
+        dob: form.dob,
+        sex: form.sex,
+        village: form.village.trim(),
+        phone: form.phone.trim() || undefined,
+        tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      });
+      nav({ to: "/patients/$id", params: { id: p.id } });
     });
-    nav({ to: "/patients/$id", params: { id: p.id } });
   };
 
   return (
     <>
+      {gate}
       <PageHeader title="Register Patient" back="/patients" variant="yellow" />
       <PageShell>
         <form onSubmit={submit} className="brutal space-y-4 p-5">
