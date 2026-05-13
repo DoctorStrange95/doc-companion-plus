@@ -664,12 +664,14 @@ async function pullSnapshot() {
     // Merge: server is source of truth for visible records, but keep local-only
     // (queued, not-yet-synced) rows by union with current cache.
     const sIds = new Set(serverPatients.map((p) => p.id));
-    const localOnlyPatients = state.patients.filter((p) => !sIds.has(p.id) && !p.ownerId);
+    // Exclude pending IDs to avoid double-counting: pending forms appear in pendingLocalForms only
+    const localOnlyPatients = state.patients.filter((p) => !sIds.has(p.id) && !p.ownerId && !pendingPatientIds.has(p.id));
     const pendingLocalPatients = state.patients.filter((p) => pendingPatientIds.has(p.id));
     const safeServerPatients = serverPatients.filter((p) => !pendingPatientIds.has(p.id));
 
     const fIds = new Set(serverForms.map((f) => f.id));
-    const localOnlyForms = state.forms.filter((f) => !fIds.has(f.id) && !f.ownerId);
+    // Exclude pending IDs to avoid double-counting: pending forms appear in pendingLocalForms only
+    const localOnlyForms = state.forms.filter((f) => !fIds.has(f.id) && !f.ownerId && !pendingFormIds.has(f.id));
     const pendingLocalForms = state.forms.filter((f) => pendingFormIds.has(f.id));
     const safeServerForms = serverForms.filter((f) => !pendingFormIds.has(f.id));
 
