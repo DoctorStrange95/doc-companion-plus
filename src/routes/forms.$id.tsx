@@ -53,6 +53,8 @@ function FormDetail() {
   const [deleteStep, setDeleteStep] = useState(0);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<"draft" | "active" | "closed" | null>(null);
   const [transferEmail, setTransferEmail] = useState("");
   const [transferStep, setTransferStep] = useState(0);
   const [transferMsg, setTransferMsg] = useState("");
@@ -232,12 +234,20 @@ function FormDetail() {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleStatusChange = (newStatus: "draft" | "active" | "closed") => {
+  const currentStatus = (form?.status ?? "active") as "draft" | "active" | "closed";
+  const selectedStatus = pendingStatus ?? currentStatus;
+
+  const saveStatus = () => {
+    if (!pendingStatus || pendingStatus === currentStatus) return;
     setStatusSaving(true);
-    store.updateForm(form.id, { status: newStatus });
-    const updated = store.get().forms.find((f) => f.id === form.id);
+    setStatusError(null);
+    store.updateForm(form!.id, { status: pendingStatus });
+    const updated = store.get().forms.find((f) => f.id === form!.id);
     if (updated) {
-      void sync.pushForm(updated).finally(() => setStatusSaving(false));
+      void sync.pushForm(updated)
+        .then(() => { setPendingStatus(null); })
+        .catch(() => { setStatusError("Could not reach server. Status saved locally and will sync automatically."); })
+        .finally(() => setStatusSaving(false));
     } else {
       setStatusSaving(false);
     }
@@ -314,10 +324,10 @@ function FormDetail() {
                 {(["draft", "active", "closed"] as const).map((s) => (
                   <button
                     key={s}
-                    onClick={() => handleStatusChange(s)}
+                    onClick={() => setPendingStatus(s === currentStatus ? null : s)}
                     disabled={statusSaving}
                     className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${
-                      (form.status ?? "active") === s ? "bg-primary" : "bg-card hover:bg-primary/30"
+                      selectedStatus === s ? "bg-primary" : "bg-card hover:bg-primary/30"
                     }`}
                   >
                     {s}
@@ -325,10 +335,22 @@ function FormDetail() {
                 ))}
               </div>
               <p className="text-[9px] text-muted-foreground">
-                {form.status === "draft" && "Draft — fill link shows 'not published'. Use for testing."}
-                {(form.status === "active" || !form.status) && "Active — anyone with the link can submit responses."}
-                {form.status === "closed" && "Closed — new responses are blocked. Existing data is preserved."}
+                {selectedStatus === "draft" && "Draft — fill link shows 'not published'. Use for testing."}
+                {selectedStatus === "active" && "Active — anyone with the link can submit responses."}
+                {selectedStatus === "closed" && "Closed — new responses are blocked. Existing data is preserved."}
               </p>
+              {pendingStatus && pendingStatus !== currentStatus && (
+                <button
+                  onClick={saveStatus}
+                  disabled={statusSaving}
+                  className="btn-brutal w-full text-xs disabled:opacity-60"
+                >
+                  {statusSaving ? "Saving…" : `Save — set to ${pendingStatus}`}
+                </button>
+              )}
+              {statusError && (
+                <p className="text-[9px] text-destructive font-bold">{statusError}</p>
+              )}
             </div>
           )}
 

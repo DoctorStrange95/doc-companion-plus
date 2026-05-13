@@ -306,17 +306,17 @@ function FormResponses() {
   const rawSubmissions = useStore((s) => s.submissions);
   const [selected, setSelected] = useState<Submission | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [initialPulling, setInitialPulling] = useState(true);
+  const [syncing, setSyncing] = useState(true);
 
   const submissions = useMemo(
     () => rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt),
     [rawSubmissions, id],
   );
 
-  // Pull on mount and wait for it to complete before showing data,
-  // so users never see a partial list that jumps after the server responds.
+  // Pull on mount — show local data immediately, merge server data in background.
   useEffect(() => {
-    void sync.pull().finally(() => setInitialPulling(false));
+    setSyncing(true);
+    void sync.pull().finally(() => setSyncing(false));
   }, []);
 
   const handleRefresh = async () => {
@@ -351,11 +351,11 @@ function FormResponses() {
           <div className="flex items-center gap-1.5">
             <button
               onClick={handleRefresh}
-              disabled={refreshing}
+              disabled={refreshing || syncing}
               className="border-2 border-border bg-card p-1.5 hover:bg-muted disabled:opacity-50"
               title="Refresh data"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5 ${(refreshing || syncing) ? "animate-spin" : ""}`} />
             </button>
             <Link
               to="/analytics/$id"
@@ -388,18 +388,20 @@ function FormResponses() {
       />
 
       <div className="px-4 pb-24 pt-2">
-        {initialPulling ? (
-          <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-xs font-bold uppercase tracking-widest">Loading responses…</span>
-          </div>
-        ) : submissions.length === 0 ? (
-          <div className="brutal-flat p-8 text-center mt-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No responses yet</p>
-            <Link to="/forms/$id/fill" params={{ id: form.id }} className="btn-brutal mt-4 inline-block text-xs">
-              Fill first response
-            </Link>
-          </div>
+        {submissions.length === 0 ? (
+          syncing ? (
+            <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-xs font-bold uppercase tracking-widest">Loading responses…</span>
+            </div>
+          ) : (
+            <div className="brutal-flat p-8 text-center mt-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No responses yet</p>
+              <Link to="/forms/$id/fill" params={{ id: form.id }} className="btn-brutal mt-4 inline-block text-xs">
+                Fill first response
+              </Link>
+            </div>
+          )
         ) : (
           <DataTable submissions={submissions} fields={form.fields} onRowClick={setSelected} />
         )}
