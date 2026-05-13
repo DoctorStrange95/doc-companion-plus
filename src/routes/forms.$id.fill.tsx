@@ -141,6 +141,38 @@ function FillForm() {
     );
   }
 
+  if (form.status === "closed") {
+    return (
+      <>
+        <PageHeader title={form.name} back="/forms" />
+        <PageShell>
+          <div className="text-center space-y-2 py-8">
+            <p className="font-display text-xl uppercase tracking-widest">Responses Closed</p>
+            <p className="text-sm text-muted-foreground">
+              This form is no longer accepting responses.
+            </p>
+          </div>
+        </PageShell>
+      </>
+    );
+  }
+
+  if (form.status === "draft") {
+    return (
+      <>
+        <PageHeader title={form.name} back="/forms" />
+        <PageShell>
+          <div className="text-center space-y-2 py-8">
+            <p className="font-display text-xl uppercase tracking-widest">Not Yet Published</p>
+            <p className="text-sm text-muted-foreground">
+              This form is in draft mode and is not yet accepting responses.
+            </p>
+          </div>
+        </PageShell>
+      </>
+    );
+  }
+
   const flags: string[] = [];
   for (const f of allVisibleFields) {
     const v = values[f.id];
