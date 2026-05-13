@@ -648,12 +648,31 @@ async function pullSnapshot() {
     const serverForms = data.forms.map(mapForm);
     const serverSubs = data.submissions.map(mapSubmission);
 
+    // Collect IDs that have pending queue entries — these must NOT be overwritten
+    // by a stale server response that hasn't seen our push yet.
+    const pendingFormIds = new Set(
+      state.queue
+        .filter((op): op is { kind: "form"; payload: FormDef } => op.kind === "form")
+        .map((op) => op.payload.id),
+    );
+    const pendingPatientIds = new Set(
+      state.queue
+        .filter((op): op is { kind: "patient"; payload: Patient } => op.kind === "patient")
+        .map((op) => op.payload.id),
+    );
+
     // Merge: server is source of truth for visible records, but keep local-only
     // (queued, not-yet-synced) rows by union with current cache.
     const sIds = new Set(serverPatients.map((p) => p.id));
     const localOnlyPatients = state.patients.filter((p) => !sIds.has(p.id) && !p.ownerId);
+    const pendingLocalPatients = state.patients.filter((p) => pendingPatientIds.has(p.id));
+    const safeServerPatients = serverPatients.filter((p) => !pendingPatientIds.has(p.id));
+
     const fIds = new Set(serverForms.map((f) => f.id));
     const localOnlyForms = state.forms.filter((f) => !fIds.has(f.id) && !f.ownerId);
+    const pendingLocalForms = state.forms.filter((f) => pendingFormIds.has(f.id));
+    const safeServerForms = serverForms.filter((f) => !pendingFormIds.has(f.id));
+
     const subIds = new Set(serverSubs.map((s) => s.id));
     const localOnlySubs = state.submissions.filter(
       (s) => !subIds.has(s.id) && !s.ownerId,
@@ -661,8 +680,8 @@ async function pullSnapshot() {
 
     state = {
       ...state,
-      patients: [...localOnlyPatients, ...serverPatients],
-      forms: [...localOnlyForms, ...serverForms],
+      patients: [...localOnlyPatients, ...safeServerPatients, ...pendingLocalPatients],
+      forms: [...localOnlyForms, ...safeServerForms, ...pendingLocalForms],
       submissions: [...localOnlySubs, ...serverSubs],
       lastSync: Date.now(),
     };
