@@ -19,7 +19,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  store, useStore,
+  store, useStore, sync,
   type FormField, type FieldType, type ChartType,
   type ConditionalLogic, type ConditionalOperator,
   ruleId, normalizeShowIf,
@@ -991,6 +991,8 @@ export default function FormBuilderPage() {
     }
   };
 
+  const [saving, setSaving] = useState(false);
+
   const save = () => {
     if (!title.trim()) { alert("Form needs a title."); return; }
     if (fields.length === 0) { alert("Add at least one field."); return; }
@@ -1011,7 +1013,12 @@ export default function FormBuilderPage() {
       } else {
         store.addForm(formData);
       }
-      nav({ to: "/forms" });
+      setSaving(true);
+      // Drain immediately so the backend has the update before we navigate away
+      void sync.drain().finally(() => {
+        setSaving(false);
+        nav({ to: "/forms" });
+      });
     });
   };
 
@@ -1064,8 +1071,8 @@ export default function FormBuilderPage() {
             {isEditing ? (title || "Edit form") : (title || "New form")}
           </span>
         </div>
-        <button onClick={save} className="btn-brutal text-sm">
-          {isEditing ? "Update" : "Save"}
+        <button onClick={save} disabled={saving} className="btn-brutal text-sm disabled:opacity-60">
+          {saving ? "Saving…" : isEditing ? "Update" : "Save"}
         </button>
       </div>
 

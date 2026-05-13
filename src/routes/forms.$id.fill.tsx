@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
@@ -90,8 +90,12 @@ function FillForm() {
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
-  // Always fetch the latest form definition so data collectors see owner's updates
-  useEffect(() => { void sync.pull(); }, []);
+  // Pull on mount and every 30s so data collectors see form definition updates in near-real-time
+  useEffect(() => {
+    void sync.pull();
+    const t = setInterval(() => { void sync.pull(); }, 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   const set = (fieldId: string, val: unknown) =>
     setValues((prev) => ({ ...prev, [fieldId]: val }));
@@ -818,24 +822,31 @@ function PhotoField({
   value: string | undefined;
   onChange: (v: unknown) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <div className="space-y-2">
-      <label className="btn-brutal flex w-full cursor-pointer items-center justify-center gap-2 text-xs">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => onChange(reader.result as string);
+          reader.readAsDataURL(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className="btn-brutal flex w-full items-center justify-center gap-2 text-xs"
+        onClick={() => inputRef.current?.click()}
+      >
         <Image className="h-4 w-4" />
         {value ? "Replace photo" : "Take / upload photo"}
-        <input
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => onChange(reader.result as string);
-            reader.readAsDataURL(file);
-          }}
-        />
-      </label>
+      </button>
       {value && (
         <div className="relative">
           <img
@@ -873,6 +884,7 @@ function FileUploadField({
   value: FileUploadValue | undefined;
   onChange: (v: unknown) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const maxBytes = (field.maxSizeMB ?? 5) * 1024 * 1024;
   const accept = field.acceptTypes && field.acceptTypes !== "*" ? field.acceptTypes : undefined;
   const [error, setError] = useState("");
@@ -926,29 +938,37 @@ function FileUploadField({
 
   return (
     <div className="space-y-1">
-      <label
-        className="flex cursor-pointer flex-col items-center gap-2 border-2 border-dashed border-border px-4 py-6 text-center hover:border-primary hover:bg-primary/5 transition-colors"
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+          e.target.value = "";
+        }}
+      />
+      <div
+        className="flex flex-col items-center gap-2 border-2 border-dashed border-border px-4 py-6 text-center transition-colors hover:border-primary hover:bg-primary/5"
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
       >
         <Upload className="h-6 w-6 text-muted-foreground" />
         <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          Click to upload or drag & drop
+          Drag & drop here, or
         </div>
+        <button
+          type="button"
+          className="btn-brutal px-4 py-2 text-xs"
+          onClick={() => inputRef.current?.click()}
+        >
+          Browse files
+        </button>
         <div className="text-[10px] text-muted-foreground">
           {accept ? accept.replace(/,/g, ", ") : "Any file"} · max {field.maxSizeMB ?? 5} MB
         </div>
-        <input
-          type="file"
-          accept={accept}
-          className="sr-only"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleFile(file);
-            e.target.value = "";
-          }}
-        />
-      </label>
+      </div>
       {error && <p className="text-[11px] font-bold text-destructive">{error}</p>}
     </div>
   );
