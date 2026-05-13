@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { useStore, store } from "@/lib/store";
+import { useStore, store, sync } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
@@ -24,7 +24,18 @@ function StatusBadge({ status }: { status?: string }) {
 function FormsList() {
   const forms = useStore((s) => s.forms);
   const submissions = useStore((s) => s.submissions);
+  const lastSync = useStore((s) => s.lastSync);
   const [searchQuery, setSearchQuery] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await sync.pull();
+    } finally {
+      setSyncing(false);
+    }
+  };
 
 
   const filteredForms = useMemo(() => {
@@ -44,14 +55,24 @@ function FormsList() {
     <>
       <PageHeader
         title="Form library"
-        subtitle={`${forms.length} form${forms.length !== 1 ? "s" : ""}`}
+        subtitle={`${forms.length} form${forms.length !== 1 ? "s" : ""}${lastSync ? ` · synced ${new Date(lastSync).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
         action={
-          <Link
-            to="/forms/new"
-            className="btn-brutal inline-flex items-center gap-1.5 text-xs"
-          >
-            <Plus className="h-3.5 w-3.5" /> New
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              title="Sync with server"
+              className="btn-brutal inline-flex items-center gap-1.5 text-xs disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            </button>
+            <Link
+              to="/forms/new"
+              className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+            >
+              <Plus className="h-3.5 w-3.5" /> New
+            </Link>
+          </div>
         }
       />
       <PageShell>
@@ -130,13 +151,24 @@ function FormsList() {
                       <Edit2 className="h-3 w-3" /> Fill
                     </Link>
                     {f.shared ? (
-                      <Link
-                        to="/forms/$id/responses"
-                        params={{ id: f.id }}
-                        className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
-                      >
-                        <List className="h-3 w-3" /> Responses
-                      </Link>
+                      <>
+                        {f.canEdit && (
+                          <Link
+                            to="/forms/new"
+                            search={{ edit: f.id }}
+                            className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
+                          >
+                            <Edit2 className="h-3 w-3" /> Edit
+                          </Link>
+                        )}
+                        <Link
+                          to="/forms/$id/responses"
+                          params={{ id: f.id }}
+                          className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+                        >
+                          <List className="h-3 w-3" /> Responses
+                        </Link>
+                      </>
                     ) : (
                       <>
                         <Link

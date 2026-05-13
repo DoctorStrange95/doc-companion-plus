@@ -191,6 +191,9 @@ export interface FormDef {
   longitudinal?: boolean;
   ownerId?: string;
   shared?: boolean;
+  canEdit?: boolean;
+  canFill?: boolean;
+  canView?: boolean;
   status?: "draft" | "active" | "closed";
   shareToken?: string;
   analyticsToken?: string;
@@ -434,6 +437,9 @@ interface SrvForm {
   owner_id: string;
   created_at: string;
   shared?: boolean;
+  can_edit?: boolean;
+  can_fill?: boolean;
+  can_view?: boolean;
   share_token?: string | null;
   analytics_token?: string | null;
   is_public?: boolean | null;
@@ -479,6 +485,9 @@ const mapForm = (s: SrvForm): FormDef => ({
   createdAt: new Date(s.created_at).getTime(),
   ownerId: s.owner_id,
   shared: !!s.shared,
+  canEdit: s.can_edit ?? false,
+  canFill: s.can_fill ?? true,
+  canView: s.can_view ?? true,
   shareToken: s.share_token ?? undefined,
   analyticsToken: s.analytics_token ?? undefined,
   isPublic: s.is_public ?? true,

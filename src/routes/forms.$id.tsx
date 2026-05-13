@@ -271,7 +271,7 @@ function FormDetail() {
         subtitle={`${form.category}${form.longitudinal ? " · Longitudinal" : ""}`}
         variant="yellow"
         action={
-          !form.shared ? (
+          (!form.shared || form.canEdit) ? (
             <Link
               to="/forms/new"
               search={{ edit: form.id }}
@@ -362,13 +362,24 @@ function FormDetail() {
               <Edit2 className="h-4 w-4" /> Fill form
             </Link>
             {form.shared ? (
-              <Link
-                to="/forms/$id/responses"
-                params={{ id: form.id }}
-                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-              >
-                <List className="h-4 w-4" /> Responses
-              </Link>
+              <>
+                <Link
+                  to="/forms/$id/responses"
+                  params={{ id: form.id }}
+                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                >
+                  <List className="h-4 w-4" /> Responses
+                </Link>
+                {form.canEdit && (
+                  <Link
+                    to="/forms/new"
+                    search={{ edit: form.id }}
+                    className="brutal col-span-2 flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                  >
+                    <Edit2 className="h-4 w-4" /> Edit form
+                  </Link>
+                )}
+              </>
             ) : (
               <>
                 <button
