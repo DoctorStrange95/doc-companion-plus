@@ -3,11 +3,17 @@ import { useState, useMemo, useEffect } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import type { Submission, FormField } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2 } from "lucide-react";
+import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/forms/$id/responses")({ component: FormResponses });
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
+
+interface FileUploadValue { name: string; size: number; type: string; data: string; }
+
+function isFileUpload(val: unknown): val is FileUploadValue {
+  return typeof val === "object" && val !== null && "data" in val && "name" in val;
+}
 
 function formatCellValue(val: unknown, field: FormField): string {
   if (val === undefined || val === null || val === "") return "—";
@@ -17,17 +23,63 @@ function formatCellValue(val: unknown, field: FormField): string {
     const o = val as Record<string, unknown>;
     if ("systolic" in o) return `${o.systolic}/${o.diastolic} mmHg`;
     if ("lat" in o) return `${(o.lat as number).toFixed(4)}, ${(o.lng as number).toFixed(4)}`;
+    if (isFileUpload(val)) return val.name;
     return JSON.stringify(val);
   }
+  if (field.type === "photo") return "📷 photo";
   if (field.type === "yes_no" || field.type === "boolean") {
     return String(val) === "true" ? "Yes" : String(val) === "false" ? "No" : String(val);
   }
   return String(val);
 }
 
-function formatDetailValue(field: FormField, val: unknown): string {
-  if (val === undefined || val === null || val === "") return "—";
-  return formatCellValue(val, field);
+function downloadFile(file: FileUploadValue) {
+  const a = document.createElement("a");
+  a.href = file.data;
+  a.download = file.name;
+  a.click();
+}
+
+function DetailFieldValue({ field, val }: { field: FormField; val: unknown }) {
+  if (val === undefined || val === null || val === "") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  if (field.type === "photo" && typeof val === "string" && val.startsWith("data:")) {
+    return (
+      <div className="mt-1 space-y-2">
+        <img src={val} alt="Uploaded photo" className="max-h-64 w-full border-2 border-border object-contain" />
+        <a
+          href={val}
+          download="photo.jpg"
+          className="inline-flex items-center gap-1.5 border-2 border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+        >
+          <Download className="h-3 w-3" /> Download photo
+        </a>
+      </div>
+    );
+  }
+  if (field.type === "file_upload" && isFileUpload(val)) {
+    const sizeLabel = val.size > 1024 * 1024
+      ? `${(val.size / (1024 * 1024)).toFixed(2)} MB`
+      : `${(val.size / 1024).toFixed(0)} KB`;
+    return (
+      <div className="mt-1 flex items-center gap-3 border-2 border-border px-3 py-2.5">
+        <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] font-bold">{val.name}</div>
+          <div className="text-[10px] text-muted-foreground">{sizeLabel}</div>
+        </div>
+        <button
+          onClick={() => downloadFile(val)}
+          className="shrink-0 flex items-center gap-1.5 border-2 border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20"
+        >
+          <Download className="h-3 w-3" /> Download
+        </button>
+      </div>
+    );
+  }
+  const text = formatCellValue(val, field);
+  return <span className={text === "—" ? "text-muted-foreground" : ""}>{text}</span>;
 }
 
 function getRespondentLabel(sub: Submission): string {
@@ -44,7 +96,7 @@ function getRespondentLabel(sub: Submission): string {
 // ─── CSV / JSON export ───────────────────────────────────────────────────────
 
 function exportCsv(submissions: Submission[], fields: FormField[], formName: string) {
-  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo");
+  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "file_upload");
   const headers = ["#", "Date", "Respondent Name", "Respondent Email", "Respondent ID",
     ...dataFields.map((f) => f.variableName ?? f.label)];
 
@@ -126,15 +178,14 @@ function DetailModal({ sub, fields, onClose, onDelete }: {
           <button onClick={onClose} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
         </div>
         <div className="divide-y divide-border px-4">
-          {dataFields.map((f) => {
-            const display = formatDetailValue(f, sub.data[f.id]);
-            return (
-              <div key={f.id} className="py-2.5">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{f.label}</div>
-                <div className={`mt-0.5 text-sm ${display === "—" ? "text-muted-foreground" : ""}`}>{display}</div>
+          {dataFields.map((f) => (
+            <div key={f.id} className="py-2.5">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{f.label}</div>
+              <div className="mt-0.5 text-sm">
+                <DetailFieldValue field={f} val={sub.data[f.id]} />
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
         <div className="border-t-2 border-border p-4">
           {!confirmDelete ? (
@@ -165,7 +216,7 @@ function DataTable({ submissions, fields, onRowClick }: {
   fields: FormField[];
   onRowClick: (sub: Submission) => void;
 }) {
-  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo");
+  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break");
 
   if (submissions.length === 0) {
     return (
@@ -211,7 +262,28 @@ function DataTable({ submissions, fields, onRowClick }: {
                 {(sub.data["__respondent_email"] as string | undefined) || <span className="text-muted-foreground">—</span>}
               </td>
               {dataFields.map((f) => {
-                const display = formatCellValue(sub.data[f.id], f);
+                const val = sub.data[f.id];
+                if (f.type === "photo") {
+                  const hasPhoto = typeof val === "string" && val.startsWith("data:");
+                  return (
+                    <td key={f.id} className="px-3 py-2 border-r border-border text-[11px] max-w-[160px]">
+                      {hasPhoto
+                        ? <span className="flex items-center gap-1 text-primary font-bold"><Image className="h-3 w-3" /> photo</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  );
+                }
+                if (f.type === "file_upload") {
+                  const hasFile = isFileUpload(val);
+                  return (
+                    <td key={f.id} className="px-3 py-2 border-r border-border text-[11px] max-w-[160px] truncate">
+                      {hasFile
+                        ? <span className="flex items-center gap-1 font-bold" title={(val as FileUploadValue).name}><FileText className="h-3 w-3 shrink-0" /><span className="truncate">{(val as FileUploadValue).name}</span></span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  );
+                }
+                const display = formatCellValue(val, f);
                 return (
                   <td key={f.id} className="px-3 py-2 border-r border-border text-[11px] max-w-[160px] truncate" title={display !== "—" ? display : undefined}>
                     {display === "—" ? <span className="text-muted-foreground">—</span> : display}
