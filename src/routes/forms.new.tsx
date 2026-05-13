@@ -20,7 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   store, useStore, sync,
-  type FormField, type FieldType, type ChartType,
+  type FormDef, type FormField, type FieldType, type ChartType,
   type ConditionalLogic, type ConditionalOperator,
   ruleId, normalizeShowIf,
 } from "@/lib/store";
@@ -992,6 +992,7 @@ export default function FormBuilderPage() {
   };
 
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const save = () => {
     if (!title.trim()) { alert("Form needs a title."); return; }
@@ -1008,19 +1009,31 @@ export default function FormBuilderPage() {
         parentFormId: formRole === "child" ? parentFormId || undefined : undefined,
         parentLinkFieldId: formRole === "child" ? parentLinkFieldId || undefined : undefined,
       };
+
+      // 1. Update local state immediately (offline-first, also queues for background retry)
+      let savedForm: FormDef;
       if (isEditing && editId) {
         store.updateForm(editId, formData);
+        const found = store.get().forms.find((f) => f.id === editId);
+        if (!found) return;
+        savedForm = found;
       } else {
-        store.addForm(formData);
+        savedForm = store.addForm(formData);
       }
+
       setSaving(true);
-      // drain() now returns the in-flight promise if one is already running,
-      // so this .finally() fires only after the actual push completes (or fails).
-      void sync.drain()
-        .catch(() => { /* push failed — form is queued, will retry automatically */ })
-        .finally(() => {
-          setSaving(false);
+      setSaveError(null);
+
+      // 2. Direct push to the server — we await this before navigating so that
+      //    the public share link reflects the update immediately after save.
+      //    If the backend is cold-starting (Render free tier) this waits up to ~60s.
+      void sync.pushForm(savedForm)
+        .then(() => {
           nav({ to: "/forms" });
+        })
+        .catch(() => {
+          setSaving(false);
+          setSaveError("Server is unavailable. Form saved locally — it will sync automatically when the server is back online.");
         });
     });
   };
@@ -1078,6 +1091,19 @@ export default function FormBuilderPage() {
           {saving ? "Saving…" : isEditing ? "Update" : "Save"}
         </button>
       </div>
+
+      {/* Server error banner */}
+      {saveError && (
+        <div className="flex items-center justify-between gap-2 border-b-2 border-border bg-destructive/10 px-4 py-2 shrink-0">
+          <span className="text-[11px] font-bold text-destructive">{saveError}</span>
+          <button
+            onClick={() => nav({ to: "/forms" })}
+            className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted"
+          >
+            Go back
+          </button>
+        </div>
+      )}
 
       {/* Mobile tab bar — visible only on small screens */}
       <div className="flex border-b-2 border-border bg-card sm:hidden shrink-0">
