@@ -687,19 +687,24 @@ async function pullSnapshot() {
         .filter((p) => !sIds.has(p.id) && !p.ownerId && !pendingPatientMap.has(p.id))
         .map((p) => [p.id, p]),
     );
-    const localOnlySubs = state.submissions.filter(
-      (s) => !subIds.has(s.id) && !s.ownerId,
-    );
-
     // Server data for items that have no pending local update
     const safeServerForms = serverForms.filter((f) => !pendingFormMap.has(f.id));
     const safeServerPatients = serverPatients.filter((p) => !pendingPatientMap.has(p.id));
+
+    // Submissions: union of local + server, server version wins on conflict.
+    // Never discard a local submission just because the server didn't return it —
+    // the server may return a partial list, and we never want a pull to silently
+    // delete responses the user has already recorded.
+    const submissionMap = new Map<string, Submission>(
+      state.submissions.map((s) => [s.id, s]),
+    );
+    for (const s of serverSubs) submissionMap.set(s.id, s);
 
     state = {
       ...state,
       patients: [...localOnlyPatientMap.values(), ...safeServerPatients, ...pendingPatientMap.values()],
       forms: [...localOnlyFormMap.values(), ...safeServerForms, ...pendingFormMap.values()],
-      submissions: [...localOnlySubs, ...serverSubs],
+      submissions: [...submissionMap.values()],
       lastSync: Date.now(),
     };
     persist();
