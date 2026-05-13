@@ -4,11 +4,11 @@
  * Respondents are identified only by a self-chosen name/email/code (optional).
  */
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { z } from "zod";
 import { evaluateConditions, type FormField } from "@/lib/store";
 import { API_BASE } from "@/lib/api";
-import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2, Upload, FileText, Trash2 } from "lucide-react";
 
 const searchSchema = z.object({ preview: z.boolean().optional() });
 
@@ -621,21 +621,95 @@ function PublicFieldRenderer({ field: f, value, values, allFields, geoLoading, o
           )}
         </div>
       )}
-      {f.type === "photo" && (
-        <div className="space-y-2">
-          <label className="btn-brutal flex w-full cursor-pointer items-center justify-center gap-2 text-xs">
-            <Image className="h-4 w-4" />
-            {value ? "Replace photo" : "Take / upload photo"}
-            <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; const r = new FileReader(); r.onload = () => onChange(r.result as string); r.readAsDataURL(file); }} />
-          </label>
-          {!!value && (
-            <div className="relative">
-              <img src={value as string} alt="Captured" className="w-full border-2 border-border object-contain" style={{ maxHeight: 200 }} />
-              <button type="button" onClick={() => onChange(undefined)} className="absolute right-1 top-1 border-2 border-border bg-card p-1 hover:bg-destructive hover:text-destructive-foreground"><X className="h-3 w-3" /></button>
-            </div>
-          )}
+      {f.type === "photo" && <PublicPhotoField value={value as string | undefined} onChange={onChange} />}
+      {f.type === "file_upload" && <PublicFileUploadField field={f} value={value as PublicFileVal | undefined} onChange={onChange} />}
+    </div>
+  );
+}
+
+interface PublicFileVal { name: string; size: number; type: string; data: string; }
+
+function PublicPhotoField({ value, onChange }: { value: string | undefined; onChange: (v: unknown) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="space-y-2">
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const r = new FileReader();
+          r.onload = () => onChange(r.result as string);
+          r.readAsDataURL(file);
+          e.target.value = "";
+        }}
+      />
+      <button type="button" className="btn-brutal flex w-full items-center justify-center gap-2 text-xs"
+        onClick={() => inputRef.current?.click()}>
+        <Image className="h-4 w-4" />
+        {value ? "Replace photo" : "Take / upload photo"}
+      </button>
+      {!!value && (
+        <div className="relative">
+          <img src={value} alt="Captured" className="w-full border-2 border-border object-contain" style={{ maxHeight: 200 }} />
+          <button type="button" onClick={() => onChange(undefined)}
+            className="absolute right-1 top-1 border-2 border-border bg-card p-1 hover:bg-destructive hover:text-destructive-foreground">
+            <X className="h-3 w-3" />
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PublicFileUploadField({ field, value, onChange }: { field: FormField; value: PublicFileVal | undefined; onChange: (v: unknown) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const maxBytes = (field.maxSizeMB ?? 5) * 1024 * 1024;
+  const accept = field.acceptTypes && field.acceptTypes !== "*" ? field.acceptTypes : undefined;
+  const [error, setError] = useState("");
+
+  function handleFile(file: File) {
+    setError("");
+    if (file.size > maxBytes) { setError(`File too large — max ${field.maxSizeMB ?? 5} MB.`); return; }
+    const r = new FileReader();
+    r.onload = () => onChange({ name: file.name, size: file.size, type: file.type, data: r.result as string });
+    r.readAsDataURL(file);
+  }
+
+  if (value) {
+    const sizeLabel = value.size > 1048576
+      ? `${(value.size / 1048576).toFixed(2)} MB`
+      : `${(value.size / 1024).toFixed(0)} KB`;
+    return (
+      <div className="flex items-center gap-3 border-2 border-primary bg-primary/5 px-3 py-3">
+        <FileText className="h-5 w-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] font-bold">{value.name}</div>
+          <div className="text-[10px] text-muted-foreground">{sizeLabel}</div>
+        </div>
+        <button type="button" onClick={() => { onChange(undefined); setError(""); }}
+          className="shrink-0 border-2 border-border p-1 hover:bg-destructive hover:text-destructive-foreground">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <input ref={inputRef} type="file" accept={accept} style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+      />
+      <div className="flex flex-col items-center gap-2 border-2 border-dashed border-border px-4 py-6 text-center"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
+        <Upload className="h-6 w-6 text-muted-foreground" />
+        <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Drag & drop here, or</div>
+        <button type="button" className="btn-brutal px-4 py-2 text-xs" onClick={() => inputRef.current?.click()}>Browse files</button>
+        <div className="text-[10px] text-muted-foreground">
+          {accept ? accept.replace(/,/g, ", ") : "Any file"} · max {field.maxSizeMB ?? 5} MB
+        </div>
+      </div>
+      {error && <p className="text-[11px] font-bold text-destructive">{error}</p>}
     </div>
   );
 }
