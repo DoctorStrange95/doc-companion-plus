@@ -211,9 +211,12 @@ function FillForm() {
     window.scrollTo(0, 0);
   };
 
+  // Only longitudinal forms (or forms opened from a patient profile) need a patient linked
+  const needsPatient = form.longitudinal || !!patientId;
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPatient) { setError("Please choose a patient."); return; }
+    if (needsPatient && !selectedPatient) { setError("Please choose a patient."); return; }
     const err = validatePage();
     if (err) { setError(err); return; }
     const visibleIds = new Set(allVisibleFields.map((f) => f.id));
@@ -222,12 +225,16 @@ function FillForm() {
       if (visibleIds.has(k)) cleaned[k] = v;
     });
     store.addSubmission({
-      patientId: selectedPatient,
+      patientId: selectedPatient || "",
       formId: form.id,
       formName: form.name,
       data: cleaned,
     });
-    nav({ to: "/patients/$id", params: { id: selectedPatient } });
+    if (selectedPatient) {
+      nav({ to: "/patients/$id", params: { id: selectedPatient } });
+    } else {
+      nav({ to: "/forms" });
+    }
   };
 
   return (
@@ -240,7 +247,7 @@ function FillForm() {
       />
       <PageShell>
         <form onSubmit={submit} className="space-y-4">
-          {!patientId && (
+          {needsPatient && !patientId && (
             <div className="brutal p-4">
               <PatientPicker
                 value={selectedPatient}
