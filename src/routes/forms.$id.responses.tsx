@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import type { Submission, FormField } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText } from "lucide-react";
+import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/forms/$id/responses")({ component: FormResponses });
 
@@ -306,15 +306,17 @@ function FormResponses() {
   const rawSubmissions = useStore((s) => s.submissions);
   const [selected, setSelected] = useState<Submission | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialPulling, setInitialPulling] = useState(true);
 
   const submissions = useMemo(
     () => rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt),
     [rawSubmissions, id],
   );
 
-  // Pull latest data on mount so owner sees responses submitted by others
+  // Pull on mount and wait for it to complete before showing data,
+  // so users never see a partial list that jumps after the server responds.
   useEffect(() => {
-    void sync.pull();
+    void sync.pull().finally(() => setInitialPulling(false));
   }, []);
 
   const handleRefresh = async () => {
@@ -386,7 +388,12 @@ function FormResponses() {
       />
 
       <div className="px-4 pb-24 pt-2">
-        {submissions.length === 0 ? (
+        {initialPulling ? (
+          <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-xs font-bold uppercase tracking-widest">Loading responses…</span>
+          </div>
+        ) : submissions.length === 0 ? (
           <div className="brutal-flat p-8 text-center mt-4">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No responses yet</p>
             <Link to="/forms/$id/fill" params={{ id: form.id }} className="btn-brutal mt-4 inline-block text-xs">

@@ -235,7 +235,12 @@ function FormDetail() {
   const handleStatusChange = (newStatus: "draft" | "active" | "closed") => {
     setStatusSaving(true);
     store.updateForm(form.id, { status: newStatus });
-    setTimeout(() => setStatusSaving(false), 300);
+    const updated = store.get().forms.find((f) => f.id === form.id);
+    if (updated) {
+      void sync.pushForm(updated).finally(() => setStatusSaving(false));
+    } else {
+      setStatusSaving(false);
+    }
   };
 
   const handleDuplicate = () => {
