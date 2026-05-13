@@ -70,8 +70,6 @@ function FormDetail() {
   const [tokenWorking, setTokenWorking] = useState<"fill" | "analytics" | null>(null);
   const [tokenMsg, setTokenMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  // Fetch latest form definition on mount so all users see owner's updates
-  useEffect(() => { void sync.pull(); }, []);
 
   const formId = form?.id;
 

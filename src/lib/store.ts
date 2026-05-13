@@ -637,12 +637,15 @@ export const store = {
   },
 
   clearForLogout: () => {
+    // Keep forms/patients/submissions in localStorage so the same user sees
+    // their data immediately on re-login without waiting for a server pull.
+    // Only clear the pending queue (no stale ops from the old session).
+    // pullSnapshot() after re-login will re-sync and correct any stale data.
     state = {
-      ...seed(),
-      patients: [],
-      forms: [],
-      submissions: [],
+      ...state,
       queue: [],
+      syncing: false,
+      lastSync: null,
     };
     persist();
   },

@@ -25,6 +25,21 @@ interface AuthState {
 }
 
 const Ctx = createContext<AuthState | null>(null);
+const USER_CACHE_KEY = "communitymed_user_v1";
+
+function cacheUser(u: AuthUser | null) {
+  if (typeof window === "undefined") return;
+  if (u) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+  else localStorage.removeItem(USER_CACHE_KEY);
+}
+
+function readCachedUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AuthUser) : null;
+  } catch { return null; }
+}
 
 function syncWorkerName(user: AuthUser) {
   const current = store.get().worker;
@@ -34,45 +49,51 @@ function syncWorkerName(user: AuthUser) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  // Initialise from localStorage so the app never shows "Loading…" when a
+  // valid session already exists. The token is verified in the background.
+  const [user, setUser] = useState<AuthUser | null | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const tok = getToken();
+    if (!tok) return null;          // no token → definitely logged out
+    return readCachedUser();        // cached user or null (will resolve below)
+  });
 
   useEffect(() => {
     let mounted = true;
     const tok = getToken();
-    if (!tok) {
-      setUser(null);
-      return;
-    }
+    if (!tok) { setUser(null); return; }
+
+    // Verify the token with the server in the background.
+    // We already showed the cached user instantly — this just refreshes it.
     api<AuthUser>("/api/auth/me")
       .then((u) => {
         if (!mounted) return;
+        cacheUser(u);
         setUser(u);
         syncWorkerName(u);
-        // Pull a fresh snapshot once auth is verified.
         void sync.pull().catch(() => {});
         void sync.drain().catch(() => {});
       })
       .catch((e) => {
         if (!mounted) return;
+        // Only force-logout on explicit 401 — network errors should not log the user out.
         if (e instanceof ApiError && e.status === 401) {
           setToken(null);
+          cacheUser(null);
+          setUser(null);
         }
-        setUser(null);
+        // Any other error (server sleeping, 5xx): keep the cached user, stay logged in.
       });
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const login = async (email: string, password: string) => {
     const res = await api<{ access_token: string; user: AuthUser }>(
       "/api/auth/login",
-      {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      },
+      { method: "POST", body: JSON.stringify({ email, password }) },
     );
     setToken(res.access_token);
+    cacheUser(res.user);
     setUser(res.user);
     syncWorkerName(res.user);
     await sync.pull().catch(() => {});
@@ -90,16 +111,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       "/api/auth/register",
       {
         method: "POST",
-        body: JSON.stringify({
-          email,
-          password,
-          name,
-          phone,
-          best_suited_role: bestSuitedRole,
-        }),
+        body: JSON.stringify({ email, password, name, phone, best_suited_role: bestSuitedRole }),
       },
     );
     setToken(res.access_token);
+    cacheUser(res.user);
     setUser(res.user);
     syncWorkerName(res.user);
     await sync.pull().catch(() => {});
@@ -107,12 +123,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    try {
-      await api("/api/auth/logout", { method: "POST" });
-    } catch {
-      /* ignore network errors */
-    }
+    try { await api("/api/auth/logout", { method: "POST" }); } catch { /* ignore */ }
     setToken(null);
+    cacheUser(null);
     setUser(null);
     store.clearForLogout();
   };
