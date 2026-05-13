@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw } from "lucide-react";
@@ -36,6 +36,13 @@ function FormsList() {
       setSyncing(false);
     }
   };
+
+  // Pull on mount if data is missing or stale (>90s since last sync)
+  useEffect(() => {
+    const stale = !lastSync || Date.now() - lastSync > 90_000;
+    if (stale) void handleSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   const filteredForms = useMemo(() => {

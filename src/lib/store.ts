@@ -685,7 +685,15 @@ async function pullSnapshot() {
 
     const fIds = new Set(serverForms.map((f) => f.id));
     const sIds = new Set(serverPatients.map((p) => p.id));
-    const subIds = new Set(serverSubs.map((s) => s.id));
+    // (subIds unused — submissions use union-merge, not set-diff)
+
+    // Safety guard: if the server returned 0 forms but we have synced forms locally,
+    // treat it as a suspicious empty response (Render returning stale data, partial
+    // response, etc.) and preserve existing local forms rather than wiping them.
+    const localSyncedFormsCount = state.forms.filter((f) => !!f.ownerId).length;
+    if (serverForms.length === 0 && localSyncedFormsCount > 0 && pendingFormMap.size === 0) {
+      return;
+    }
 
     // Local-only: not on server, no ownerId, not in pending queue.
     // Use a Map to deduplicate by ID in case local state has stale duplicates.

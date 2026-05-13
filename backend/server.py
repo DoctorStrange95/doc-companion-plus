@@ -85,6 +85,7 @@ async def ensure_form_extra_columns():
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_forms_analytics_token ON forms(analytics_token) WHERE analytics_token IS NOT NULL"))
         await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_fill BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_view BOOLEAN NOT NULL DEFAULT TRUE"))
+        await conn.execute(text("ALTER TABLE shares ADD COLUMN IF NOT EXISTS can_edit BOOLEAN NOT NULL DEFAULT FALSE"))
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE"))
         await conn.execute(text("ALTER TABLE forms ADD COLUMN IF NOT EXISTS allowed_filler_emails JSONB NOT NULL DEFAULT '[]'::jsonb"))
         await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(256)"))
@@ -737,16 +738,21 @@ async def delete_patient(pid: str, user: User = Depends(get_current_user), db: A
 # ============================================================================
 @app.get("/api/forms", response_model=list[FormOut])
 async def list_forms(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    # Load all shares for this user in one query to avoid N+1
-    shares_res = await db.execute(
-        select(Share).where(and_(Share.shared_with == user.id, Share.resource_type == "form"))
-    )
-    share_map: dict[str, Share] = {str(sh.resource_id): sh for sh in shares_res.scalars().all()}
-
-    shared_ids = list(share_map.keys())
-    q = select(FormDef).where(or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_ids)))
+    shared = await shared_resource_ids(db, str(user.id), "form")
+    q = select(FormDef).where(or_(FormDef.owner_id == user.id, FormDef.id.in_(shared)))
     res = await db.execute(q.order_by(FormDef.created_at.desc()))
     rows = res.scalars().all()
+
+    # Fetch per-form permissions for shared forms (single extra query)
+    share_map: dict[str, "Share"] = {}
+    if shared:
+        sr = await db.execute(
+            select(Share).where(
+                and_(Share.shared_with == str(user.id), Share.resource_type == "form")
+            )
+        )
+        share_map = {str(s.resource_id): s for s in sr.scalars().all()}
+
     result = []
     for r in rows:
         is_shared = str(r.owner_id) != str(user.id)
@@ -754,9 +760,9 @@ async def list_forms(user: User = Depends(get_current_user), db: AsyncSession = 
         result.append(FormOut(
             **{c.name: getattr(r, c.name) for c in r.__table__.columns},
             shared=is_shared,
-            can_edit=sh.can_edit if sh else False,
-            can_fill=sh.can_fill if sh else True,
-            can_view=sh.can_view if sh else True,
+            can_edit=bool(sh.can_edit) if sh else False,
+            can_fill=bool(sh.can_fill) if sh else True,
+            can_view=bool(sh.can_view) if sh else True,
         ))
     return result
 
