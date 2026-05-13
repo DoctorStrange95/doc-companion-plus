@@ -360,13 +360,24 @@ const seed = (): State => ({
 });
 
 // ---------- Persistence ----------------------------------------------------
+function dedupeById<T extends { id: string }>(arr: T[]): T[] {
+  const seen = new Map<string, T>();
+  for (const item of arr) seen.set(item.id, item);
+  return [...seen.values()];
+}
+
 let state: State = (() => {
   if (typeof window === "undefined") return seed();
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...seed(), ...parsed, syncing: false };
+      const loaded: State = { ...seed(), ...parsed, syncing: false };
+      // Deduplicate on load to self-heal any accumulated duplicates in localStorage
+      loaded.forms = dedupeById(loaded.forms);
+      loaded.patients = dedupeById(loaded.patients);
+      loaded.submissions = dedupeById(loaded.submissions);
+      return loaded;
     }
   } catch {
     /* ignore */
