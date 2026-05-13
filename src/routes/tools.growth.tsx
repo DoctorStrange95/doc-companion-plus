@@ -1303,6 +1303,16 @@ function QuickCalculator() {
     }
   }, [sex, ageMonths, weight, height, muac]);
 
+  const sexCode = sex === "Male" ? "M" : "F";
+  const quickHazRef = useMemo(() => {
+    if (ageMonths === null || ageMonths > 60) return [];
+    return buildHAZRef(sexCode, Math.max(0, ageMonths - 6), Math.min(60, ageMonths + 6));
+  }, [sexCode, ageMonths]);
+  const quickWazRef = useMemo(() => {
+    if (ageMonths === null || ageMonths > 60) return [];
+    return buildWAZRef(sexCode, Math.max(0, ageMonths - 6), Math.min(60, ageMonths + 6));
+  }, [sexCode, ageMonths]);
+
   return (
     <div className="space-y-4">
       {/* Sex */}
@@ -1398,6 +1408,40 @@ function QuickCalculator() {
               ⚠ MAM — Monitor closely, nutritional support indicated
             </div>
           )}
+          {ageMonths !== null && ageMonths <= 60 && (() => {
+            const w = parseFloat(weight);
+            const h = parseFloat(height);
+            const isMale = sex === "Male";
+            const childColor = isMale ? "#1d4ed8" : "#db2777";
+            return (
+              <div className="space-y-4 mt-2">
+                <WHOChart
+                  title={`Height-for-Age ${isMale ? "BOYS" : "GIRLS"}`}
+                  subtitle="WHO 2006 · 0–60 months (z-scores)"
+                  refData={quickHazRef}
+                  childPts={h > 0 ? [{ age: ageMonths, child: h }] : []}
+                  unit="cm" yLabel="Height (cm)" childColor={childColor}
+                  zones={[
+                    { y1Key: "sd3p", y2Key: "sd2p", fill: "#fee2e2", label: "Tall" },
+                    { y1Key: "sd2n", y2Key: "sd2p", fill: "#dcfce7", label: "Normal" },
+                    { y1Key: "sd3n", y2Key: "sd2n", fill: "#fef3c7", label: "Stunted" },
+                  ]}
+                />
+                <WHOChart
+                  title={`Weight-for-Age ${isMale ? "BOYS" : "GIRLS"}`}
+                  subtitle="WHO 2006 · 0–60 months (z-scores)"
+                  refData={quickWazRef}
+                  childPts={w > 0 ? [{ age: ageMonths, child: w }] : []}
+                  unit="kg" yLabel="Weight (kg)" childColor={childColor}
+                  zones={[
+                    { y1Key: "sd2p", y2Key: "sd3p", fill: "#fee2e2", label: "Overweight" },
+                    { y1Key: "sd2n", y2Key: "sd2p", fill: "#dcfce7", label: "Normal" },
+                    { y1Key: "sd3n", y2Key: "sd2n", fill: "#fef3c7", label: "Underweight" },
+                  ]}
+                />
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="brutal-flat p-5 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
