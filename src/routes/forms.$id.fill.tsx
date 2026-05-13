@@ -4,7 +4,7 @@ import { z } from "zod";
 import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { PatientPicker } from "@/components/PatientPicker";
-import { AlertTriangle, MapPin, Loader2, X, Image } from "lucide-react";
+import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2 } from "lucide-react";
 
 const search = z.object({ patient: z.string().optional() });
 
@@ -606,6 +606,9 @@ function FieldRenderer({
       {f.type === "photo" && (
         <PhotoField value={value as string | undefined} onChange={onChange} />
       )}
+      {f.type === "file_upload" && (
+        <FileUploadField field={f} value={value as FileUploadValue | undefined} onChange={onChange} />
+      )}
     </div>
   );
 }
@@ -851,6 +854,103 @@ function PhotoField({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+interface FileUploadValue {
+  name: string;
+  size: number;
+  type: string;
+  data: string; // base64 data URL
+}
+
+function FileUploadField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  value: FileUploadValue | undefined;
+  onChange: (v: unknown) => void;
+}) {
+  const maxBytes = (field.maxSizeMB ?? 5) * 1024 * 1024;
+  const accept = field.acceptTypes && field.acceptTypes !== "*" ? field.acceptTypes : undefined;
+  const [error, setError] = useState("");
+
+  function handleFile(file: File) {
+    setError("");
+    if (file.size > maxBytes) {
+      setError(`File is too large. Maximum size is ${field.maxSizeMB ?? 5} MB.`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      onChange({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        data: reader.result as string,
+      } satisfies FileUploadValue);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
+
+  if (value) {
+    const kb = (value.size / 1024).toFixed(0);
+    const mb = (value.size / (1024 * 1024)).toFixed(2);
+    const sizeLabel = value.size > 1024 * 1024 ? `${mb} MB` : `${kb} KB`;
+    return (
+      <div className="flex items-center gap-3 border-2 border-primary bg-primary/5 px-3 py-3">
+        <FileText className="h-5 w-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] font-bold">{value.name}</div>
+          <div className="text-[10px] text-muted-foreground">{sizeLabel}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => { onChange(undefined); setError(""); }}
+          className="shrink-0 border-2 border-border p-1 hover:bg-destructive hover:text-destructive-foreground"
+          title="Remove file"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <label
+        className="flex cursor-pointer flex-col items-center gap-2 border-2 border-dashed border-border px-4 py-6 text-center hover:border-primary hover:bg-primary/5 transition-colors"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+      >
+        <Upload className="h-6 w-6 text-muted-foreground" />
+        <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          Click to upload or drag & drop
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          {accept ? accept.replace(/,/g, ", ") : "Any file"} · max {field.maxSizeMB ?? 5} MB
+        </div>
+        <input
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+            e.target.value = "";
+          }}
+        />
+      </label>
+      {error && <p className="text-[11px] font-bold text-destructive">{error}</p>}
     </div>
   );
 }

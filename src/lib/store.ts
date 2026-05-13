@@ -39,6 +39,7 @@ export type FieldType =
   | "measurement"
   | "location"
   | "photo"
+  | "file_upload"
   // Layout
   | "section_header"
   | "page_break";
@@ -173,6 +174,9 @@ export interface FormField {
   includeOther?: boolean;
   // Measurement clinical preset
   measurementType?: "BP" | "temperature" | "SpO2" | "BSL" | "MUAC" | "weight" | "height" | "custom";
+  // File upload
+  acceptTypes?: string; // MIME or extension filter, e.g. "*", "image/*", ".pdf,.docx"
+  maxSizeMB?: number;   // max file size in MB (default 5)
 }
 
 export type FormRole = "standalone" | "parent" | "child";

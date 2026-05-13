@@ -30,7 +30,7 @@ import {
   Type, AlignLeft, Hash, Calendar, Clock, CalendarDays,
   ListChecks, CheckSquare, ToggleLeft, Star,
   Minus, LayoutGrid, Calculator,
-  Stethoscope, MapPin, Camera,
+  Stethoscope, MapPin, Camera, Upload,
   SeparatorHorizontal, SquareSplitHorizontal,
   GripVertical, Trash2, Copy, GitBranch, Plus, Settings, ChevronRight, X,
   Repeat,
@@ -106,6 +106,7 @@ const PALETTE: { group: string; items: PaletteItem[] }[] = [
       { type: "measurement", label: "Measurement", icon: Stethoscope },
       { type: "location", label: "Location / GPS", icon: MapPin },
       { type: "photo", label: "Photo / Image", icon: Camera },
+      { type: "file_upload", label: "File upload", icon: Upload },
     ],
   },
   {
@@ -153,6 +154,8 @@ function makeField(type: FieldType): FormField {
       return { ...base, measurementType: "weight", unit: "kg" };
     case "section_header":
       return { ...base, label: "Section title", required: false };
+    case "file_upload":
+      return { ...base, acceptTypes: "*", maxSizeMB: 5 };
     default:
       return base;
   }
@@ -299,6 +302,15 @@ function FieldPreview({ field }: { field: FormField }) {
       return (
         <div className={`${cls} text-[10px] font-bold uppercase text-muted-foreground`}>
           {field.measurementType === "BP" ? "SBP / DBP mmHg" : `${field.measurementType ?? "custom"} ${field.unit ?? ""}`}
+        </div>
+      );
+    case "file_upload":
+      return (
+        <div className={`${cls} flex items-center gap-2 border-2 border-dashed border-border px-3 py-2`}>
+          <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-bold text-muted-foreground">
+            {field.acceptTypes && field.acceptTypes !== "*" ? field.acceptTypes : "Any file"} · max {field.maxSizeMB ?? 5} MB
+          </span>
         </div>
       );
     case "section_header":
@@ -624,6 +636,41 @@ function TypeConfig({ field, onChange }: { field: FormField; onChange: (p: Parti
         </div>
       );
     }
+
+    case "file_upload":
+      return (
+        <div className="space-y-3 border-2 border-border p-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">File upload settings</div>
+          <ConfigField label="Allowed file types">
+            <select
+              value={field.acceptTypes ?? "*"}
+              onChange={(e) => onChange({ acceptTypes: e.target.value })}
+              className="input-brutal text-xs"
+            >
+              <option value="*">Any file</option>
+              <option value="image/*">Images only (JPG, PNG, GIF…)</option>
+              <option value=".pdf">PDF only</option>
+              <option value=".pdf,.doc,.docx">Documents (PDF, Word)</option>
+              <option value=".pdf,.doc,.docx,.xls,.xlsx,.csv">Documents + Spreadsheets</option>
+              <option value=".pdf,.doc,.docx,.jpg,.jpeg,.png">Docs + Images</option>
+            </select>
+          </ConfigField>
+          <ConfigField label="Max file size">
+            <select
+              value={field.maxSizeMB ?? 5}
+              onChange={(e) => onChange({ maxSizeMB: Number(e.target.value) })}
+              className="input-brutal text-xs"
+            >
+              <option value={1}>1 MB</option>
+              <option value={2}>2 MB</option>
+              <option value={5}>5 MB</option>
+            </select>
+          </ConfigField>
+          <p className="text-[9px] italic text-muted-foreground">
+            Files are stored as encoded data within the form response.
+          </p>
+        </div>
+      );
 
     case "measurement":
       return (
