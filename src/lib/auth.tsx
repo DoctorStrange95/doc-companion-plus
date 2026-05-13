@@ -26,6 +26,13 @@ interface AuthState {
 
 const Ctx = createContext<AuthState | null>(null);
 
+function syncWorkerName(user: AuthUser) {
+  const current = store.get().worker;
+  if (current.name === "Health Worker" && user.name) {
+    store.setWorker({ name: user.name, village: current.village });
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
 
@@ -40,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((u) => {
         if (!mounted) return;
         setUser(u);
+        syncWorkerName(u);
         // Pull a fresh snapshot once auth is verified.
         void sync.pull().catch(() => {});
         void sync.drain().catch(() => {});
@@ -66,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
     setToken(res.access_token);
     setUser(res.user);
+    syncWorkerName(res.user);
     await sync.pull().catch(() => {});
     await sync.drain().catch(() => {});
   };
@@ -92,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
     setToken(res.access_token);
     setUser(res.user);
+    syncWorkerName(res.user);
     await sync.pull().catch(() => {});
     await sync.drain().catch(() => {});
   };

@@ -841,9 +841,14 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
   // Initial drain attempt on app boot
-  setTimeout(() => {
-    void drain();
-  }, 1500);
+  setTimeout(() => { void drain(); }, 1500);
+  // Periodic background sync every 2 minutes while logged in and online
+  setInterval(() => {
+    if (getToken() && (typeof navigator === "undefined" || navigator.onLine)) {
+      void drain();
+      void pullSnapshot();
+    }
+  }, 2 * 60 * 1000);
 }
 
 // ---------- Helpers --------------------------------------------------------

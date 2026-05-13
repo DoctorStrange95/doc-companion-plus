@@ -53,33 +53,45 @@ function Home() {
         </div>
 
         <div className="mt-8">
-          <SectionTitle kicker={`${submissions.length}`}>Recent visits</SectionTitle>
+          <SectionTitle kicker={`${submissions.length}`}>Recent activity</SectionTitle>
           {submissions.length === 0 ? (
             <div className="brutal-flat p-6 text-center text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              No visits yet — register a patient.
+              No activity yet.
             </div>
           ) : (
             <ul className="brutal divide-y-2 divide-border">
               {submissions.slice(0, 5).map((s) => {
-                const p = patients.find((x) => x.id === s.patientId);
+                const p = s.patientId ? patients.find((x) => x.id === s.patientId) : null;
+                const label = p?.name ?? (s.patientId ? "Unknown patient" : s.formName);
+                const sub = p ? `${s.formName} · ${new Date(s.createdAt).toLocaleString()}` : new Date(s.createdAt).toLocaleString();
                 return (
                   <li key={s.id}>
-                    <Link
-                      to="/patients/$id"
-                      params={{ id: s.patientId }}
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-primary/30"
-                    >
-                      <div className="flex h-9 w-9 items-center justify-center border-2 border-border bg-primary">
-                        <Activity className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-bold">{p?.name ?? "Unknown"}</div>
-                        <div className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          {s.formName} · {new Date(s.createdAt).toLocaleString()}
+                    {p ? (
+                      <Link
+                        to="/patients/$id"
+                        params={{ id: s.patientId }}
+                        className="flex items-center gap-3 px-4 py-3 hover:bg-primary/30"
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center border-2 border-border bg-primary">
+                          <Activity className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold">{label}</div>
+                          <div className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{sub}</div>
+                        </div>
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    ) : (
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex h-9 w-9 items-center justify-center border-2 border-border bg-card">
+                          <ClipboardList className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold">{label}</div>
+                          <div className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{sub}</div>
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
+                    )}
                   </li>
                 );
               })}

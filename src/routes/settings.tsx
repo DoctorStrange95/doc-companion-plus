@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
-import { Download, RotateCcw, Wifi, WifiOff, LogOut, RefreshCw } from "lucide-react";
+import { Download, RotateCcw, Wifi, WifiOff, LogOut, RefreshCw, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({ component: Settings });
 
@@ -15,13 +15,15 @@ function Settings() {
   const lastSync = useStore((s) => s.lastSync);
   const syncing = useStore((s) => s.syncing);
   const { user, logout } = useAuth();
-  const [name, setName] = useState(worker.name);
+  const [name, setName] = useState(worker.name === "Health Worker" && user?.name ? user.name : worker.name);
   const [village, setVillage] = useState(worker.village);
   const [saved, setSaved] = useState(false);
+  const [syncError, setSyncError] = useState("");
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
+  const syncStuck = queue.length > 10 && lastSync && (Date.now() - lastSync) > 5 * 60 * 1000;
 
   const save = () => {
-    store.setWorker({ name: name.trim() || "Health Worker", village: village.trim() || "Unknown" });
+    store.setWorker({ name: name.trim() || user?.name || "Health Worker", village: village.trim() || "Unknown" });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -63,14 +65,30 @@ function Settings() {
           </div>
           <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             {queue.length > 0
-              ? `${queue.length} pending change${queue.length === 1 ? "" : "s"}`
+              ? `${queue.length} pending change${queue.length === 1 ? "" : "s"} · `
               : "All changes synced"}
-            {lastSync ? ` · last sync ${new Date(lastSync).toLocaleTimeString()}` : ""}
+            {lastSync ? `last sync ${new Date(lastSync).toLocaleTimeString()}` : "never synced"}
           </div>
+          {syncStuck && (
+            <div className="mt-2 flex items-start gap-2 border-2 border-destructive bg-destructive/10 p-2">
+              <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+              <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">
+                Sync appears stuck. Sign out and sign back in — this usually fixes it.
+              </p>
+            </div>
+          )}
+          {syncError && (
+            <p className="mt-1 text-[11px] font-bold text-destructive">{syncError}</p>
+          )}
           <button
-            onClick={() => {
-              void sync.drain();
-              void sync.pull();
+            onClick={async () => {
+              setSyncError("");
+              try {
+                await sync.drain();
+                await sync.pull();
+              } catch {
+                setSyncError("Sync failed — check your connection and try again.");
+              }
             }}
             disabled={syncing || !online || !user}
             data-testid="sync-now-btn"
