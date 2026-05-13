@@ -1014,11 +1014,14 @@ export default function FormBuilderPage() {
         store.addForm(formData);
       }
       setSaving(true);
-      // Drain immediately so the backend has the update before we navigate away
-      void sync.drain().finally(() => {
-        setSaving(false);
-        nav({ to: "/forms" });
-      });
+      // drain() now returns the in-flight promise if one is already running,
+      // so this .finally() fires only after the actual push completes (or fails).
+      void sync.drain()
+        .catch(() => { /* push failed — form is queued, will retry automatically */ })
+        .finally(() => {
+          setSaving(false);
+          nav({ to: "/forms" });
+        });
     });
   };
 

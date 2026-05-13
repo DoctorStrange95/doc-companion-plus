@@ -710,10 +710,19 @@ async function pullSnapshot() {
   }
 }
 
-async function drain() {
-  if (!isOnline() || !getToken() || state.syncing || state.queue.length === 0) {
-    return;
-  }
+// Shared promise for any drain currently in flight.
+// Callers that arrive while a drain is running get the SAME promise back,
+// so they wait for the actual push to finish rather than returning early.
+let _drainInFlight: Promise<void> | null = null;
+
+async function drain(): Promise<void> {
+  if (_drainInFlight) return _drainInFlight;
+  if (!isOnline() || !getToken() || state.queue.length === 0) return;
+  _drainInFlight = executeDrain().finally(() => { _drainInFlight = null; });
+  return _drainInFlight;
+}
+
+async function executeDrain(): Promise<void> {
   state = { ...state, syncing: true };
   persist();
   const batch = state.queue;

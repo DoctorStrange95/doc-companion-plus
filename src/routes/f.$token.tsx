@@ -172,7 +172,7 @@ function PublicFiller() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/api/forms/public/${token}`)
+    fetch(`${API_BASE}/api/forms/public/${token}`, { cache: "no-store" })
       .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
