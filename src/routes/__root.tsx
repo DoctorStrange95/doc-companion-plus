@@ -149,17 +149,17 @@ function AuthShell() {
 
   useEffect(() => {
     if (user === undefined) return;
-    const onLogin = path === "/login";
-    const isPublic = path.startsWith("/f/") || path.startsWith("/fa/");
-    if (!user && !onLogin && !isPublic) {
-      nav({ to: "/login", replace: true });
-    } else if (user && onLogin) {
+    // Redirect logged-in users away from login page
+    if (user && path === "/login") {
       nav({ to: "/", replace: true });
     }
   }, [user, path, nav]);
 
-  const isPublic = path.startsWith("/f/") || path.startsWith("/fa/");
-  if (user === undefined && !isPublic) {
+  const isPublic = path.startsWith("/f/") || path.startsWith("/fa/") || path.startsWith("/pg/");
+  const isLoginPage = path === "/login";
+
+  // Show loading spinner only briefly while auth check is in-flight
+  if (user === undefined && !isPublic && !isLoginPage) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="font-display text-2xl uppercase tracking-widest text-muted-foreground">
@@ -172,7 +172,7 @@ function AuthShell() {
   return (
     <div className="min-h-screen bg-background">
       <Outlet />
-      {user && <BottomNav />}
+      {!isPublic && !isLoginPage && <BottomNav />}
     </div>
   );
 }

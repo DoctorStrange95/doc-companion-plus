@@ -24,6 +24,7 @@ import {
   type ConditionalLogic, type ConditionalOperator,
   ruleId, normalizeShowIf,
 } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageShell";
 import {
   Type, AlignLeft, Hash, Calendar, Clock, CalendarDays,
@@ -859,6 +860,7 @@ const CATEGORIES = ["GENERAL", "NUTRITION", "GROWTH", "IMNCI", "RESEARCH", "SCRE
 
 export default function FormBuilderPage() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const { edit: editId } = Route.useSearch();
   const existingForm = useStore((s) => (editId ? s.forms.find((f) => f.id === editId) : undefined));
 
@@ -943,6 +945,7 @@ export default function FormBuilderPage() {
   };
 
   const save = () => {
+    if (!user) { nav({ to: "/login", replace: false }); return; }
     if (!title.trim()) { alert("Form needs a title."); return; }
     if (fields.length === 0) { alert("Add at least one field."); return; }
     const formData = {

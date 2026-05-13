@@ -1,7 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import type { Patient, Submission } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { Search, Plus, ChevronDown, ChevronRight, Trash2, Pencil, Download, Share2, X } from "lucide-react";
 import { API_BASE, getToken } from "@/lib/api";
@@ -125,6 +126,8 @@ function GrowthTool() {
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [justAdded, setJustAdded] = useState<Patient | null>(null);
+  const { user } = useAuth();
+  const nav = useNavigate();
 
   const filteredPatients = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -156,7 +159,7 @@ function GrowthTool() {
         <div className="mb-3 flex gap-2">
           <button
             className="btn-brutal flex shrink-0 items-center gap-1.5 text-xs"
-            onClick={() => { setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); setJustAdded(null); }}
+            onClick={() => { if (!user) { nav({ to: "/login" }); return; } setShowAddPatient(true); setExpandedId(null); setSearchQuery(""); setJustAdded(null); }}
           >
             <Plus className="h-3.5 w-3.5" /> Track new patient
           </button>
@@ -273,6 +276,8 @@ function PatientAccordion({
   onVisitSaved?: () => void;
 }) {
   const [showAddVisit, setShowAddVisit] = useState(openAddVisit);
+  const { user } = useAuth();
+  const nav = useNavigate();
   const [editingVisit, setEditingVisit] = useState<GrowthVisit | null>(null);
   const [showSharePanel, setShowSharePanel] = useState(false);
 
@@ -419,7 +424,7 @@ function PatientAccordion({
           <div className="flex flex-wrap gap-2">
             <button
               className="btn-brutal flex-1 text-xs"
-              onClick={() => { setShowAddVisit((v) => !v); setEditingVisit(null); }}
+              onClick={() => { if (!user) { nav({ to: "/login" }); return; } setShowAddVisit((v) => !v); setEditingVisit(null); }}
             >
               {showAddVisit ? "Cancel" : "+ Add visit"}
             </button>

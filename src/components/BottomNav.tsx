@@ -1,7 +1,8 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { Home, BarChart3, FilePlus2, Wrench, Settings } from "lucide-react";
+import { Home, BarChart3, FilePlus2, Wrench, Settings, LogIn } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 
-const tabs = [
+const authTabs = [
   { to: "/", label: "Home", icon: Home },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/forms", label: "Forms", icon: FilePlus2 },
@@ -9,8 +10,19 @@ const tabs = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
+const guestTabs = [
+  { to: "/", label: "Home", icon: Home },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/forms", label: "Forms", icon: FilePlus2 },
+  { to: "/tools", label: "Tools", icon: Wrench },
+  { to: "/login", label: "Sign In", icon: LogIn },
+] as const;
+
 export function BottomNav() {
   const { pathname } = useLocation();
+  const { user } = useAuth();
+  const tabs = user ? authTabs : guestTabs;
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-border bg-card">
       <div className="mx-auto flex max-w-2xl items-stretch justify-between">

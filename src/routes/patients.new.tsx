@@ -1,12 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { store } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 
 export const Route = createFileRoute("/patients/new")({ component: NewPatient });
 
 function NewPatient() {
   const nav = useNavigate();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     name: "",
     dob: "",
@@ -19,6 +21,10 @@ function NewPatient() {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      nav({ to: "/login", replace: false });
+      return;
+    }
     if (!form.name.trim() || !form.dob || !form.village.trim()) {
       setErr("Name, date of birth, and village are required.");
       return;

@@ -801,6 +801,30 @@ export const sync = {
       }),
     });
   },
+  /** Force-push all growth visit submissions for a patient directly to the backend.
+   *  Safe to call even after drain — backend deduplicates by submission ID. */
+  pushPatientVisits: async (patientId: string) => {
+    const token = getToken();
+    if (!token) return;
+    const visits = state.submissions.filter(
+      (s) => s.patientId === patientId && s.formId === "__growth_visit__",
+    );
+    if (!visits.length) return;
+    await api("/api/sync/push", {
+      method: "POST",
+      body: JSON.stringify({
+        patients: [],
+        forms: [],
+        submissions: visits.map(({ ownerId: _o, createdAt: _c, ...rest }) => ({
+          id: rest.id,
+          patient_id: rest.patientId,
+          form_id: rest.formId,
+          form_name: rest.formName,
+          data: rest.data,
+        })),
+      }),
+    });
+  },
 };
 
 // ---------- Online listener -----------------------------------------------

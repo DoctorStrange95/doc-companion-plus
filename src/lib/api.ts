@@ -34,7 +34,17 @@ export async function api<T>(
   headers.set("Content-Type", "application/json");
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(url, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const lower = msg.toLowerCase();
+    if (lower.includes("load failed") || lower.includes("failed to fetch") || lower.includes("network request failed")) {
+      throw new Error("Cannot reach server. Check your internet connection or try again.");
+    }
+    throw new Error(msg);
+  }
   const text = await res.text();
   let body: unknown = null;
   try {
