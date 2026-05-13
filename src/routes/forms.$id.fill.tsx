@@ -826,7 +826,6 @@ function PhotoField({
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           className="sr-only"
           onChange={(e) => {
             const file = e.target.files?.[0];
