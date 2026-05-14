@@ -419,9 +419,42 @@ let state: State = (() => {
 })();
 
 const listeners = new Set<() => void>();
+
+// Strip base64 / large binary strings from a submission's data map.
+// Photo and file-upload responses are already persisted on the server once
+// synced, so keeping multi-MB strings in localStorage is wasteful and can
+// easily blow the 5-10 MB browser quota.
+function stripLargeValues(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    // base64 data-URLs and large encoded strings are typically >> 2 KB
+    out[k] = typeof v === "string" && v.length > 2048 ? "__binary_stripped__" : v;
+  }
+  return out;
+}
+
+function slimSubmissions(subs: Submission[]): Submission[] {
+  return subs.map((s) => ({ ...s, data: stripLargeValues(s.data) }));
+}
+
 const persist = () => {
   if (typeof window !== "undefined") {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch {
+      // Quota exceeded — retry with large binary fields stripped from submissions.
+      // The binary data lives on the server; stripping it locally is safe.
+      try {
+        const slim = { ...state, submissions: slimSubmissions(state.submissions) };
+        localStorage.setItem(KEY, JSON.stringify(slim));
+      } catch {
+        // Still too large — persist without submissions (they re-sync from server).
+        // Queue entries are preserved so in-flight ops are not lost.
+        try {
+          localStorage.setItem(KEY, JSON.stringify({ ...state, submissions: [] }));
+        } catch { /* give up — in-memory state is still correct */ }
+      }
+    }
   }
   listeners.forEach((l) => l());
 };
@@ -761,10 +794,12 @@ async function pullSnapshot() {
     // Never discard a local submission just because the server didn't return it —
     // the server may return a partial list, and we never want a pull to silently
     // delete responses the user has already recorded.
+    // Strip large binary fields from server-fetched submissions — they're already
+    // safe on the server and keeping base64 photos/files locally blows localStorage quota.
     const submissionMap = new Map<string, Submission>(
       state.submissions.map((s) => [s.id, s]),
     );
-    for (const s of serverSubs) submissionMap.set(s.id, s);
+    for (const s of serverSubs) submissionMap.set(s.id, { ...s, data: stripLargeValues(s.data) });
 
     state = {
       ...state,
