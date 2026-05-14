@@ -723,15 +723,15 @@ export const store = {
   },
 
   clearForLogout: () => {
-    // Keep forms/patients/submissions in localStorage so the same user sees
-    // their data immediately on re-login without waiting for a server pull.
-    // Only clear the pending queue (no stale ops from the old session).
-    // pullSnapshot() after re-login will re-sync and correct any stale data.
-    // Do NOT reset lastSync — keeping it non-null means initDone stays true
-    // on the next load, so the app shows cached content instantly instead of
-    // a blank loading screen while the backend warms up.
+    // Clear private user data on logout so the logged-out home screen never
+    // shows a previous user's patients, submissions, or name.
+    // Forms are kept (they may be public/shared and load without auth).
+    // pullSnapshot() after re-login re-syncs all private data from the server.
     state = {
       ...state,
+      patients: [],
+      submissions: [],
+      worker: { name: "Health Worker", village: "Demo Village" },
       queue: [],
       syncing: false,
       pulling: false,
