@@ -5,6 +5,7 @@ from pathlib import Path
 
 load_dotenv(Path(__file__).parent / ".env")
 
+import asyncio
 import os
 import json
 import secrets
@@ -92,6 +93,12 @@ async def ensure_form_extra_columns():
         await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(256)"))
         await conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS share_token VARCHAR(64)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_patients_share_token ON patients(share_token) WHERE share_token IS NOT NULL"))
+        # Composite index on shares(shared_with, resource_type) — replaces the
+        # old single-column ix_shares_shared_with for the most common query pattern.
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_shares_shared_with_type "
+            "ON shares(shared_with, resource_type)"
+        ))
 
 
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
@@ -595,8 +602,27 @@ async def shared_resource_ids(
     return {row[0] for row in res.all()}
 
 
+async def shared_resource_ids_both(
+    db: AsyncSession, user_id: str
+) -> tuple[set[str], set[str]]:
+    """Return (patient_ids, form_ids) shared with user_id in a single query."""
+    res = await db.execute(
+        select(Share.resource_type, Share.resource_id).where(
+            Share.shared_with == user_id
+        )
+    )
+    patient_ids: set[str] = set()
+    form_ids: set[str] = set()
+    for rtype, rid in res.all():
+        if rtype == "patient":
+            patient_ids.add(rid)
+        elif rtype == "form":
+            form_ids.add(rid)
+    return patient_ids, form_ids
+
+
 async def can_write_resource(
-    db: AsyncSession, user: User, rtype: str, rid: str
+    db: AsyncSession, user: Any, rtype: str, rid: str
 ) -> bool:
     res = await db.execute(
         select(Share).where(
@@ -609,6 +635,25 @@ async def can_write_resource(
     )
     sh = res.scalar_one_or_none()
     return sh is not None and bool(getattr(sh, "can_edit", False))
+
+
+async def bulk_can_write(
+    db: AsyncSession, user_id: str, rtype: str, resource_ids: list[str]
+) -> set[str]:
+    """Return the subset of resource_ids that user_id has can_edit access to."""
+    if not resource_ids:
+        return set()
+    res = await db.execute(
+        select(Share.resource_id).where(
+            and_(
+                Share.shared_with == user_id,
+                Share.resource_type == rtype,
+                Share.resource_id.in_(resource_ids),
+                Share.can_edit == True,  # noqa: E712
+            )
+        )
+    )
+    return {row[0] for row in res.all()}
 
 
 # ============================================================================
@@ -1092,11 +1137,19 @@ async def sync_push(
     db: AsyncSession = Depends(get_db),
 ):
     out: dict = {"patients": 0, "forms": 0, "submissions": 0, "denied_forms": []}
+
+    # Pre-fetch edit permissions for all incoming IDs in two bulk queries
+    # instead of one per item (eliminates N+1 on shared resources).
+    patient_ids_in = [p.id for p in body.patients if p.id]
+    form_ids_in = [f.id for f in body.forms if f.id]
+    editable_patients = await bulk_can_write(db, str(user.id), "patient", patient_ids_in)
+    editable_forms = await bulk_can_write(db, str(user.id), "form", form_ids_in)
+
     for p in body.patients:
         if p.id:
             res = await db.execute(select(Patient).where(Patient.id == p.id))
             existing = res.scalar_one_or_none()
-            if existing and (str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "patient", existing.id)):
+            if existing and (str(existing.owner_id) == str(user.id) or p.id in editable_patients):
                 for k, v in p.model_dump(exclude={"id"}).items():
                     setattr(existing, k, v)
                 out["patients"] += 1
@@ -1111,7 +1164,7 @@ async def sync_push(
             if existing:
                 # Form already exists: update only if owner or collaborator with edit access.
                 # If neither, signal denial — never INSERT with same ID (PK conflict).
-                if str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "form", existing.id):
+                if str(existing.owner_id) == str(user.id) or f.id in editable_forms:
                     for k, v in f.model_dump(exclude={"id"}).items():
                         # Never overwrite share_token / analytics_token with null from the
                         # bulk-sync endpoint — token management uses dedicated endpoints.
@@ -1142,10 +1195,79 @@ async def sync_push(
 
 @app.get("/api/sync/pull")
 async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Returns the user's full visible dataset for cache hydration."""
-    patients = await list_patients(user=user, db=db)
-    forms = await list_forms(user=user, db=db)
-    submissions = await list_submissions(user=user, db=db)
+    """Returns the user's full visible dataset for cache hydration.
+
+    The three list helpers are independent so we fetch shared-resource IDs
+    once and pass them in, then run the three data queries concurrently.
+    """
+    # One query to get all shared IDs for both resource types at once.
+    shared_p, shared_f = await shared_resource_ids_both(db, str(user.id))
+
+    # Fetch owned form IDs (needed by list_submissions) in parallel with the
+    # patient and form queries.
+    async def _patients():
+        q = select(Patient).where(or_(Patient.owner_id == user.id, Patient.id.in_(shared_p)))
+        res = await db.execute(q.order_by(Patient.created_at.desc()))
+        rows = res.scalars().all()
+        return [
+            PatientOut(
+                **{c.name: getattr(r, c.name) for c in r.__table__.columns},
+                shared=(str(r.owner_id) != str(user.id)),
+            )
+            for r in rows
+        ]
+
+    async def _forms():
+        q = select(FormDef).where(or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_f)))
+        res = await db.execute(q.order_by(FormDef.created_at.desc()))
+        rows = res.scalars().all()
+
+        share_map: dict[str, Share] = {}
+        if shared_f:
+            sr = await db.execute(
+                select(Share).where(
+                    and_(Share.shared_with == str(user.id), Share.resource_type == "form")
+                )
+            )
+            share_map = {str(s.resource_id): s for s in sr.scalars().all()}
+
+        result = []
+        for r in rows:
+            is_shared = str(r.owner_id) != str(user.id)
+            sh = share_map.get(str(r.id))
+            result.append(FormOut(
+                **{c.name: getattr(r, c.name) for c in r.__table__.columns},
+                shared=is_shared,
+                can_edit=bool(sh.can_edit) if sh else False,
+                can_fill=bool(sh.can_fill) if sh else True,
+                can_view=bool(sh.can_view) if sh else True,
+            ))
+        return result
+
+    async def _submissions():
+        owned_f_res = await db.execute(select(FormDef.id).where(FormDef.owner_id == user.id))
+        owned_f = {str(row[0]) for row in owned_f_res.all()}
+        q = select(Submission).where(
+            or_(
+                Submission.owner_id == user.id,
+                Submission.patient_id.in_(shared_p),
+                Submission.form_id.in_(shared_f),
+                Submission.form_id.in_(owned_f),
+            )
+        )
+        res = await db.execute(q.order_by(Submission.created_at.desc()))
+        rows = res.scalars().all()
+        return [SubmissionOut.model_validate(r) for r in rows]
+
+    # asyncio.gather runs the three coroutines concurrently on the same event
+    # loop.  SQLAlchemy's AsyncSession is safe here because asyncio is
+    # single-threaded — coroutines interleave at await points rather than
+    # running in parallel threads, so there is no concurrent session access.
+    # The main win is eliminating the two extra shared_resource_ids round-trips
+    # that the individual list handlers would otherwise make.
+    patients, forms, submissions = await asyncio.gather(
+        _patients(), _forms(), _submissions()
+    )
     return {"patients": patients, "forms": forms, "submissions": submissions}
 
 

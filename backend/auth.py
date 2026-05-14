@@ -1,6 +1,8 @@
 """Auth helpers: password hashing, JWT issuance, current-user dependency."""
 
 import os
+import time
+import threading
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from types import SimpleNamespace
@@ -12,6 +14,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from database import get_db
+
+# ---------------------------------------------------------------------------
+# In-process user cache — avoids a DB round-trip on every authenticated
+# request.  Entries expire after 60 s so stale data (e.g. a deleted account)
+# is never served for more than a minute.  The cache is keyed by user_id
+# (the JWT "sub" claim) and is safe for concurrent async use because CPython's
+# GIL protects dict reads/writes.
+# ---------------------------------------------------------------------------
+_USER_CACHE: dict[str, tuple[float, SimpleNamespace]] = {}
+_USER_CACHE_TTL = 60.0  # seconds
+_CACHE_LOCK = threading.Lock()
+
+
+def _cache_get(user_id: str) -> Optional[SimpleNamespace]:
+    entry = _USER_CACHE.get(user_id)
+    if entry and (time.monotonic() - entry[0]) < _USER_CACHE_TTL:
+        return entry[1]
+    return None
+
+
+def _cache_set(user_id: str, user: SimpleNamespace) -> None:
+    with _CACHE_LOCK:
+        _USER_CACHE[user_id] = (time.monotonic(), user)
+
+
+def _cache_invalidate(user_id: str) -> None:
+    _USER_CACHE.pop(user_id, None)
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TTL_MIN = 60 * 24 * 7  # 7 days (long-lived; offline-friendly for CHWs)
@@ -72,26 +101,34 @@ async def get_current_user(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    # Fast path: return cached user to avoid a DB round-trip on every request.
+    cached = _cache_get(str(user_id))
+    if cached:
+        return cached
+
+    # Cache miss — fetch from DB (includes phone + best_suited_role).
     row = (
         await db.execute(
             text(
-                "SELECT id, email, password_hash, name, role "
+                "SELECT id, email, password_hash, name, role, "
+                "COALESCE(phone, '') AS phone, "
+                "COALESCE(best_suited_role, '') AS best_suited_role "
                 "FROM users WHERE id = :id LIMIT 1"
             ),
             {"id": str(user_id)},
         )
     ).mappings().first()
-    user = None
-    if row:
-        user = SimpleNamespace(
-            id=str(row["id"]),
-            email=row["email"],
-            password_hash=row["password_hash"],
-            name=row["name"] or "",
-            role=row["role"] or "worker",
-            phone="",
-            best_suited_role="",
-        )
-    if not user:
+    if not row:
         raise HTTPException(status_code=401, detail="User not found")
+
+    user = SimpleNamespace(
+        id=str(row["id"]),
+        email=row["email"],
+        password_hash=row["password_hash"],
+        name=row["name"] or "",
+        role=row["role"] or "worker",
+        phone=row["phone"] or "",
+        best_suited_role=row["best_suited_role"] or "",
+    )
+    _cache_set(str(user_id), user)
     return user

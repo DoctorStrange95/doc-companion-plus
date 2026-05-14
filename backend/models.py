@@ -118,7 +118,9 @@ class Share(Base):
         UniqueConstraint(
             "resource_type", "resource_id", "shared_with", name="uq_share_user_res"
         ),
-        Index("ix_shares_shared_with", "shared_with"),
+        # Composite index: covers the most common query pattern —
+        # "all resources of a given type shared with this user".
+        Index("ix_shares_shared_with_type", "shared_with", "resource_type"),
     )
 
     id = Column(String(64), primary_key=True, default=gen_uuid)
