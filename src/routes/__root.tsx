@@ -163,8 +163,8 @@ function AuthShell() {
     const isPublicPath = path.startsWith("/f/") || path.startsWith("/fa/") || path.startsWith("/pg/");
     if (user && path === "/login") {
       nav({ to: "/", replace: true });
-    } else if (!user && !isPublicPath && path !== "/login") {
-      nav({ to: "/login", replace: true });
+    } else if (!user && !isPublicPath && path !== "/" && path !== "/login") {
+      nav({ to: "/", replace: true });
     }
   }, [user, path, nav]);
 
