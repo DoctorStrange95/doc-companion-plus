@@ -14,7 +14,6 @@ import { useEffect } from "react";
 import appCss from "../styles.css?url";
 import { BottomNav } from "@/components/BottomNav";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { useStore } from "@/lib/store";
 
 function NotFoundComponent() {
   return (
@@ -145,7 +144,6 @@ function RootComponent() {
 
 function AuthShell() {
   const { user } = useAuth();
-  const initDone = useStore((s) => s.initDone);
   const nav = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
@@ -160,9 +158,12 @@ function AuthShell() {
   const isPublic = path.startsWith("/f/") || path.startsWith("/fa/") || path.startsWith("/pg/");
   const isLoginPage = path === "/login";
 
-  // Show loading while auth check is in-flight OR while data is being fetched
-  // for the first time (fresh install / never synced). This prevents blank/0 screens.
-  if ((!isPublic && !isLoginPage) && (user === undefined || (user && !initDone))) {
+  // Show loading only while the auth state is genuinely unknown (SSR or
+  // edge case where localStorage is unavailable). Once we have a user from
+  // cache or know they're logged out, render immediately with cached data.
+  // The (user && !initDone) gate was removed — it caused 15-second loading
+  // screens for users whose first pull failed (cold backend on login).
+  if ((!isPublic && !isLoginPage) && user === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="font-display text-2xl uppercase tracking-widest text-muted-foreground">

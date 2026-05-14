@@ -74,10 +74,19 @@ function FormDetail() {
 
   const formId = form?.id;
 
-  // When the share modal opens: drain the queue so any pending form ops reach the DB
+  // When the share modal opens: ensure the form exists in the backend DB.
+  // Seed forms and forms created offline have no ownerId — push them directly
+  // so share-token generation succeeds on the first attempt without a 403 retry.
   useEffect(() => {
-    if (showShare) void sync.drain();
-  }, [showShare]);
+    if (!showShare || !form) return;
+    if (!form.ownerId) {
+      void sync.pushForm(form)
+        .then(() => sync.pull())
+        .catch(() => {});
+    } else {
+      void sync.drain();
+    }
+  }, [showShare, form?.ownerId]);
 
   useEffect(() => {
     if (!showShare || !formId) return;
@@ -121,8 +130,11 @@ function FormDetail() {
       }
       const { token } = await res.json() as { token: string };
       store.updateForm(form.id, type === "fill" ? { shareToken: token } : { analyticsToken: token });
-    } catch {
-      setTokenMsg({ text: "Network error — check your connection.", ok: false });
+      // Pull so local state gets the server-assigned ownerId for this form
+      void sync.pull().catch(() => {});
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : null;
+      setTokenMsg({ text: msg ?? "Failed to generate link — try again.", ok: false });
     } finally {
       setTokenWorking(null);
     }
@@ -148,8 +160,9 @@ function FormDetail() {
       if (res.ok) {
         store.updateForm(form.id, type === "fill" ? { shareToken: undefined } : { analyticsToken: undefined });
       }
-    } catch {
-      setTokenMsg({ text: "Network error — check your connection.", ok: false });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : null;
+      setTokenMsg({ text: msg ?? "Failed to revoke link — try again.", ok: false });
     } finally {
       setTokenWorking(null);
     }

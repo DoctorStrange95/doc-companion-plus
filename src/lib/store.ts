@@ -405,9 +405,11 @@ let state: State = (() => {
       if (loaded.forms.length === 0) {
         loaded.forms = seed().forms;
       }
-      // Skip loading screen for returning users who have synced before.
-      // Fresh installs (lastSync null) show a loading screen until first pull.
-      loaded.initDone = loaded.lastSync !== null;
+      // Any returning user who has localStorage data (even seed forms) should
+      // see the app immediately — never block on a full server sync just to render.
+      // initDone = false is only meaningful on the very first ever page load where
+      // there is no localStorage at all (seed() path below).
+      loaded.initDone = true;
       return loaded;
     }
   } catch {
