@@ -968,9 +968,12 @@ export default function FormBuilderPage() {
   const [longitudinal, setLongitudinal] = useState<boolean>(
     (builderDraft?.longitudinal as boolean | undefined) ?? existingForm?.longitudinal ?? false,
   );
-  const [fixedFieldIds, setFixedFieldIds] = useState<string[]>(
-    (builderDraft?.fixedFieldIds as string[] | undefined) ?? existingForm?.fixedFieldIds ?? [],
-  );
+  const [fixedFieldIds, setFixedFieldIds] = useState<string[]>(() => {
+    const initialFields = (builderDraft?.fields as FormField[] | undefined) ?? existingForm?.fields ?? [];
+    const explicit = (builderDraft?.fixedFieldIds as string[] | undefined) ?? existingForm?.fixedFieldIds ?? [];
+    if (explicit.length > 0) return explicit;
+    return initialFields.filter((f) => f.longitudinalRole === 'fixed').map((f) => f.id);
+  });
   const [formRole, setFormRole] = useState<import("@/lib/store").FormRole>(
     (builderDraft?.formRole as import("@/lib/store").FormRole | undefined) ?? existingForm?.formRole ?? "standalone",
   );
@@ -1011,7 +1014,11 @@ export default function FormBuilderPage() {
       setCategory(existingForm.category);
       setDescription(existingForm.description ?? "");
       setLongitudinal(existingForm.longitudinal ?? false);
-      setFixedFieldIds(existingForm.fixedFieldIds ?? []);
+      setFixedFieldIds(
+        existingForm.fixedFieldIds?.length
+          ? existingForm.fixedFieldIds
+          : existingForm.fields.filter((f) => f.longitudinalRole === 'fixed').map((f) => f.id)
+      );
       setFormRole(existingForm.formRole ?? "standalone");
       setSubjectIdentifierFieldId(existingForm.subjectIdentifierFieldId ?? "");
       setParentFormId(existingForm.parentFormId ?? "");

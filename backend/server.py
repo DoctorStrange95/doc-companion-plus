@@ -1412,6 +1412,72 @@ async def get_public_form(share_token: str, response: Response, db: AsyncSession
     )
 
 
+class PublicLongitudinalSubmitIn(BaseModel):
+    fixed_data: dict[str, Any] = {}
+    visit_data: dict[str, Any] = {}
+    fixed_field_ids: list[str] = []
+
+
+@app.post("/api/forms/public/{share_token}/longitudinal-submit")
+async def submit_public_longitudinal(
+    share_token: str,
+    body: PublicLongitudinalSubmitIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a public longitudinal form visit — no authentication required."""
+    res = await db.execute(select(FormDef).where(FormDef.share_token == share_token))
+    form = res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if getattr(form, "status", "active") == "closed":
+        raise HTTPException(410, "This form is closed")
+    if getattr(form, "status", "active") == "draft":
+        raise HTTPException(403, "This form is not yet published")
+
+    fixed_ids = sorted(body.fixed_field_ids)
+    subject_key = "|".join(str(body.fixed_data.get(fid, "")).strip().lower() for fid in fixed_ids)
+    sub_id = f"longsub_{form.id}_{subject_key}"
+    now = datetime.utcnow().isoformat()
+
+    existing_row = (await db.execute(
+        text("SELECT visits FROM longitudinal_submissions WHERE id = :id"),
+        {"id": sub_id}
+    )).mappings().first()
+
+    if existing_row:
+        existing_visits = existing_row["visits"] if isinstance(existing_row["visits"], list) else []
+        visit_id = f"v{len(existing_visits) + 1}"
+        merged_visits = existing_visits + [{"visitId": visit_id, "timestamp": now, "data": body.visit_data}]
+        await db.execute(
+            text("UPDATE longitudinal_submissions SET visits = :visits::jsonb, updated_at = :updated_at WHERE id = :id"),
+            {"id": sub_id, "visits": json.dumps(merged_visits), "updated_at": now},
+        )
+    else:
+        await db.execute(
+            text("""
+                INSERT INTO longitudinal_submissions
+                    (id, form_id, owner_id, subject_key, fixed_data, visits, created_at, updated_at)
+                VALUES
+                    (:id, :form_id, :owner_id::uuid, :subject_key, :fixed_data::jsonb, :visits::jsonb,
+                     :created_at, :updated_at)
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {
+                "id": sub_id,
+                "form_id": str(form.id),
+                "owner_id": str(form.owner_id),
+                "subject_key": subject_key,
+                "fixed_data": json.dumps(body.fixed_data),
+                "visits": json.dumps([{"visitId": "v1", "timestamp": now, "data": body.visit_data}]),
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+
+    await db.commit()
+    return {"ok": True, "id": sub_id}
+
+
 @app.post("/api/forms/public/{share_token}/submit")
 async def submit_public_form(
     share_token: str,

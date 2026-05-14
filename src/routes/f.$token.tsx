@@ -377,18 +377,36 @@ function PublicFiller() {
     e.preventDefault();
     if (preview) { setError("Preview mode — responses are not saved."); return; }
 
-    // Longitudinal branch — submit via local store
+    // Longitudinal branch — submit via public API (works for anonymous + logged-in users)
     if (form && form.longitudinal && (form.fixed_field_ids?.length ?? 0) > 0) {
       const e2 = validatePage();
       if (e2) { setError(e2); return; }
-      store.submitLongitudinalVisit(form.id, values, {
-        id: form.id, name: form.name, category: form.category,
-        fields: form.fields, createdAt: 0,
-        longitudinal: true,
-        fixedFieldIds: form.fixed_field_ids ?? [],
-      });
-      try { localStorage.removeItem(publicDraftKey); } catch {}
-      setSubmitted(true);
+      const fixedIds = [...(form.fixed_field_ids ?? [])].sort();
+      const fixedData: Record<string, unknown> = {};
+      fixedIds.forEach(id => { fixedData[id] = values[id]; });
+      const visitData: Record<string, unknown> = {};
+      form.fields
+        .filter(f => f.type !== 'section_header' && f.type !== 'page_break' && !fixedIds.includes(f.id))
+        .forEach(f => { visitData[f.id] = values[f.id]; });
+      setSubmitting(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/forms/public/${token}/longitudinal-submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fixed_data: fixedData, visit_data: visitData, fixed_field_ids: fixedIds }),
+        });
+        if (!res.ok) {
+          const body2 = await res.json().catch(() => ({ detail: 'Submission failed' }));
+          setError(body2.detail ?? 'Submission failed');
+          return;
+        }
+        try { localStorage.removeItem(publicDraftKey); } catch {}
+        setSubmitted(true);
+      } catch {
+        setError('Could not submit. Please check your connection and try again.');
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
 
