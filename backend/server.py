@@ -1103,10 +1103,13 @@ async def sync_push(
         if f.id:
             res = await db.execute(select(FormDef).where(FormDef.id == f.id))
             existing = res.scalar_one_or_none()
-            if existing and (str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "form", existing.id)):
-                for k, v in f.model_dump(exclude={"id"}).items():
-                    setattr(existing, k, v)
-                out["forms"] += 1
+            if existing:
+                # Form already exists: update only if owner or collaborator with edit access.
+                # If neither, skip silently — never INSERT with the same ID (PK conflict).
+                if str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "form", existing.id):
+                    for k, v in f.model_dump(exclude={"id"}).items():
+                        setattr(existing, k, v)
+                    out["forms"] += 1
                 continue
         db.add(FormDef(id=f.id, owner_id=user.id, **f.model_dump(exclude={"id"})))
         out["forms"] += 1

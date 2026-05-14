@@ -916,13 +916,15 @@ if (typeof window !== "undefined") {
   window.addEventListener("offline", onOffline);
   // Initial drain attempt on app boot
   setTimeout(() => { void drain(); }, 1500);
-  // Periodic background sync every 2 minutes while logged in and online
+  // Background sync every 30 seconds — drains the local queue and pulls fresh
+  // server data. Transparent to the user; manual sync button available for
+  // on-demand refresh. Mirrors Google Forms' offline-first approach.
   setInterval(() => {
     if (getToken() && (typeof navigator === "undefined" || navigator.onLine)) {
       void drain();
       void pullSnapshot();
     }
-  }, 2 * 60 * 1000);
+  }, 30_000);
 }
 
 // ---------- Helpers --------------------------------------------------------

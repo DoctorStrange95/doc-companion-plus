@@ -157,8 +157,8 @@ function exportJson(submissions: Submission[], fields: FormField[], formName: st
 
 // ─── Detail modal ────────────────────────────────────────────────────────────
 
-function DetailModal({ sub, fields, onClose, onDelete }: {
-  sub: Submission; fields: FormField[]; onClose: () => void; onDelete: () => void;
+function DetailModal({ sub, fields, onClose, onDelete, canDelete }: {
+  sub: Submission; fields: FormField[]; onClose: () => void; onDelete: () => void; canDelete: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const respondent = getRespondentLabel(sub);
@@ -187,23 +187,25 @@ function DetailModal({ sub, fields, onClose, onDelete }: {
             </div>
           ))}
         </div>
-        <div className="border-t-2 border-border p-4">
-          {!confirmDelete ? (
-            <button onClick={() => setConfirmDelete(true)} className="flex w-full items-center justify-center gap-2 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive hover:text-destructive-foreground">
-              <Trash2 className="h-3.5 w-3.5" /> Delete this response
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-destructive flex items-center gap-1">
-                <AlertTriangle className="h-3.5 w-3.5" /> This will permanently delete this response.
-              </p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(false)} className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted">Cancel</button>
-                <button onClick={onDelete} className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground">Delete forever</button>
+        {canDelete && (
+          <div className="border-t-2 border-border p-4">
+            {!confirmDelete ? (
+              <button onClick={() => setConfirmDelete(true)} className="flex w-full items-center justify-center gap-2 border-2 border-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive hover:bg-destructive hover:text-destructive-foreground">
+                <Trash2 className="h-3.5 w-3.5" /> Delete this response
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" /> This will permanently delete this response.
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirmDelete(false)} className="flex-1 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-muted">Cancel</button>
+                  <button onClick={onDelete} className="flex-1 border-2 border-destructive bg-destructive px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground">Delete forever</button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -304,6 +306,7 @@ function FormResponses() {
   const { id } = Route.useParams();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubmissions = useStore((s) => s.submissions);
+  const isOwner = !form?.shared;
   const [selected, setSelected] = useState<Submission | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(true);
@@ -365,7 +368,7 @@ function FormResponses() {
             >
               <BarChart2 className="h-3.5 w-3.5" />
             </Link>
-            {submissions.length > 0 && (
+            {isOwner && submissions.length > 0 && (
               <>
                 <button
                   onClick={() => exportCsv(submissions, form.fields, form.name)}
@@ -413,6 +416,7 @@ function FormResponses() {
           fields={form.fields}
           onClose={() => setSelected(null)}
           onDelete={() => handleDelete(selected)}
+          canDelete={isOwner}
         />
       )}
     </>

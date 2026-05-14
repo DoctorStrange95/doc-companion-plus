@@ -37,10 +37,11 @@ function FormsList() {
     }
   };
 
-  // Pull on mount if data is missing or stale (>90s since last sync)
+  // On mount: if we have never synced (lastSync null), pull silently in background
+  // without showing the spinner — local data is already visible from localStorage.
+  // The 30s background interval handles all subsequent refreshes automatically.
   useEffect(() => {
-    const stale = !lastSync || Date.now() - lastSync > 90_000;
-    if (stale) void handleSync();
+    if (!lastSync) void sync.pull();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
