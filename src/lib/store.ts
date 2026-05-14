@@ -877,7 +877,18 @@ async function executeDrain(): Promise<void> {
     );
     state = { ...state, queue: state.queue.filter((op) => !successfulBatch.includes(op)), syncing: false };
     persist();
-    await pullSnapshot();
+    // Only pull from server when the batch contains NEW items that need
+    // server-assigned fields (ownerId, shareToken, analyticsToken).
+    // Updating an existing form or patient already has correct local state —
+    // skipping the pull avoids an expensive full-data round-trip on every save.
+    const hasNewItems = successfulBatch.some(
+      (op) =>
+        (op.kind === "form" && !op.payload.ownerId) ||
+        (op.kind === "patient" && !op.payload.ownerId),
+    );
+    if (hasNewItems) {
+      await pullSnapshot();
+    }
   } catch (e) {
     state = { ...state, syncing: false };
     persist();

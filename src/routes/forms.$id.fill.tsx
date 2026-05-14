@@ -125,11 +125,10 @@ function FillForm() {
     } catch { /* storage quota — silently skip */ }
   }, [values, page, selectedPatient, fillDraftKey]);
 
-  // Pull on mount and every 30s so data collectors see form definition updates in near-real-time
+  // Pull on mount to get the latest form definition before the user starts filling.
+  // Background refreshes are handled by the store's own 30s sync interval.
   useEffect(() => {
     void sync.pull();
-    const t = setInterval(() => { void sync.pull(); }, 30_000);
-    return () => clearInterval(t);
   }, []);
 
   const set = (fieldId: string, val: unknown) =>

@@ -1091,23 +1091,26 @@ export default function FormBuilderPage() {
       setSaveStatus("saving");
       setSaveError(null);
 
-      // 2. Direct push to the server so the share link reflects the update immediately.
-      //    Draft is cleared only on success — if the push fails, the draft stays so
-      //    the user can retry without losing work.
-      void sync.pushForm(savedForm)
+      // 2. The store already enqueued the op and triggered drain() above.
+      //    Await that same drain (sync.drain returns the in-flight promise)
+      //    instead of doing a second separate push — eliminates the double push.
+      void sync.drain()
         .then(() => {
+          const stillQueued = store.get().queue.some(
+            (op) => op.kind === "form" && "payload" in op && op.payload.id === savedForm.id,
+          );
           clearDraft();
           setSaveStatus("updated");
-          setTimeout(() => nav({ to: "/forms" }), 1200);
+          if (stillQueued) {
+            setSaveError("Server unreachable — saved locally and will sync automatically.");
+          }
+          setTimeout(() => nav({ to: "/forms" }), 800);
         })
-        .catch((err: unknown) => {
-          // Server unavailable — form is already saved to the local store and the
-          // sync queue will push it automatically when the server is reachable.
-          // Clear the draft anyway (the store has the authoritative copy now).
+        .catch(() => {
+          // Only 401 reaches here — session expired
           clearDraft();
           setSaveStatus("idle");
-          const msg = err instanceof Error ? err.message : null;
-          setSaveError(msg ?? "Server is unavailable. Form saved locally — it will sync automatically when the server is back online.");
+          setSaveError("Session expired. Please log in again.");
         });
     });
   };
