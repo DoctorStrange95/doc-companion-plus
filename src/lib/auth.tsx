@@ -71,10 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         cacheUser(u);
         setUser(u);
         syncWorkerName(u);
-        // Always pull fresh data in the background — silent mode so the
-        // loading bar never appears on routine refreshes. Cached data shows
-        // instantly; the cache is overwritten quietly when the pull completes.
-        void sync.pullSilent().catch(() => {});
+        void sync.pull().catch(() => {});
         void sync.drain().catch(() => {});
       })
       .catch((e) => {

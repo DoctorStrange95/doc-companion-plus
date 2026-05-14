@@ -379,7 +379,9 @@ let state: State = (() => {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      const loaded: State = { ...seed(), ...parsed, syncing: false, pulling: false };
+      // If a token exists the app will pull on mount — show the bar immediately
+      // so users see it from the very first render, not only after /me returns.
+      const loaded: State = { ...seed(), ...parsed, syncing: false, pulling: !!getToken() };
       // Deduplicate on load to self-heal any accumulated duplicates in localStorage
       loaded.forms = dedupeById(loaded.forms);
       loaded.patients = dedupeById(loaded.patients);
@@ -736,9 +738,10 @@ export const store = {
 };
 
 // ---------- Sync engine ----------------------------------------------------
-async function pullSnapshot(silent = false) {
+async function pullSnapshot() {
   if (!getToken()) return;
-  if (!silent) { state = { ...state, pulling: true }; persist(); }
+  state = { ...state, pulling: true };
+  persist();
   try {
     const data = await api<{
       patients: SrvPatient[];
@@ -768,7 +771,7 @@ async function pullSnapshot(silent = false) {
     // without touching local state. Update lastSync so the UI knows a check
     // happened, but never let a server empty-response wipe local forms.
     if (serverForms.length === 0) {
-      state = { ...state, lastSync: Date.now(), initDone: true, ...(silent ? {} : { pulling: false }) };
+      state = { ...state, lastSync: Date.now(), initDone: true, pulling: false };
       persist();
       return;
     }
@@ -807,11 +810,12 @@ async function pullSnapshot(silent = false) {
       submissions: [...submissionMap.values()].sort((a, b) => b.createdAt - a.createdAt),
       lastSync: Date.now(),
       initDone: true,
-      ...(silent ? {} : { pulling: false }),
+      pulling: false,
     };
     persist();
   } catch (e) {
-    if (!silent) { state = { ...state, pulling: false }; persist(); }
+    state = { ...state, pulling: false };
+    persist();
     if (e instanceof ApiError && e.status === 401) {
       // Auth bad — caller will handle (logout)
       throw e;
@@ -962,7 +966,6 @@ function serializeFormForApi(f: FormDef) {
 export const sync = {
   drain,
   pull: pullSnapshot,
-  pullSilent: () => pullSnapshot(true),
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;
