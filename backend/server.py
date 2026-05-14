@@ -1286,10 +1286,9 @@ async def get_public_form(share_token: str, response: Response, db: AsyncSession
         raise HTTPException(410, "This form is closed and no longer accepting responses")
     if getattr(form, "status", "active") == "draft":
         raise HTTPException(403, "This form is not yet published")
-    # Allow browsers and CDNs to cache the form definition for 60 seconds,
-    # then serve stale for up to 10 minutes while revalidating in the background.
-    # This eliminates repeated cold-start delays for respondents sharing a link.
-    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=600"
+    # Cache form definition for 60 seconds to reduce cold-start round-trips.
+    # must-revalidate ensures browsers never serve stale content after max-age expires.
+    response.headers["Cache-Control"] = "public, max-age=60, must-revalidate"
     fields = form.fields if isinstance(form.fields, list) else []
     return PublicFormOut(
         id=str(form.id),
