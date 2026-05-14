@@ -382,6 +382,22 @@ let state: State = (() => {
       loaded.forms = dedupeById(loaded.forms);
       loaded.patients = dedupeById(loaded.patients);
       loaded.submissions = dedupeById(loaded.submissions);
+      // Self-heal the queue: collapse duplicate upsert ops for the same ID
+      // (can accumulate if the app was used heavily before this fix was deployed).
+      const healedQueue: typeof loaded.queue = [];
+      const seenPatient = new Set<string>();
+      const seenForm = new Set<string>();
+      // Walk in reverse so the LAST (most recent) op for each ID wins.
+      for (const op of [...loaded.queue].reverse()) {
+        if (op.kind === "patient") {
+          if (!seenPatient.has(op.payload.id)) { seenPatient.add(op.payload.id); healedQueue.unshift(op); }
+        } else if (op.kind === "form") {
+          if (!seenForm.has(op.payload.id)) { seenForm.add(op.payload.id); healedQueue.unshift(op); }
+        } else {
+          healedQueue.unshift(op);
+        }
+      }
+      loaded.queue = healedQueue;
       // Self-heal: if forms ended up empty after merging (e.g. a previous bad
       // pullSnapshot wiped them during a Render cold-start), restore seed forms
       // so the app is never blank. The next pullSnapshot will merge in real
@@ -420,7 +436,19 @@ export const useStore = <T,>(selector: (s: State) => T): T =>
   );
 
 const enqueue = (op: QueueOp) => {
-  state = { ...state, queue: [...state.queue, op] };
+  // For upsert ops (patient / form), replace any existing entry for the same
+  // ID so the queue never accumulates duplicate ops for the same item.
+  // Editing a form 10 times should produce exactly 1 queue entry, not 10.
+  // Delete ops and submission ops are always appended as-is.
+  if (op.kind === "patient" || op.kind === "form") {
+    const id = op.payload.id;
+    const filtered = state.queue.filter(
+      (existing) => !(existing.kind === op.kind && "payload" in existing && existing.payload.id === id)
+    );
+    state = { ...state, queue: [...filtered, op] };
+  } else {
+    state = { ...state, queue: [...state.queue, op] };
+  }
 };
 
 // ---------- Server <-> local mappers --------------------------------------
