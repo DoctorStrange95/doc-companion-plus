@@ -14,6 +14,17 @@ import { useEffect } from "react";
 import appCss from "../styles.css?url";
 import { BottomNav } from "@/components/BottomNav";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { useStore } from "@/lib/store";
+
+function SyncIndicator() {
+  const active = useStore((s) => s.syncing || s.pulling);
+  if (!active) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 h-1 overflow-hidden bg-primary/20">
+      <div className="sync-bar-inner h-full w-1/3 bg-primary" />
+    </div>
+  );
+}
 
 function NotFoundComponent() {
   return (
@@ -149,9 +160,11 @@ function AuthShell() {
 
   useEffect(() => {
     if (user === undefined) return;
-    // Redirect logged-in users away from login page
+    const isPublicPath = path.startsWith("/f/") || path.startsWith("/fa/") || path.startsWith("/pg/");
     if (user && path === "/login") {
       nav({ to: "/", replace: true });
+    } else if (!user && !isPublicPath && path !== "/login") {
+      nav({ to: "/login", replace: true });
     }
   }, [user, path, nav]);
 
@@ -175,6 +188,7 @@ function AuthShell() {
 
   return (
     <div className="min-h-screen bg-background">
+      {!isPublic && !isLoginPage && <SyncIndicator />}
       <Outlet />
       {!isPublic && !isLoginPage && <BottomNav />}
     </div>

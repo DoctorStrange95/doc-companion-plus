@@ -250,6 +250,7 @@ interface State {
   queue: QueueOp[];
   lastSync: number | null;
   syncing: boolean;
+  pulling: boolean;
   online: boolean;
   initDone: boolean;
 }
@@ -360,6 +361,7 @@ const seed = (): State => ({
   queue: [],
   lastSync: null,
   syncing: false,
+  pulling: false,
   online: typeof navigator !== "undefined" ? navigator.onLine : true,
   initDone: false,
 });
@@ -377,7 +379,7 @@ let state: State = (() => {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      const loaded: State = { ...seed(), ...parsed, syncing: false };
+      const loaded: State = { ...seed(), ...parsed, syncing: false, pulling: false };
       // Deduplicate on load to self-heal any accumulated duplicates in localStorage
       loaded.forms = dedupeById(loaded.forms);
       loaded.patients = dedupeById(loaded.patients);
@@ -732,6 +734,7 @@ export const store = {
       ...state,
       queue: [],
       syncing: false,
+      pulling: false,
     };
     persist();
   },
@@ -740,6 +743,8 @@ export const store = {
 // ---------- Sync engine ----------------------------------------------------
 async function pullSnapshot() {
   if (!getToken()) return;
+  state = { ...state, pulling: true };
+  persist();
   try {
     const data = await api<{
       patients: SrvPatient[];
@@ -769,7 +774,7 @@ async function pullSnapshot() {
     // without touching local state. Update lastSync so the UI knows a check
     // happened, but never let a server empty-response wipe local forms.
     if (serverForms.length === 0) {
-      state = { ...state, lastSync: Date.now(), initDone: true };
+      state = { ...state, lastSync: Date.now(), initDone: true, pulling: false };
       persist();
       return;
     }
@@ -808,9 +813,12 @@ async function pullSnapshot() {
       submissions: [...submissionMap.values()].sort((a, b) => b.createdAt - a.createdAt),
       lastSync: Date.now(),
       initDone: true,
+      pulling: false,
     };
     persist();
   } catch (e) {
+    state = { ...state, pulling: false };
+    persist();
     if (e instanceof ApiError && e.status === 401) {
       // Auth bad — caller will handle (logout)
       throw e;

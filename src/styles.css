@@ -139,6 +139,14 @@
   }
 }
 
+@keyframes sync-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.sync-bar-inner {
+  animation: sync-slide 1.4s ease-in-out infinite;
+}
+
 @layer components {
   .brutal {
     border: 2px solid var(--color-border);
