@@ -97,7 +97,7 @@ export function useAuthGate(opts: AuthGateOptions = {}) {
           </button>
           <button
             onClick={() => goTo("register")}
-            className="btn-brutal flex items-center justify-center gap-2 w-full bg-secondary"
+            className="btn-brutal flex items-center justify-center gap-2 w-full bg-secondary text-secondary-foreground"
           >
             <UserPlus className="h-4 w-4" /> Create free account
           </button>
