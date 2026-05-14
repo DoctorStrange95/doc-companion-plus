@@ -687,12 +687,10 @@ async function pullSnapshot() {
     const sIds = new Set(serverPatients.map((p) => p.id));
     // (subIds unused — submissions use union-merge, not set-diff)
 
-    // Safety guard: if the server returned 0 forms but we have synced forms locally,
-    // treat it as a suspicious empty response (cold start, network hiccup, etc.)
-    // and bail out so we never wipe local data. This is independent of the pending
-    // queue — a user with queued edits deserves the same protection.
-    const localSyncedFormsCount = state.forms.filter((f) => !!f.ownerId).length;
-    if (serverForms.length === 0 && localSyncedFormsCount > 0) {
+    // Safety guard: if the server returned 0 forms but we have any forms locally,
+    // treat it as a suspicious empty response (cold start, partial response, etc.)
+    // and bail without touching local state.
+    if (serverForms.length === 0 && state.forms.length > 0) {
       return;
     }
 
