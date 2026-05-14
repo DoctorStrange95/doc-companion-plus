@@ -73,6 +73,30 @@ async def ensure_user_profile_columns():
         )
 
 
+async def ensure_longitudinal_table():
+    """Create longitudinal_submissions table if it doesn't exist."""
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS longitudinal_submissions (
+                id TEXT PRIMARY KEY,
+                form_id TEXT NOT NULL,
+                owner_id UUID REFERENCES users(id),
+                subject_key TEXT NOT NULL,
+                fixed_data JSONB NOT NULL DEFAULT '{}',
+                visits JSONB NOT NULL DEFAULT '[]',
+                patient_id TEXT,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_long_subs_owner_id ON longitudinal_submissions(owner_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_long_subs_form_id ON longitudinal_submissions(form_id)"
+        ))
+
+
 async def ensure_form_extra_columns():
     """Add extra columns to forms table if missing (safe to run on every startup)."""
     async with engine.begin() as conn:
@@ -149,6 +173,10 @@ async def lifespan(app: FastAPI):
         await ensure_form_extra_columns()
     except Exception as e:
         print(f"[ensure_form_extra_columns] warning: {e}")
+    try:
+        await ensure_longitudinal_table()
+    except Exception as e:
+        print(f"[ensure_longitudinal_table] warning: {e}")
     try:
         await seed_admin()
     except Exception as e:  # noqa: BLE001
@@ -1128,6 +1156,7 @@ class SyncIn(BaseModel):
     patients: list[PatientIn] = []
     forms: list[FormIn] = []
     submissions: list[SubmissionIn] = []
+    longitudinal_submissions: list[dict[str, Any]] = []
 
 
 @app.post("/api/sync/push")
@@ -1188,6 +1217,57 @@ async def sync_push(
                 continue  # immutable: skip duplicates
         db.add(Submission(id=s.id, owner_id=user.id, **s.model_dump(exclude={"id"})))
         out["submissions"] += 1
+
+    for sub in body.longitudinal_submissions:
+        sub_id = sub.get("id")
+        if not sub_id:
+            continue
+        existing_row = (await db.execute(
+            text("SELECT visits FROM longitudinal_submissions WHERE id = :id"),
+            {"id": sub_id}
+        )).mappings().first()
+        if existing_row:
+            # merge visits
+            existing_visits = existing_row["visits"] if isinstance(existing_row["visits"], list) else []
+            visit_map = {v["visitId"]: v for v in existing_visits}
+            for v in sub.get("visits", []):
+                visit_map[v["visitId"]] = v
+            merged_visits = sorted(visit_map.values(), key=lambda v: v.get("timestamp", ""))
+            await db.execute(
+                text("""
+                    UPDATE longitudinal_submissions
+                    SET visits = :visits::jsonb, updated_at = :updated_at
+                    WHERE id = :id
+                """),
+                {
+                    "id": sub_id,
+                    "visits": json.dumps(merged_visits),
+                    "updated_at": sub.get("updatedAt") or datetime.utcnow().isoformat(),
+                }
+            )
+        else:
+            owner_id_val = str(user.id) if user else None
+            await db.execute(
+                text("""
+                    INSERT INTO longitudinal_submissions
+                        (id, form_id, owner_id, subject_key, fixed_data, visits, patient_id, created_at, updated_at)
+                    VALUES
+                        (:id, :form_id, :owner_id::uuid, :subject_key, :fixed_data::jsonb, :visits::jsonb,
+                         :patient_id, :created_at, :updated_at)
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {
+                    "id": sub_id,
+                    "form_id": sub.get("formId", ""),
+                    "owner_id": owner_id_val,
+                    "subject_key": sub.get("subjectKey", ""),
+                    "fixed_data": json.dumps(sub.get("fixedData", {})),
+                    "visits": json.dumps(sub.get("visits", [])),
+                    "patient_id": sub.get("patientId"),
+                    "created_at": sub.get("createdAt") or datetime.utcnow().isoformat(),
+                    "updated_at": sub.get("updatedAt") or datetime.utcnow().isoformat(),
+                }
+            )
 
     await db.commit()
     return out
@@ -1268,7 +1348,34 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
     patients, forms, submissions = await asyncio.gather(
         _patients(), _forms(), _submissions()
     )
-    return {"patients": patients, "forms": forms, "submissions": submissions}
+
+    # Fetch longitudinal submissions for this user
+    long_subs_rows = (await db.execute(
+        text("SELECT * FROM longitudinal_submissions WHERE owner_id = :owner_id"),
+        {"owner_id": str(user.id)}
+    )).mappings().all()
+    longitudinal_submissions = [
+        {
+            "id": s["id"],
+            "type": "longitudinal",
+            "formId": s["form_id"],
+            "subjectKey": s["subject_key"],
+            "fixedData": s["fixed_data"] if isinstance(s["fixed_data"], dict) else {},
+            "visits": s["visits"] if isinstance(s["visits"], list) else [],
+            "patientId": s.get("patient_id"),
+            "createdAt": s["created_at"].isoformat() if hasattr(s["created_at"], "isoformat") else str(s["created_at"]),
+            "updatedAt": s["updated_at"].isoformat() if hasattr(s["updated_at"], "isoformat") else str(s["updated_at"]),
+            "ownerId": str(s["owner_id"]) if s.get("owner_id") else None,
+        }
+        for s in long_subs_rows
+    ]
+
+    return {
+        "patients": patients,
+        "forms": forms,
+        "submissions": submissions,
+        "longitudinal_submissions": longitudinal_submissions,
+    }
 
 
 # ============================================================================

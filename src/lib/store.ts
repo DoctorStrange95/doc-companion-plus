@@ -10,6 +10,8 @@
 
 import { useSyncExternalStore } from "react";
 import { api, getToken, isOnline, ApiError } from "./api";
+import type { LongitudinalSubmission, LongitudinalVisit } from "../types/longitudinal";
+export type { LongitudinalSubmission, LongitudinalVisit } from "../types/longitudinal";
 
 // ---------- Types ----------------------------------------------------------
 export type FieldType =
@@ -177,6 +179,8 @@ export interface FormField {
   // File upload
   acceptTypes?: string; // MIME or extension filter, e.g. "*", "image/*", ".pdf,.docx"
   maxSizeMB?: number;   // max file size in MB (default 5)
+  // Longitudinal tracking role
+  longitudinalRole?: 'fixed' | 'tracked';
 }
 
 export type FormRole = "standalone" | "parent" | "child";
@@ -207,6 +211,7 @@ export interface FormDef {
   subjectIdentifierFieldId?: string; // parent: field whose value identifies the subject
   parentFormId?: string;             // child: linked parent form ID
   parentLinkFieldId?: string;        // child: field where respondent types the parent subject ID
+  fixedFieldIds?: string[];
 }
 
 export interface Patient {
@@ -240,12 +245,14 @@ type QueueOp =
   | { kind: "form"; payload: FormDef }
   | { kind: "submission"; payload: Submission }
   | { kind: "patient.delete"; id: string }
-  | { kind: "form.delete"; id: string };
+  | { kind: "form.delete"; id: string }
+  | { kind: "longitudinal_submission"; payload: LongitudinalSubmission };
 
 interface State {
   patients: Patient[];
   forms: FormDef[];
   submissions: Submission[];
+  longitudinalSubmissions: LongitudinalSubmission[];
   worker: { name: string; village: string };
   queue: QueueOp[];
   lastSync: number | null;
@@ -357,6 +364,7 @@ const seed = (): State => ({
     },
   ],
   submissions: [],
+  longitudinalSubmissions: [],
   worker: { name: "Health Worker", village: "Demo Village" },
   queue: [],
   lastSync: null,
@@ -382,6 +390,7 @@ let state: State = (() => {
       // If a token exists the app will pull on mount — show the bar immediately
       // so users see it from the very first render, not only after /me returns.
       const loaded: State = { ...seed(), ...parsed, syncing: false, pulling: !!getToken() };
+      loaded.longitudinalSubmissions = Array.isArray(parsed.longitudinalSubmissions) ? parsed.longitudinalSubmissions : [];
       // Deduplicate on load to self-heal any accumulated duplicates in localStorage
       loaded.forms = dedupeById(loaded.forms);
       loaded.patients = dedupeById(loaded.patients);
@@ -719,6 +728,60 @@ export const store = {
     persist();
   },
 
+  getLongitudinalSubmissions: (formId: string) =>
+    state.longitudinalSubmissions.filter(s => s.formId === formId),
+
+  findLongitudinalSubject: (formId: string, subjectKey: string) =>
+    state.longitudinalSubmissions.find(s => s.formId === formId && s.subjectKey === subjectKey),
+
+  getLongitudinalByPatient: (patientId: string) =>
+    state.longitudinalSubmissions.filter(s => s.patientId === patientId),
+
+  submitLongitudinalVisit: (
+    formId: string,
+    formData: Record<string, unknown>,
+    form: FormDef
+  ) => {
+    const fixedIds = (form.fixedFieldIds ?? form.fields.filter(f => f.longitudinalRole === 'fixed').map(f => f.id));
+    const subjectKey = fixedIds.sort().map(id => String(formData[id] ?? '').trim().toLowerCase()).join('|');
+    const existing = state.longitudinalSubmissions.find(s => s.formId === formId && s.subjectKey === subjectKey);
+    const now = new Date().toISOString();
+    let updated: LongitudinalSubmission;
+    if (existing) {
+      const visitId = `v${existing.visits.length + 1}`;
+      const trackedData: Record<string, unknown> = {};
+      form.fields.filter(f => f.longitudinalRole !== 'fixed').forEach(f => { trackedData[f.id] = formData[f.id]; });
+      updated = { ...existing, visits: [...existing.visits, { visitId, timestamp: now, data: trackedData }], updatedAt: now };
+      state = { ...state, longitudinalSubmissions: state.longitudinalSubmissions.map(s => s.id === updated.id ? updated : s) };
+    } else {
+      const trackedData: Record<string, unknown> = {};
+      form.fields.filter(f => f.longitudinalRole !== 'fixed').forEach(f => { trackedData[f.id] = formData[f.id]; });
+      // attempt patient linkage (best-effort)
+      let patientId: string | undefined;
+      const nameField = form.fields.find(f => fixedIds.includes(f.id) && /name|patient_name/i.test(f.label));
+      if (nameField) {
+        const nameVal = String(formData[nameField.id] ?? '').trim().toLowerCase();
+        const matched = state.patients.find(p => p.name.trim().toLowerCase() === nameVal);
+        if (matched) patientId = matched.id;
+      }
+      updated = {
+        id: `longsub_${formId}_${subjectKey}`,
+        type: 'longitudinal',
+        formId,
+        subjectKey,
+        fixedData: Object.fromEntries(fixedIds.map(id => [id, formData[id]])),
+        visits: [{ visitId: 'v1', timestamp: now, data: trackedData } as LongitudinalVisit],
+        patientId,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state = { ...state, longitudinalSubmissions: [updated, ...state.longitudinalSubmissions] };
+    }
+    state = { ...state, queue: [...state.queue, { kind: 'longitudinal_submission' as const, payload: updated }] };
+    persist();
+    void drain();
+  },
+
   // ---- Cache lifecycle (for auth) ----
   hydrateFromCache: () => {
     persist();
@@ -747,6 +810,7 @@ async function pullSnapshot() {
       patients: SrvPatient[];
       forms: SrvForm[];
       submissions: SrvSubmission[];
+      longitudinal_submissions?: LongitudinalSubmission[];
     }>("/api/sync/pull");
     const serverPatients = data.patients.map(mapPatient);
     const serverForms = data.forms.map(mapForm);
@@ -812,6 +876,22 @@ async function pullSnapshot() {
       initDone: true,
       pulling: false,
     };
+    if (data.longitudinal_submissions && (data.longitudinal_submissions as unknown[]).length > 0) {
+      const serverLongSubs = data.longitudinal_submissions as LongitudinalSubmission[];
+      const lsMap = new Map<string, LongitudinalSubmission>(state.longitudinalSubmissions.map(s => [s.id, s]));
+      for (const s of serverLongSubs) {
+        const local = lsMap.get(s.id);
+        if (local) {
+          // merge visits: union by visitId, prefer server data for same visitId
+          const visitMap = new Map<string, LongitudinalVisit>(local.visits.map(v => [v.visitId, v]));
+          for (const v of s.visits) visitMap.set(v.visitId, v);
+          lsMap.set(s.id, { ...s, visits: [...visitMap.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) });
+        } else {
+          lsMap.set(s.id, s);
+        }
+      }
+      state = { ...state, longitudinalSubmissions: [...lsMap.values()] };
+    }
     persist();
   } catch (e) {
     state = { ...state, pulling: false };
@@ -851,9 +931,10 @@ async function executeDrain(): Promise<void> {
     const submissions = batch.flatMap((o) =>
       o.kind === "submission" ? [o.payload] : [],
     );
+    const longitudinalSubs = batch.flatMap(o => o.kind === 'longitudinal_submission' ? [o.payload] : []);
     let deniedFormIds = new Set<string>();
 
-    if (patients.length || forms.length || submissions.length) {
+    if (patients.length || forms.length || submissions.length || longitudinalSubs.length) {
       const pushResult = await api<{ patients: number; forms: number; submissions: number; denied_forms?: string[] }>(
         "/api/sync/push",
         {
@@ -888,6 +969,7 @@ async function executeDrain(): Promise<void> {
               form_name: rest.formName,
               data: rest.data,
             })),
+            longitudinal_submissions: longitudinalSubs,
           }),
         },
       );

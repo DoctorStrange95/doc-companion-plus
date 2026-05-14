@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore, store, ageFromDob } from "@/lib/store";
+import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { useAuth } from "@/lib/auth";
 import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
@@ -222,6 +223,12 @@ function PatientDetail() {
   );
   const forms = useStore((s) => s.forms);
   const [picker, setPicker] = useState(false);
+  const longitudinalSubmissions = useStore(s => s.longitudinalSubmissions);
+  const trackedForms = useMemo<LongitudinalSubmission[]>(() => {
+    if (!patient) return [];
+    return longitudinalSubmissions.filter(s => s.patientId === patient.id);
+  }, [longitudinalSubmissions, patient]);
+  const [expandedDatasheet, setExpandedDatasheet] = useState<string | null>(null);
 
   const dobMs = patient ? new Date(patient.dob).getTime() : 0;
   const sex   = patient?.sex ?? "";
@@ -493,6 +500,80 @@ function PatientDetail() {
             </ol>
           )}
         </section>
+
+        {/* ── Tracked Forms (Longitudinal) ─────────────────────────────────── */}
+        {trackedForms.length > 0 && (
+          <section className="mt-6">
+            <SectionTitle>Tracked Forms</SectionTitle>
+            <div className="space-y-3">
+              {trackedForms.map(sub => {
+                const form = forms.find(f => f.id === sub.formId);
+                const formName = form?.name ?? sub.formId;
+                const firstVisit = sub.visits[0]?.timestamp;
+                const lastVisit = sub.visits[sub.visits.length - 1]?.timestamp;
+                const isExpanded = expandedDatasheet === sub.id;
+                const trackedFields = form?.fields.filter(f => f.longitudinalRole !== 'fixed' && f.type !== 'section_header' && f.type !== 'page_break') ?? [];
+                return (
+                  <div key={sub.id} className="brutal-flat p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-sm">{formName}</div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          {sub.visits.length} visit{sub.visits.length !== 1 ? 's' : ''}
+                          {firstVisit ? ` · First: ${new Date(firstVisit).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                          {lastVisit && lastVisit !== firstVisit ? ` · Last: ${new Date(lastVisit).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedDatasheet(isExpanded ? null : sub.id)}
+                        className="shrink-0 border-2 border-border bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                      >
+                        {isExpanded ? 'Hide ▲' : 'View Datasheet ▼'}
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-xs border-collapse min-w-max">
+                          <thead>
+                            <tr className="border-b-2 border-border">
+                              <th className="px-2 py-1 text-left font-bold uppercase tracking-wider text-[10px]">Visit</th>
+                              <th className="px-2 py-1 text-left font-bold uppercase tracking-wider text-[10px]">Date</th>
+                              {trackedFields.map(f => (
+                                <th key={f.id} className="px-2 py-1 text-left font-bold uppercase tracking-wider text-[10px]">{f.label}{f.unit ? ` (${f.unit})` : ''}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sub.visits.map((visit, i) => (
+                              <tr key={visit.visitId} className={i % 2 === 0 ? 'bg-card' : 'bg-muted/30'}>
+                                <td className="px-2 py-1 font-bold">Visit {i + 1}</td>
+                                <td className="px-2 py-1 text-muted-foreground">{new Date(visit.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                                {trackedFields.map(f => (
+                                  <td key={f.id} className="px-2 py-1">{String(visit.data[f.id] ?? '—')}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {form?.shareToken && (
+                          <div className="mt-2">
+                            <a
+                              href={`/f/${form.shareToken}?subject=${encodeURIComponent(sub.subjectKey)}`}
+                              className="inline-flex items-center gap-1 border-2 border-border bg-primary px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/80"
+                            >
+                              + Add New Visit
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ── Form picker modal ────────────────────────────────────────────── */}
         {picker && (

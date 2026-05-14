@@ -6,7 +6,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { z } from "zod";
-import { evaluateConditions, type FormField } from "@/lib/store";
+import { evaluateConditions, type FormField, useStore, store } from "@/lib/store";
+import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { API_BASE } from "@/lib/api";
 import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2, Upload, FileText, Trash2 } from "lucide-react";
 
@@ -24,6 +25,7 @@ interface PublicFormDef {
   description?: string;
   fields: FormField[];
   longitudinal: boolean;
+  fixed_field_ids?: string[];
   status: string;
   is_public: boolean;
   allowed_filler_emails: string[];
@@ -172,6 +174,14 @@ function PublicFiller() {
   // null = not yet determined; "" = public (no gate); string = verified email
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
 
+  // Longitudinal subject tracking
+  type SubjectState = { mode: 'new' } | { mode: 'selected'; sub: LongitudinalSubmission };
+  const [subjectState, setSubjectState] = useState<SubjectState>({ mode: 'new' });
+  const [subjectSearch, setSubjectSearch] = useState('');
+  const [subjectResults, setSubjectResults] = useState<LongitudinalSubmission[]>([]);
+
+  const { longitudinalSubmissions } = useStore(s => ({ longitudinalSubmissions: s.longitudinalSubmissions }));
+
   // ── Public-form fill draft ───────────────────────────────────────────────────
   // All entered data is cached in localStorage under the share token so that
   // accidental navigation or a browser refresh never wipes an in-progress answer.
@@ -270,6 +280,48 @@ function PublicFiller() {
     if (email) setRespondentEmail(email);
   };
 
+  // Subject search for longitudinal forms
+  useEffect(() => {
+    if (!form?.longitudinal || !subjectSearch.trim()) {
+      setSubjectResults([]);
+      return;
+    }
+    const q = subjectSearch.trim().toLowerCase();
+    const matches = longitudinalSubmissions
+      .filter(s => s.formId === form.id)
+      .filter(s => Object.values(s.fixedData).some(v => String(v).toLowerCase().includes(q)))
+      .slice(0, 8);
+    setSubjectResults(matches);
+  }, [subjectSearch, longitudinalSubmissions, form]);
+
+  const handleSubjectSelect = (sub: LongitudinalSubmission) => {
+    setSubjectState({ mode: 'selected', sub });
+    // pre-populate fixed fields
+    const fixedIds = form?.fixed_field_ids ?? [];
+    const newValues: Record<string, unknown> = {};
+    fixedIds.forEach(id => { newValues[id] = sub.fixedData[id]; });
+    setValues(newValues);
+    setSubjectSearch('');
+    setSubjectResults([]);
+  };
+
+  const clearSubject = () => {
+    setSubjectState({ mode: 'new' });
+    setValues({});
+    setSubjectSearch('');
+  };
+
+  // Check for subjectKey query param on mount
+  useEffect(() => {
+    if (!form?.longitudinal) return;
+    const params = new URLSearchParams(window.location.search);
+    const sk = params.get('subject');
+    if (!sk) return;
+    const existing = longitudinalSubmissions.find(s => s.formId === form.id && s.subjectKey === sk);
+    if (existing) handleSubjectSelect(existing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, longitudinalSubmissions]);
+
   const set = (fieldId: string, val: unknown) =>
     setValues((prev) => ({ ...prev, [fieldId]: val }));
 
@@ -324,6 +376,22 @@ function PublicFiller() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (preview) { setError("Preview mode — responses are not saved."); return; }
+
+    // Longitudinal branch — submit via local store
+    if (form && form.longitudinal && (form.fixed_field_ids?.length ?? 0) > 0) {
+      const e2 = validatePage();
+      if (e2) { setError(e2); return; }
+      store.submitLongitudinalVisit(form.id, values, {
+        id: form.id, name: form.name, category: form.category,
+        fields: form.fields, createdAt: 0,
+        longitudinal: true,
+        fixedFieldIds: form.fixed_field_ids ?? [],
+      });
+      try { localStorage.removeItem(publicDraftKey); } catch {}
+      setSubmitted(true);
+      return;
+    }
+
     const e2 = validatePage();
     if (e2) { setError(e2); return; }
 
@@ -478,6 +546,65 @@ function PublicFiller() {
         </div>
       )}
 
+      {form.longitudinal && (form.fixed_field_ids?.length ?? 0) > 0 && (
+        <div className="mx-auto max-w-xl px-4 pt-4">
+          <div className="brutal p-4 space-y-3">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Longitudinal Tracking
+            </div>
+            {subjectState.mode === 'selected' ? (
+              <div className="border-2 border-border bg-primary/10 p-3 flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                    Continuing record for
+                  </div>
+                  <div className="text-sm font-bold">
+                    {Object.values(subjectState.sub.fixedData).filter(Boolean).join(' · ')}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {subjectState.sub.visits.length} previous visit{subjectState.sub.visits.length !== 1 ? 's' : ''} · Last: {new Date(subjectState.sub.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </div>
+                </div>
+                <button type="button" onClick={clearSubject} className="shrink-0 border-2 border-border bg-card px-2 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-destructive hover:text-destructive-foreground">
+                  Clear ✕
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={subjectSearch}
+                    onChange={e => setSubjectSearch(e.target.value)}
+                    placeholder="Search existing subject…"
+                    className="input-brutal flex-1"
+                  />
+                </div>
+                {subjectResults.length > 0 && (
+                  <div className="border-2 border-border bg-card divide-y-2 divide-border">
+                    {subjectResults.map(sub => (
+                      <button
+                        key={sub.id}
+                        type="button"
+                        onClick={() => handleSubjectSelect(sub)}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                      >
+                        <span className="font-bold">{Object.values(sub.fixedData).filter(Boolean).join(' · ')}</span>
+                        <span className="ml-2 text-[10px] text-muted-foreground">{sub.visits.length} visit{sub.visits.length !== 1 ? 's' : ''}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {subjectSearch.trim() && subjectResults.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground">No existing subject found — fill in below to create new</p>
+                )}
+                <p className="text-[11px] text-muted-foreground">— or fill in as new subject below —</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto max-w-xl px-4 pt-6 space-y-4">
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Respondent info */}
@@ -523,19 +650,23 @@ function PublicFiller() {
 
           {/* Fields */}
           <div className="brutal space-y-4 p-4">
-            {visibleFields.map((f) => (
-              <PublicFieldRenderer
-                key={f.id}
-                field={f}
-                value={values[f.id]}
-                values={values}
-                allFields={form.fields}
-                geoLoading={geoLoading}
-                onChange={(v) => set(f.id, v)}
-                onGeo={() => captureGeo(f.id)}
-                onGeoClear={() => setValues((prev) => { const n = { ...prev }; delete n[f.id]; return n; })}
-              />
-            ))}
+            {visibleFields.map((f) => {
+              const isFixedLocked = form.longitudinal && subjectState.mode === 'selected' && (form.fixed_field_ids ?? []).includes(f.id);
+              return (
+                <PublicFieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  values={values}
+                  allFields={form.fields}
+                  geoLoading={geoLoading}
+                  onChange={(v) => set(f.id, v)}
+                  onGeo={() => captureGeo(f.id)}
+                  onGeoClear={() => setValues((prev) => { const n = { ...prev }; delete n[f.id]; return n; })}
+                  isFixedLocked={isFixedLocked}
+                />
+              );
+            })}
             {visibleFields.length === 0 && (
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Answer earlier questions to continue.
@@ -577,9 +708,10 @@ interface PFRProps {
   onChange: (v: unknown) => void;
   onGeo: () => void;
   onGeoClear: () => void;
+  isFixedLocked?: boolean;
 }
 
-function PublicFieldRenderer({ field: f, value, values, allFields, geoLoading, onChange, onGeo, onGeoClear }: PFRProps) {
+function PublicFieldRenderer({ field: f, value, values, allFields, geoLoading, onChange, onGeo, onGeoClear, isFixedLocked }: PFRProps) {
   const opts = getOptions(f);
 
   if (f.type === "section_header") {
@@ -597,26 +729,42 @@ function PublicFieldRenderer({ field: f, value, values, allFields, geoLoading, o
         {f.label}
         {f.unit && <span className="text-muted-foreground"> ({f.unit})</span>}
         {f.required && <span className="ml-0.5 text-destructive">*</span>}
+        {isFixedLocked && <span className="ml-1 text-[10px] text-muted-foreground">🔒</span>}
       </label>
       {f.hint && <p className="mb-1.5 text-[11px] text-muted-foreground">{f.hint}</p>}
 
       {(f.type === "short_text" || f.type === "text") && (
-        <input value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className="input-brutal" />
+        <div className="relative">
+          <input value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className={`input-brutal w-full${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
+          {isFixedLocked && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">🔒</span>}
+        </div>
       )}
       {(f.type === "long_text" || f.type === "textarea") && (
-        <textarea rows={3} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className="input-brutal resize-none" />
+        <textarea rows={3} value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className={`input-brutal resize-none${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
       )}
       {f.type === "number" && (
-        <input type="number" step="any" inputMode="decimal" value={(value as number | string) ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} className="input-brutal font-mono" />
+        <div className="relative">
+          <input type="number" step="any" inputMode="decimal" value={(value as number | string) ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} className={`input-brutal font-mono w-full${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
+          {isFixedLocked && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">🔒</span>}
+        </div>
       )}
       {f.type === "date" && (
-        <input type="date" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className="input-brutal" />
+        <div className="relative">
+          <input type="date" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className={`input-brutal w-full${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
+          {isFixedLocked && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">🔒</span>}
+        </div>
       )}
       {f.type === "time" && (
-        <input type="time" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className="input-brutal" />
+        <div className="relative">
+          <input type="time" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className={`input-brutal w-full${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
+          {isFixedLocked && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">🔒</span>}
+        </div>
       )}
       {f.type === "datetime" && (
-        <input type="datetime-local" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className="input-brutal" />
+        <div className="relative">
+          <input type="datetime-local" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} className={`input-brutal w-full${isFixedLocked ? ' opacity-60 bg-muted' : ''}`} disabled={isFixedLocked} />
+          {isFixedLocked && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs">🔒</span>}
+        </div>
       )}
       {(f.type === "select_one" || f.type === "select" || f.type === "radio") && (
         f.displayAs === "dropdown" ? (

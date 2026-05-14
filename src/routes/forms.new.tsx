@@ -169,12 +169,18 @@ function SortableFieldCard({
   onSelect,
   onDuplicate,
   onDelete,
+  longitudinal,
+  onSetFixed,
+  onSetTracked,
 }: {
   field: FormField;
   selected: boolean;
   onSelect: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  longitudinal?: boolean;
+  onSetFixed?: () => void;
+  onSetTracked?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: field.id });
@@ -221,6 +227,31 @@ function SortableFieldCard({
           )}
           {/* Mini preview */}
           <FieldPreview field={field} />
+
+          {/* Longitudinal role toggles */}
+          {longitudinal && field.type !== 'section_header' && field.type !== 'page_break' && (
+            <div className="flex gap-1 mt-1">
+              <button
+                type="button"
+                title="Fixed fields identify the subject. They cannot be edited after the first submission."
+                onClick={(e) => { e.stopPropagation(); onSetFixed?.(); }}
+                className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border-2 border-border ${
+                  field.longitudinalRole === 'fixed' ? 'bg-secondary text-secondary-foreground' : 'bg-card text-muted-foreground'
+                }`}
+              >
+                🔒 Fixed
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSetTracked?.(); }}
+                className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border-2 border-border ${
+                  field.longitudinalRole === 'tracked' || (!field.longitudinalRole && longitudinal) ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'
+                }`}
+              >
+                📈 Tracked
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -937,6 +968,9 @@ export default function FormBuilderPage() {
   const [longitudinal, setLongitudinal] = useState<boolean>(
     (builderDraft?.longitudinal as boolean | undefined) ?? existingForm?.longitudinal ?? false,
   );
+  const [fixedFieldIds, setFixedFieldIds] = useState<string[]>(
+    (builderDraft?.fixedFieldIds as string[] | undefined) ?? existingForm?.fixedFieldIds ?? [],
+  );
   const [formRole, setFormRole] = useState<import("@/lib/store").FormRole>(
     (builderDraft?.formRole as import("@/lib/store").FormRole | undefined) ?? existingForm?.formRole ?? "standalone",
   );
@@ -977,6 +1011,7 @@ export default function FormBuilderPage() {
       setCategory(existingForm.category);
       setDescription(existingForm.description ?? "");
       setLongitudinal(existingForm.longitudinal ?? false);
+      setFixedFieldIds(existingForm.fixedFieldIds ?? []);
       setFormRole(existingForm.formRole ?? "standalone");
       setSubjectIdentifierFieldId(existingForm.subjectIdentifierFieldId ?? "");
       setParentFormId(existingForm.parentFormId ?? "");
@@ -995,14 +1030,14 @@ export default function FormBuilderPage() {
     const t = setTimeout(() => {
       try {
         localStorage.setItem(draftKey, JSON.stringify({
-          title, category, description, longitudinal, formRole,
+          title, category, description, longitudinal, fixedFieldIds, formRole,
           subjectIdentifierFieldId, parentFormId, parentLinkFieldId, fields,
         }));
       } catch { /* storage quota — silently skip */ }
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, category, description, longitudinal, formRole, subjectIdentifierFieldId, parentFormId, parentLinkFieldId, fields]);
+  }, [title, category, description, longitudinal, fixedFieldIds, formRole, subjectIdentifierFieldId, parentFormId, parentLinkFieldId, fields]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -1064,6 +1099,10 @@ export default function FormBuilderPage() {
   const save = () => {
     if (!title.trim()) { alert("Form needs a title."); return; }
     if (fields.length === 0) { alert("Add at least one field."); return; }
+    if (longitudinal && fixedFieldIds.length === 0) {
+      setSaveError("Longitudinal forms require at least one Fixed field. Tag a field as Fixed before saving.");
+      return;
+    }
     requireAuth(() => {
       const formData = {
         name: title.trim(),
@@ -1071,6 +1110,7 @@ export default function FormBuilderPage() {
         description: description.trim(),
         fields,
         longitudinal,
+        fixedFieldIds: longitudinal ? fixedFieldIds : undefined,
         formRole,
         subjectIdentifierFieldId: formRole === "parent" ? subjectIdentifierFieldId || undefined : undefined,
         parentFormId: formRole === "child" ? parentFormId || undefined : undefined,
@@ -1371,6 +1411,15 @@ export default function FormBuilderPage() {
                         onSelect={() => { setSelectedId(f.id); setPanelMode("config"); setMobileTab(2); }}
                         onDuplicate={() => duplicateField(f.id)}
                         onDelete={() => deleteField(f.id)}
+                        longitudinal={longitudinal}
+                        onSetFixed={() => {
+                          setFixedFieldIds(prev => prev.includes(f.id) ? prev : [...prev, f.id]);
+                          setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'fixed' as const } : ff));
+                        }}
+                        onSetTracked={() => {
+                          setFixedFieldIds(prev => prev.filter(id => id !== f.id));
+                          setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'tracked' as const } : ff));
+                        }}
                       />
                     ))}
                   </SortableContext>

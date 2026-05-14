@@ -48,6 +48,8 @@ function FormDetail() {
   const lastSync = useStore((s) => s.lastSync); // eslint-disable-line @typescript-eslint/no-unused-vars
   const allSubmissions = useStore((s) => s.submissions);
   const submissions = useMemo(() => allSubmissions.filter((s) => s.formId === id), [allSubmissions, id]);
+  const longitudinalSubs = useStore(s => s.longitudinalSubmissions.filter(sub => sub.formId === id));
+  const [activeTab, setActiveTab] = useState<'overview' | 'longitudinal'>('overview');
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState<"fill" | "analytics" | null>(null);
@@ -425,6 +427,90 @@ function FormDetail() {
               <BarChart2 className="h-4 w-4" /> Analytics
             </Link>
           </div>
+
+          {/* Longitudinal tab bar */}
+          {form?.longitudinal && (
+            <div className="flex border-b-2 border-border">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-4 py-2 text-[11px] font-bold uppercase tracking-wider border-r-2 border-border ${activeTab === 'overview' ? 'bg-primary' : 'bg-card hover:bg-muted'}`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setActiveTab('longitudinal')}
+                className={`px-4 py-2 text-[11px] font-bold uppercase tracking-wider ${activeTab === 'longitudinal' ? 'bg-primary' : 'bg-card hover:bg-muted'}`}
+              >
+                Longitudinal Data ({longitudinalSubs.length})
+              </button>
+            </div>
+          )}
+
+          {/* Longitudinal data view */}
+          {activeTab === 'longitudinal' && form?.longitudinal && (
+            <div className="pb-4">
+              {longitudinalSubs.length === 0 ? (
+                <div className="brutal-flat p-8 text-center text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                  No longitudinal data yet. Share the form link to start collecting.
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-end mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        import('@/lib/longitudinalExport').then(m => m.exportLongitudinalCSV(longitudinalSubs, form!));
+                      }}
+                      className="border-2 border-border bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                    >
+                      Export CSV ↓
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse min-w-max">
+                      <thead>
+                        <tr className="border-b-2 border-border bg-muted">
+                          {(form?.fields.filter(f => f.longitudinalRole === 'fixed' && f.type !== 'section_header') ?? []).map(f => (
+                            <th key={f.id} className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[10px] border-r border-border">{f.label} 🔒</th>
+                          ))}
+                          {(() => {
+                            const maxVisits = Math.max(...longitudinalSubs.map(s => s.visits.length), 0);
+                            const trackedFields = form?.fields.filter(f => f.longitudinalRole !== 'fixed' && f.type !== 'section_header' && f.type !== 'page_break') ?? [];
+                            return Array.from({ length: maxVisits }, (_, i) =>
+                              trackedFields.map(f => (
+                                <th key={`${f.id}_v${i+1}`} className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[10px] border-r border-border whitespace-nowrap">
+                                  {f.label} V{i+1}
+                                </th>
+                              ))
+                            );
+                          })()}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {longitudinalSubs.map((sub, ri) => {
+                          const fixedFields = form?.fields.filter(f => f.longitudinalRole === 'fixed' && f.type !== 'section_header') ?? [];
+                          const trackedFields = form?.fields.filter(f => f.longitudinalRole !== 'fixed' && f.type !== 'section_header' && f.type !== 'page_break') ?? [];
+                          const maxVisits = Math.max(...longitudinalSubs.map(s => s.visits.length), 0);
+                          return (
+                            <tr key={sub.id} className={ri % 2 === 0 ? 'bg-card' : 'bg-muted/30'}>
+                              {fixedFields.map(f => (
+                                <td key={f.id} className="px-3 py-2 font-bold border-r border-border">{String(sub.fixedData[f.id] ?? '—')}</td>
+                              ))}
+                              {Array.from({ length: maxVisits }, (_, i) =>
+                                trackedFields.map(f => (
+                                  <td key={`${f.id}_v${i+1}`} className="px-3 py-2 border-r border-border">{String(sub.visits[i]?.data[f.id] ?? '—')}</td>
+                                ))
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Danger zone — owner only */}
           {!form.shared && <div className="brutal border-destructive p-4 space-y-3">
