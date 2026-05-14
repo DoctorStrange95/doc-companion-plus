@@ -782,6 +782,8 @@ async def create_or_upsert_form(
             if not owner and not await can_write_resource(db, user, "form", existing.id):
                 raise HTTPException(403, "Forbidden")
             for k, v in body.model_dump(exclude={"id"}).items():
+                if k in ("share_token", "analytics_token") and v is None:
+                    continue
                 setattr(existing, k, v)
             flag_modified(existing, "fields")
             flag_modified(existing, "allowed_filler_emails")
@@ -1111,6 +1113,11 @@ async def sync_push(
                 # If neither, signal denial — never INSERT with same ID (PK conflict).
                 if str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "form", existing.id):
                     for k, v in f.model_dump(exclude={"id"}).items():
+                        # Never overwrite share_token / analytics_token with null from the
+                        # bulk-sync endpoint — token management uses dedicated endpoints.
+                        # Client may send null when it doesn't know the current token value.
+                        if k in ("share_token", "analytics_token") and v is None:
+                            continue
                         setattr(existing, k, v)
                     flag_modified(existing, "fields")
                     flag_modified(existing, "allowed_filler_emails")

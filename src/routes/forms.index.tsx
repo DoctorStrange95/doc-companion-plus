@@ -21,6 +21,25 @@ function StatusBadge({ status }: { status?: string }) {
   );
 }
 
+function SkeletonCard() {
+  return (
+    <li className="brutal animate-pulse">
+      <div className="flex items-start gap-3 p-4">
+        <div className="h-10 w-10 shrink-0 border-2 border-border bg-muted" />
+        <div className="flex-1 space-y-2 py-1">
+          <div className="h-4 w-2/3 rounded bg-muted" />
+          <div className="h-3 w-1/2 rounded bg-muted" />
+        </div>
+      </div>
+      <div className="flex border-t-2 border-border">
+        <div className="flex-1 py-3 px-4 bg-muted/30" />
+        <div className="flex-1 py-3 px-4 border-l border-border bg-muted/20" />
+        <div className="flex-1 py-3 px-4 border-l border-border bg-muted/30" />
+      </div>
+    </li>
+  );
+}
+
 function FormsList() {
   const forms = useStore((s) => s.forms);
   const submissions = useStore((s) => s.submissions);
@@ -97,6 +116,14 @@ function FormsList() {
           </div>
         )}
         {forms.length === 0 ? (
+          !lastSync ? (
+            /* Still waiting for first server sync — show skeleton instead of "No forms" */
+            <ul className="grid gap-3">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+            </ul>
+          ) : (
           <div className="brutal-flat p-8 text-center">
             <FileText className="h-10 w-10 mx-auto mb-3 opacity-20" />
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No forms yet</p>
@@ -104,6 +131,7 @@ function FormsList() {
               Create first form
             </Link>
           </div>
+          )
         ) : filteredForms.length === 0 ? (
           <div className="brutal-flat p-8 text-center">
             <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No forms match "{searchQuery}"</p>

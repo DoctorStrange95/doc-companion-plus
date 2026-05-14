@@ -156,6 +156,7 @@ function PublicFiller() {
   const [form, setForm] = useState<PublicFormDef | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [showWarmup, setShowWarmup] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -169,6 +170,12 @@ function PublicFiller() {
 
   // null = not yet determined; "" = public (no gate); string = verified email
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Show a warm-up hint after 5 seconds if still loading (Render free tier cold start)
+    const warmupTimer = setTimeout(() => setShowWarmup(true), 5000);
+    return () => clearTimeout(warmupTimer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,8 +306,18 @@ function PublicFiller() {
   // — Loading / error / closed states —
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        {showWarmup && (
+          <div className="max-w-xs text-center space-y-1">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Server is warming up
+            </p>
+            <p className="text-xs text-muted-foreground">
+              First visit takes ~30 seconds on our free plan. Please wait…
+            </p>
+          </div>
+        )}
       </div>
     );
   }
