@@ -1,12 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useStore, ageFromDob } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, Search, MapPin } from "lucide-react";
 
 export const Route = createFileRoute("/patients/")({ component: PatientsList });
 
 function PatientsList() {
+  const { user } = useAuth();
   const patients = useStore((s) => s.patients);
   const [q, setQ] = useState("");
 
@@ -20,6 +23,8 @@ function PatientsList() {
         p.tags.some((tag) => tag.toLowerCase().includes(t)),
     );
   }, [patients, q]);
+
+  if (!user) return <AuthRequired action="track patients" />;
 
   return (
     <>

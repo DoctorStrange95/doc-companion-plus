@@ -3,6 +3,44 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { LogIn, UserPlus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
+interface AuthRequiredProps {
+  action?: string; // e.g. "track patients"
+}
+
+/** Full-page inline sign-in prompt for routes that require authentication. */
+export function AuthRequired({ action }: AuthRequiredProps) {
+  const nav = useNavigate();
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4">
+      <div className="brutal w-full max-w-sm p-6 text-center">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+          Sign in required
+        </p>
+        <h2 className="font-display text-2xl uppercase leading-tight mb-2">
+          {action ? `To ${action}` : "Access this page"}
+        </h2>
+        <p className="text-sm text-muted-foreground mb-6">
+          Create a free account or sign in to continue.
+        </p>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => nav({ to: "/login" })}
+            className="btn-brutal flex items-center justify-center gap-2 w-full"
+          >
+            <LogIn className="h-4 w-4" /> Sign in
+          </button>
+          <button
+            onClick={() => nav({ to: "/login", search: { mode: "register" } })}
+            className="btn-brutal flex items-center justify-center gap-2 w-full bg-secondary text-secondary-foreground"
+          >
+            <UserPlus className="h-4 w-4" /> Create free account
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AuthGateOptions {
   action?: string; // e.g. "save a form", "track a patient"
 }

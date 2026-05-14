@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useStore, store, ageFromDob } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -209,6 +211,7 @@ function WHOChart({
 // ── Main component ────────────────────────────────────────────────────────────
 
 function PatientDetail() {
+  const { user } = useAuth();
   const { id } = Route.useParams();
   const nav = useNavigate();
   const patient = useStore((s) => s.patients.find((p) => p.id === id));
@@ -295,6 +298,8 @@ function PatientDetail() {
   }, [visitPoints, sex]);
 
   // ─────────────────────────────────────────────────────────────────────────────
+
+  if (!user) return <AuthRequired action="track patients" />;
 
   if (!patient) {
     return (

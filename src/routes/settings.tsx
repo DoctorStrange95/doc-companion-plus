@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import { Download, RotateCcw, Wifi, WifiOff, LogOut, RefreshCw, AlertTriangle } from "lucide-react";
 
@@ -21,6 +22,8 @@ function Settings() {
   const [syncError, setSyncError] = useState("");
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
   const syncStuck = queue.length > 10 && lastSync && (Date.now() - lastSync) > 5 * 60 * 1000;
+
+  if (!user) return <AuthRequired action="access settings" />;
 
   const save = () => {
     store.setWorker({ name: name.trim() || user?.name || "Health Worker", village: village.trim() || "Unknown" });
