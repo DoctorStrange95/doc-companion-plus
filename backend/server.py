@@ -1237,7 +1237,7 @@ async def sync_push(
             await db.execute(
                 text("""
                     UPDATE longitudinal_submissions
-                    SET visits = :visits::jsonb, updated_at = :updated_at
+                    SET visits = CAST(:visits AS jsonb), updated_at = :updated_at
                     WHERE id = :id
                 """),
                 {
@@ -1253,7 +1253,7 @@ async def sync_push(
                     INSERT INTO longitudinal_submissions
                         (id, form_id, owner_id, subject_key, fixed_data, visits, patient_id, created_at, updated_at)
                     VALUES
-                        (:id, :form_id, :owner_id::uuid, :subject_key, :fixed_data::jsonb, :visits::jsonb,
+                        (:id, :form_id, CAST(:owner_id AS uuid), :subject_key, CAST(:fixed_data AS jsonb), CAST(:visits AS jsonb),
                          :patient_id, :created_at, :updated_at)
                     ON CONFLICT (id) DO NOTHING
                 """),
@@ -1449,7 +1449,7 @@ async def submit_public_longitudinal(
         visit_id = f"v{len(existing_visits) + 1}"
         merged_visits = existing_visits + [{"visitId": visit_id, "timestamp": now, "data": body.visit_data}]
         await db.execute(
-            text("UPDATE longitudinal_submissions SET visits = :visits::jsonb, updated_at = :updated_at WHERE id = :id"),
+            text("UPDATE longitudinal_submissions SET visits = CAST(:visits AS jsonb), updated_at = :updated_at WHERE id = :id"),
             {"id": sub_id, "visits": json.dumps(merged_visits), "updated_at": now},
         )
     else:
@@ -1458,7 +1458,7 @@ async def submit_public_longitudinal(
                 INSERT INTO longitudinal_submissions
                     (id, form_id, owner_id, subject_key, fixed_data, visits, created_at, updated_at)
                 VALUES
-                    (:id, :form_id, :owner_id::uuid, :subject_key, :fixed_data::jsonb, :visits::jsonb,
+                    (:id, :form_id, CAST(:owner_id AS uuid), :subject_key, CAST(:fixed_data AS jsonb), CAST(:visits AS jsonb),
                      :created_at, :updated_at)
                 ON CONFLICT (id) DO NOTHING
             """),
