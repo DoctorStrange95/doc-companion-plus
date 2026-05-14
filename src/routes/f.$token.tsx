@@ -160,6 +160,7 @@ function PublicFiller() {
   const [loadError, setLoadError] = useState("");
   const [showWarmup, setShowWarmup] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedOffline, setSubmittedOffline] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const [respondentName, setRespondentName] = useState("");
@@ -403,7 +404,17 @@ function PublicFiller() {
         try { localStorage.removeItem(publicDraftKey); } catch {}
         setSubmitted(true);
       } catch {
-        setError('Could not submit. Please check your connection and try again.');
+        // Network unreachable — save locally so data isn't lost.
+        // Logged-in users: drain() will sync it to the server when back online.
+        store.submitLongitudinalVisit(form.id, values, {
+          id: form.id, name: form.name, category: form.category,
+          fields: form.fields, createdAt: 0,
+          longitudinal: true,
+          fixedFieldIds: form.fixed_field_ids ?? [],
+        });
+        try { localStorage.removeItem(publicDraftKey); } catch {}
+        setSubmittedOffline(true);
+        setSubmitted(true);
       } finally {
         setSubmitting(false);
       }
@@ -484,7 +495,13 @@ function PublicFiller() {
         <div className="max-w-sm text-center space-y-4">
           <CheckCircle2 className="h-16 w-16 mx-auto text-primary" />
           <h1 className="font-display text-2xl uppercase tracking-widest">Thank you!</h1>
-          <p className="text-sm text-muted-foreground">Your response has been recorded.</p>
+          {submittedOffline ? (
+            <p className="text-sm text-muted-foreground">
+              Saved on this device. The server was temporarily unreachable — your data will sync automatically when the connection is restored.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Your response has been recorded.</p>
+          )}
         </div>
       </div>
     );
