@@ -723,18 +723,13 @@ export const store = {
   },
 
   clearForLogout: () => {
-    // Clear private user data on logout so the logged-out home screen never
-    // shows a previous user's patients, submissions, or name.
-    // Forms are kept (they may be public/shared and load without auth).
-    // pullSnapshot() after re-login re-syncs all private data from the server.
+    // Full reset to seed state so a logged-out visitor never sees any data
+    // from the previous session. pullSnapshot() after re-login re-syncs
+    // everything from the server.
     state = {
-      ...state,
-      patients: [],
-      submissions: [],
-      worker: { name: "Health Worker", village: "Demo Village" },
-      queue: [],
-      syncing: false,
-      pulling: false,
+      ...seed(),
+      online: state.online,
+      initDone: true, // don't flash a loading screen on the home page
     };
     persist();
   },
