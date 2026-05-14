@@ -15,3 +15,22 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false          # optional – set if using Google OAuth
     healthCheckPath: /api/health
+
+  # Keep-alive cron: pings /api/health every 10 minutes so the free-tier
+  # web service never spins down. Without this, a hard refresh after
+  # inactivity triggers a cold start that takes 1-2 minutes.
+  - type: cron
+    name: communitymed-keepalive
+    runtime: python
+    schedule: "*/10 * * * *"   # every 10 minutes
+    buildCommand: "echo ok"
+    startCommand: >
+      python -c "
+      import urllib.request, os;
+      url = os.environ.get('BACKEND_URL', 'https://communitymed-backend.onrender.com') + '/api/health';
+      urllib.request.urlopen(url, timeout=10);
+      print('ping ok:', url)
+      "
+    envVars:
+      - key: BACKEND_URL
+        sync: false   # set to your actual Render backend URL in the dashboard
