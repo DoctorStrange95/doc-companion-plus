@@ -1336,7 +1336,7 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
                 Submission.form_id.in_(owned_f),
             )
         )
-        res = await db.execute(q.order_by(Submission.created_at.desc()))
+        res = await db.execute(q.order_by(Submission.created_at.desc()).limit(2000))
         rows = res.scalars().all()
         return [SubmissionOut.model_validate(r) for r in rows]
 
