@@ -20,8 +20,8 @@ function SyncIndicator() {
   const active = useStore((s) => s.syncing || s.pulling);
   if (!active) return null;
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 h-1 overflow-hidden bg-primary/20">
-      <div className="sync-bar-inner h-full w-1/3 bg-primary" />
+    <div className="fixed top-0 left-0 right-0 z-50 h-1 overflow-hidden bg-secondary/20">
+      <div className="sync-bar-inner h-full w-1/3 bg-secondary" />
     </div>
   );
 }
