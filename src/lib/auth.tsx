@@ -87,6 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, []);
 
+  // Keep-alive ping: hit /api/health every 10 minutes so the Render free-tier
+  // backend never spins down while the app is open in a browser tab.
+  useEffect(() => {
+    const ping = () => fetch(`${import.meta.env.VITE_BACKEND_URL ?? ""}/api/health`).catch(() => {});
+    ping(); // immediate ping on mount to wake the backend as early as possible
+    const id = setInterval(ping, 10 * 60 * 1000); // every 10 minutes
+    return () => clearInterval(id);
+  }, []);
+
   const login = async (email: string, password: string) => {
     const res = await api<{ access_token: string; user: AuthUser }>(
       "/api/auth/login",
