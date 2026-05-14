@@ -48,7 +48,8 @@ function FormDetail() {
   const lastSync = useStore((s) => s.lastSync); // eslint-disable-line @typescript-eslint/no-unused-vars
   const allSubmissions = useStore((s) => s.submissions);
   const submissions = useMemo(() => allSubmissions.filter((s) => s.formId === id), [allSubmissions, id]);
-  const longitudinalSubs = useStore(s => s.longitudinalSubmissions.filter(sub => sub.formId === id));
+  const allLongitudinalSubs = useStore(s => s.longitudinalSubmissions);
+  const longitudinalSubs = useMemo(() => allLongitudinalSubs.filter(sub => sub.formId === id), [allLongitudinalSubs, id]);
   const [activeTab, setActiveTab] = useState<'overview' | 'longitudinal'>('overview');
 
   const [showShare, setShowShare] = useState(false);

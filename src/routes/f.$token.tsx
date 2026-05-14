@@ -180,7 +180,7 @@ function PublicFiller() {
   const [subjectSearch, setSubjectSearch] = useState('');
   const [subjectResults, setSubjectResults] = useState<LongitudinalSubmission[]>([]);
 
-  const { longitudinalSubmissions } = useStore(s => ({ longitudinalSubmissions: s.longitudinalSubmissions }));
+  const longitudinalSubmissions = useStore(s => s.longitudinalSubmissions);
 
   // ── Public-form fill draft ───────────────────────────────────────────────────
   // All entered data is cached in localStorage under the share token so that
