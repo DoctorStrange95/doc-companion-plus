@@ -911,15 +911,51 @@ export default function FormBuilderPage() {
   const { edit: editId } = Route.useSearch();
   const existingForm = useStore((s) => (editId ? s.forms.find((f) => f.id === editId) : undefined));
 
-  const [title, setTitle] = useState(existingForm?.name ?? "");
-  const [category, setCategory] = useState(existingForm?.category ?? "GENERAL");
-  const [description, setDescription] = useState(existingForm?.description ?? "");
-  const [longitudinal, setLongitudinal] = useState(existingForm?.longitudinal ?? false);
-  const [formRole, setFormRole] = useState<import("@/lib/store").FormRole>(existingForm?.formRole ?? "standalone");
-  const [subjectIdentifierFieldId, setSubjectIdentifierFieldId] = useState(existingForm?.subjectIdentifierFieldId ?? "");
-  const [parentFormId, setParentFormId] = useState(existingForm?.parentFormId ?? "");
-  const [parentLinkFieldId, setParentLinkFieldId] = useState(existingForm?.parentLinkFieldId ?? "");
-  const [fields, setFields] = useState<FormField[]>(existingForm?.fields ?? []);
+  // ── Draft cache ──────────────────────────────────────────────────────────────
+  // Key is scoped to the form being built so multiple drafts can coexist.
+  const draftKey = editId ? `form_builder_draft_${editId}` : "form_builder_draft_new";
+
+  // Load the draft exactly once on mount via lazy-initialiser (synchronous localStorage read).
+  const [builderDraft] = useState<Record<string, unknown> | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      return raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+    } catch { return null; }
+  });
+
+  // ── State — prefer draft, fall back to server form, then empty defaults ──────
+  const [title, setTitle] = useState<string>(
+    (builderDraft?.title as string | undefined) ?? existingForm?.name ?? "",
+  );
+  const [category, setCategory] = useState<string>(
+    (builderDraft?.category as string | undefined) ?? existingForm?.category ?? "GENERAL",
+  );
+  const [description, setDescription] = useState<string>(
+    (builderDraft?.description as string | undefined) ?? existingForm?.description ?? "",
+  );
+  const [longitudinal, setLongitudinal] = useState<boolean>(
+    (builderDraft?.longitudinal as boolean | undefined) ?? existingForm?.longitudinal ?? false,
+  );
+  const [formRole, setFormRole] = useState<import("@/lib/store").FormRole>(
+    (builderDraft?.formRole as import("@/lib/store").FormRole | undefined) ?? existingForm?.formRole ?? "standalone",
+  );
+  const [subjectIdentifierFieldId, setSubjectIdentifierFieldId] = useState<string>(
+    (builderDraft?.subjectIdentifierFieldId as string | undefined) ?? existingForm?.subjectIdentifierFieldId ?? "",
+  );
+  const [parentFormId, setParentFormId] = useState<string>(
+    (builderDraft?.parentFormId as string | undefined) ?? existingForm?.parentFormId ?? "",
+  );
+  const [parentLinkFieldId, setParentLinkFieldId] = useState<string>(
+    (builderDraft?.parentLinkFieldId as string | undefined) ?? existingForm?.parentLinkFieldId ?? "",
+  );
+  const [fields, setFields] = useState<FormField[]>(
+    (builderDraft?.fields as FormField[] | undefined) ?? existingForm?.fields ?? [],
+  );
+
+  // Show a dismissible banner when we restored unsaved work from cache.
+  const [showDraftBanner, setShowDraftBanner] = useState(!!builderDraft);
+
   const allForms = useStore((s) => s.forms);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<"palette" | "config">("palette");
@@ -927,7 +963,15 @@ export default function FormBuilderPage() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const isEditing = !!editId;
 
+  // Ref: skip the first run of the editId-sync effect when a draft was restored,
+  // otherwise the effect would overwrite draft state with the server values.
+  const skipFirstEditSyncRef = useRef(!!builderDraft);
+
   useEffect(() => {
+    if (skipFirstEditSyncRef.current) {
+      skipFirstEditSyncRef.current = false;
+      return;
+    }
     if (existingForm && isEditing) {
       setTitle(existingForm.name);
       setCategory(existingForm.category);
@@ -941,6 +985,24 @@ export default function FormBuilderPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
+
+  // ── Auto-save draft — 800 ms debounce on any state change ───────────────────
+  // Skip the very first render so we don't needlessly re-write the draft we
+  // just read.  Every subsequent change is persisted automatically.
+  const hasMountedRef = useRef(false);
+  useEffect(() => {
+    if (!hasMountedRef.current) { hasMountedRef.current = true; return; }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          title, category, description, longitudinal, formRole,
+          subjectIdentifierFieldId, parentFormId, parentLinkFieldId, fields,
+        }));
+      } catch { /* storage quota — silently skip */ }
+    }, 800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, category, description, longitudinal, formRole, subjectIdentifierFieldId, parentFormId, parentLinkFieldId, fields]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -994,6 +1056,11 @@ export default function FormBuilderPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "updated">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const clearDraft = () => {
+    try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+    setShowDraftBanner(false);
+  };
+
   const save = () => {
     if (!title.trim()) { alert("Form needs a title."); return; }
     if (fields.length === 0) { alert("Add at least one field."); return; }
@@ -1010,7 +1077,7 @@ export default function FormBuilderPage() {
         parentLinkFieldId: formRole === "child" ? parentLinkFieldId || undefined : undefined,
       };
 
-      // 1. Update local state immediately (offline-first, also queues for background retry)
+      // 1. Update local store immediately (offline-first, queues for background sync)
       let savedForm: FormDef;
       if (isEditing && editId) {
         store.updateForm(editId, formData);
@@ -1024,15 +1091,20 @@ export default function FormBuilderPage() {
       setSaveStatus("saving");
       setSaveError(null);
 
-      // 2. Direct push to the server — we await this before navigating so that
-      //    the public share link reflects the update immediately after save.
-      //    If the backend is cold-starting (Render free tier) this waits up to ~60s.
+      // 2. Direct push to the server so the share link reflects the update immediately.
+      //    Draft is cleared only on success — if the push fails, the draft stays so
+      //    the user can retry without losing work.
       void sync.pushForm(savedForm)
         .then(() => {
+          clearDraft();
           setSaveStatus("updated");
           setTimeout(() => nav({ to: "/forms" }), 1200);
         })
         .catch((err: unknown) => {
+          // Server unavailable — form is already saved to the local store and the
+          // sync queue will push it automatically when the server is reachable.
+          // Clear the draft anyway (the store has the authoritative copy now).
+          clearDraft();
           setSaveStatus("idle");
           const msg = err instanceof Error ? err.message : null;
           setSaveError(msg ?? "Server is unavailable. Form saved locally — it will sync automatically when the server is back online.");
@@ -1109,6 +1181,21 @@ export default function FormBuilderPage() {
             : isEditing ? "Update" : "Save"}
         </button>
       </div>
+
+      {/* Draft-restored banner */}
+      {showDraftBanner && (
+        <div className="flex items-center justify-between gap-2 border-b-2 border-border bg-primary/20 px-4 py-2 shrink-0">
+          <span className="text-[11px] font-bold">
+            Unsaved draft restored — your previous work is back.
+          </span>
+          <button
+            onClick={clearDraft}
+            className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted"
+          >
+            Discard draft
+          </button>
+        </div>
+      )}
 
       {/* Server error banner */}
       {saveError && (

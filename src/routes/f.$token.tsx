@@ -167,9 +167,57 @@ function PublicFiller() {
   const [error, setError] = useState("");
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
 
   // null = not yet determined; "" = public (no gate); string = verified email
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+
+  // ── Public-form fill draft ───────────────────────────────────────────────────
+  // All entered data is cached in localStorage under the share token so that
+  // accidental navigation or a browser refresh never wipes an in-progress answer.
+  // The cache is cleared when the response is successfully submitted.
+  const publicDraftKey = `public_fill_draft_${token}`;
+
+  // Load draft once the form is known to be valid and accepting responses.
+  // We use a ref so this only fires once even if `form` re-renders.
+  const draftLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!form || draftLoadedRef.current) return;
+    if (form.status === "closed" || form.status === "draft") return;
+    draftLoadedRef.current = true;
+    try {
+      const raw = localStorage.getItem(publicDraftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        values?: Record<string, unknown>;
+        page?: number;
+        respondentName?: string;
+        respondentEmail?: string;
+        respondentCode?: string;
+      };
+      let hadData = false;
+      if (d.values && Object.keys(d.values).length > 0) {
+        setValues(d.values);
+        hadData = true;
+      }
+      if (typeof d.page === "number" && d.page > 0) setPage(d.page);
+      if (d.respondentName) setRespondentName(d.respondentName);
+      if (d.respondentEmail) setRespondentEmail(d.respondentEmail);
+      if (d.respondentCode) setRespondentCode(d.respondentCode);
+      if (hadData) setShowDraftBanner(true);
+    } catch { /* corrupt cache — ignore */ }
+  }, [form, publicDraftKey]);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    const hasData = Object.keys(values).length > 0 || respondentName || respondentEmail || respondentCode;
+    if (!hasData || submitted) return;
+    try {
+      localStorage.setItem(publicDraftKey, JSON.stringify({
+        values, page, respondentName, respondentEmail, respondentCode,
+      }));
+    } catch { /* storage quota — silently skip */ }
+  }, [values, page, respondentName, respondentEmail, respondentCode, publicDraftKey, submitted]);
 
   useEffect(() => {
     // Show a warm-up hint after 5 seconds if still loading (Render free tier cold start)
@@ -179,7 +227,7 @@ function PublicFiller() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/api/forms/public/${token}`, { cache: "no-store" })
+    fetch(`${API_BASE}/api/forms/public/${token}`)
       .then(async (r) => {
         if (cancelled) return;
         if (!r.ok) {
@@ -294,6 +342,7 @@ function PublicFiller() {
         const body = await res.json().catch(() => ({ detail: "Submission failed" }));
         setError(body.detail ?? "Submission failed");
       } else {
+        try { localStorage.removeItem(publicDraftKey); } catch {}
         setSubmitted(true);
       }
     } catch {
@@ -407,6 +456,27 @@ function PublicFiller() {
           )}
         </div>
       </div>
+
+      {showDraftBanner && (
+        <div className="border-b-4 border-border bg-primary/20 px-4 py-2 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider">Resuming from last time</span>
+          <button
+            type="button"
+            onClick={() => {
+              try { localStorage.removeItem(publicDraftKey); } catch {}
+              setValues({});
+              setPage(0);
+              setRespondentName("");
+              setRespondentEmail("");
+              setRespondentCode("");
+              setShowDraftBanner(false);
+            }}
+            className="shrink-0 border-2 border-border bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-destructive hover:text-destructive-foreground"
+          >
+            Start fresh
+          </button>
+        </div>
+      )}
 
       <div className="mx-auto max-w-xl px-4 pt-6 space-y-4">
         <form onSubmit={handleSubmit} className="space-y-4">

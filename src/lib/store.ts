@@ -690,11 +690,13 @@ export const store = {
     // their data immediately on re-login without waiting for a server pull.
     // Only clear the pending queue (no stale ops from the old session).
     // pullSnapshot() after re-login will re-sync and correct any stale data.
+    // Do NOT reset lastSync — keeping it non-null means initDone stays true
+    // on the next load, so the app shows cached content instantly instead of
+    // a blank loading screen while the backend warms up.
     state = {
       ...state,
       queue: [],
       syncing: false,
-      lastSync: null,
     };
     persist();
   },
@@ -987,12 +989,15 @@ if (typeof window !== "undefined") {
     }
   }, 15_000);
   // Background sync every 30 seconds — drains the local queue and pulls fresh
-  // server data. Transparent to the user; manual sync button available for
-  // on-demand refresh. Mirrors Google Forms' offline-first approach.
+  // server data. When the queue has items, drain() already calls pullSnapshot
+  // internally after a successful push, so we avoid a double pull here.
   setInterval(() => {
     if (getToken() && (typeof navigator === "undefined" || navigator.onLine)) {
-      void drain();
-      void pullSnapshot();
+      if (state.queue.length > 0) {
+        void drain(); // drain calls pullSnapshot after push
+      } else {
+        void pullSnapshot();
+      }
     }
   }, 30_000);
 }

@@ -89,6 +89,41 @@ function FillForm() {
   const [error, setError] = useState("");
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+
+  // ── Fill draft cache ─────────────────────────────────────────────────────────
+  // Values entered while filling a form are cached in localStorage so that a
+  // browser refresh or accidental navigation never loses in-progress work.
+  // The cache is cleared automatically when the form is submitted.
+  const fillDraftKey = `fill_draft_${id}`;
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(fillDraftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        values?: Record<string, unknown>;
+        page?: number;
+        selectedPatient?: string;
+      };
+      if (d.values && Object.keys(d.values).length > 0) {
+        setValues(d.values);
+        setShowDraftBanner(true);
+      }
+      if (typeof d.page === "number" && d.page > 0) setPage(d.page);
+      if (d.selectedPatient) setSelectedPatient(d.selectedPatient);
+    } catch { /* corrupt cache — ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once on mount
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    if (Object.keys(values).length === 0 && !selectedPatient) return;
+    try {
+      localStorage.setItem(fillDraftKey, JSON.stringify({ values, page, selectedPatient }));
+    } catch { /* storage quota — silently skip */ }
+  }, [values, page, selectedPatient, fillDraftKey]);
 
   // Pull on mount and every 30s so data collectors see form definition updates in near-real-time
   useEffect(() => {
@@ -260,6 +295,8 @@ function FillForm() {
     Object.entries(values).forEach(([k, v]) => {
       if (visibleIds.has(k)) cleaned[k] = v;
     });
+    // Clear the fill draft before saving — the submission is now the record of truth.
+    try { localStorage.removeItem(fillDraftKey); } catch { /* ignore */ }
     store.addSubmission({
       patientId: selectedPatient || "",
       formId: form.id,
@@ -282,6 +319,26 @@ function FillForm() {
         variant="yellow"
       />
       <PageShell>
+        {showDraftBanner && (
+          <div className="flex items-center justify-between gap-2 border-2 border-border bg-primary/20 px-4 py-2 mb-2">
+            <span className="text-[11px] font-bold">
+              Resuming from where you left off.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                try { localStorage.removeItem(fillDraftKey); } catch { /* ignore */ }
+                setValues({});
+                setPage(0);
+                setSelectedPatient(patientId ?? "");
+                setShowDraftBanner(false);
+              }}
+              className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted"
+            >
+              Start fresh
+            </button>
+          </div>
+        )}
         <form onSubmit={submit} className="space-y-4">
           {needsPatient && !patientId && (
             <div className="brutal p-4">
