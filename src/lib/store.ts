@@ -766,7 +766,7 @@ async function pullSnapshot() {
       ...state,
       patients: [...localOnlyPatientMap.values(), ...safeServerPatients, ...pendingPatientMap.values()],
       forms: [...localOnlyFormMap.values(), ...safeServerForms, ...pendingFormMap.values()],
-      submissions: [...submissionMap.values()],
+      submissions: [...submissionMap.values()].sort((a, b) => b.createdAt - a.createdAt),
       lastSync: Date.now(),
       initDone: true,
     };

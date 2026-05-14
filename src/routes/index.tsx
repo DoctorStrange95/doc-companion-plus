@@ -60,7 +60,7 @@ function Home() {
             </div>
           ) : (
             <ul className="brutal divide-y-2 divide-border">
-              {submissions.slice(0, 5).map((s) => {
+              {[...submissions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5).map((s) => {
                 const p = s.patientId ? patients.find((x) => x.id === s.patientId) : null;
                 const label = p?.name ?? (s.patientId ? "Unknown patient" : s.formName);
                 const sub = p ? `${s.formName} · ${new Date(s.createdAt).toLocaleString()}` : new Date(s.createdAt).toLocaleString();
