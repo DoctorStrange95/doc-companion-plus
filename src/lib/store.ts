@@ -380,6 +380,13 @@ let state: State = (() => {
       loaded.forms = dedupeById(loaded.forms);
       loaded.patients = dedupeById(loaded.patients);
       loaded.submissions = dedupeById(loaded.submissions);
+      // Self-heal: if forms ended up empty after merging (e.g. a previous bad
+      // pullSnapshot wiped them during a Render cold-start), restore seed forms
+      // so the app is never blank. The next pullSnapshot will merge in real
+      // server data on top of these placeholders.
+      if (loaded.forms.length === 0) {
+        loaded.forms = seed().forms;
+      }
       return loaded;
     }
   } catch {
@@ -687,10 +694,13 @@ async function pullSnapshot() {
     const sIds = new Set(serverPatients.map((p) => p.id));
     // (subIds unused — submissions use union-merge, not set-diff)
 
-    // Safety guard: if the server returned 0 forms but we have any forms locally,
-    // treat it as a suspicious empty response (cold start, partial response, etc.)
-    // and bail without touching local state.
-    if (serverForms.length === 0 && state.forms.length > 0) {
+    // Safety guard: if the server returned 0 forms, treat it as a suspicious
+    // empty response (cold start, network blip, partial response) and bail
+    // without touching local state. Update lastSync so the UI knows a check
+    // happened, but never let a server empty-response wipe local forms.
+    if (serverForms.length === 0) {
+      state = { ...state, lastSync: Date.now() };
+      persist();
       return;
     }
 
