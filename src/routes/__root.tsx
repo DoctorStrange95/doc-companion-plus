@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import appCss from "../styles.css?url";
 import { BottomNav } from "@/components/BottomNav";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { useStore } from "@/lib/store";
 
 function NotFoundComponent() {
   return (
@@ -144,6 +145,7 @@ function RootComponent() {
 
 function AuthShell() {
   const { user } = useAuth();
+  const initDone = useStore((s) => s.initDone);
   const nav = useNavigate();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
@@ -158,8 +160,9 @@ function AuthShell() {
   const isPublic = path.startsWith("/f/") || path.startsWith("/fa/") || path.startsWith("/pg/");
   const isLoginPage = path === "/login";
 
-  // Show loading spinner only briefly while auth check is in-flight
-  if (user === undefined && !isPublic && !isLoginPage) {
+  // Show loading while auth check is in-flight OR while data is being fetched
+  // for the first time (fresh install / never synced). This prevents blank/0 screens.
+  if ((!isPublic && !isLoginPage) && (user === undefined || (user && !initDone))) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="font-display text-2xl uppercase tracking-widest text-muted-foreground">

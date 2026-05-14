@@ -251,6 +251,7 @@ interface State {
   lastSync: number | null;
   syncing: boolean;
   online: boolean;
+  initDone: boolean;
 }
 
 const KEY = "communitymed_pro_v2";
@@ -360,6 +361,7 @@ const seed = (): State => ({
   lastSync: null,
   syncing: false,
   online: typeof navigator !== "undefined" ? navigator.onLine : true,
+  initDone: false,
 });
 
 // ---------- Persistence ----------------------------------------------------
@@ -387,6 +389,9 @@ let state: State = (() => {
       if (loaded.forms.length === 0) {
         loaded.forms = seed().forms;
       }
+      // Skip loading screen for returning users who have synced before.
+      // Fresh installs (lastSync null) show a loading screen until first pull.
+      loaded.initDone = loaded.lastSync !== null;
       return loaded;
     }
   } catch {
@@ -699,7 +704,7 @@ async function pullSnapshot() {
     // without touching local state. Update lastSync so the UI knows a check
     // happened, but never let a server empty-response wipe local forms.
     if (serverForms.length === 0) {
-      state = { ...state, lastSync: Date.now() };
+      state = { ...state, lastSync: Date.now(), initDone: true };
       persist();
       return;
     }
@@ -735,6 +740,7 @@ async function pullSnapshot() {
       forms: [...localOnlyFormMap.values(), ...safeServerForms, ...pendingFormMap.values()],
       submissions: [...submissionMap.values()],
       lastSync: Date.now(),
+      initDone: true,
     };
     persist();
   } catch (e) {
@@ -742,7 +748,11 @@ async function pullSnapshot() {
       // Auth bad — caller will handle (logout)
       throw e;
     }
-    // network / 5xx — just stay offline silently
+    // network / 5xx — release loading screen so app doesn't stay blank forever
+    if (!state.initDone) {
+      state = { ...state, initDone: true };
+      persist();
+    }
   }
 }
 
@@ -941,6 +951,13 @@ if (typeof window !== "undefined") {
   window.addEventListener("offline", onOffline);
   // Initial drain attempt on app boot
   setTimeout(() => { void drain(); }, 1500);
+  // Fallback: release loading screen after 15 s even if the server never responds
+  setTimeout(() => {
+    if (!state.initDone) {
+      state = { ...state, initDone: true };
+      persist();
+    }
+  }, 15_000);
   // Background sync every 30 seconds — drains the local queue and pulls fresh
   // server data. Transparent to the user; manual sync button available for
   // on-demand refresh. Mirrors Google Forms' offline-first approach.

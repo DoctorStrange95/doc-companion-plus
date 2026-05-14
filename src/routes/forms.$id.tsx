@@ -45,7 +45,7 @@ function FormDetail() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
-  const lastSync = useStore((s) => s.lastSync);
+  const lastSync = useStore((s) => s.lastSync); // eslint-disable-line @typescript-eslint/no-unused-vars
   const allSubmissions = useStore((s) => s.submissions);
   const submissions = useMemo(() => allSubmissions.filter((s) => s.formId === id), [allSubmissions, id]);
 
@@ -212,20 +212,6 @@ function FormDetail() {
   };
 
   if (!form) {
-    // Haven't synced yet — server might still be loading the form list
-    if (!lastSync) {
-      return (
-        <>
-          <PageHeader title="Form" back="/forms" />
-          <PageShell>
-            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-              <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="text-xs font-bold uppercase tracking-widest">Loading form…</p>
-            </div>
-          </PageShell>
-        </>
-      );
-    }
     return (
       <>
         <PageHeader title="Form" back="/forms" />
