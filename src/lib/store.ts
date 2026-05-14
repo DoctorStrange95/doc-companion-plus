@@ -742,8 +742,8 @@ export const store = {
     formData: Record<string, unknown>,
     form: FormDef
   ) => {
-    const fixedIds = (form.fixedFieldIds ?? form.fields.filter(f => f.longitudinalRole === 'fixed').map(f => f.id));
-    const subjectKey = fixedIds.sort().map(id => String(formData[id] ?? '').trim().toLowerCase()).join('|');
+    const fixedIds = [...(form.fixedFieldIds ?? form.fields.filter(f => f.longitudinalRole === 'fixed').map(f => f.id))].sort();
+    const subjectKey = fixedIds.map(id => String(formData[id] ?? '').trim().toLowerCase()).join('|');
     const existing = state.longitudinalSubmissions.find(s => s.formId === formId && s.subjectKey === subjectKey);
     const now = new Date().toISOString();
     let updated: LongitudinalSubmission;

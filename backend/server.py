@@ -319,6 +319,7 @@ class PublicFormOut(BaseModel):
     allowed_filler_emails: list[str] = []
     require_respondent_info: bool = False
     require_respondent_id: bool = False
+    fixed_field_ids: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -1407,6 +1408,7 @@ async def get_public_form(share_token: str, response: Response, db: AsyncSession
         status=getattr(form, "status", "active"),
         is_public=getattr(form, "is_public", True),
         allowed_filler_emails=getattr(form, "allowed_filler_emails", []) or [],
+        fixed_field_ids=[f["id"] for f in fields if isinstance(f, dict) and f.get("longitudinalRole") == "fixed"],
     )
 
 
