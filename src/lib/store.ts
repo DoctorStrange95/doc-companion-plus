@@ -736,10 +736,9 @@ export const store = {
 };
 
 // ---------- Sync engine ----------------------------------------------------
-async function pullSnapshot() {
+async function pullSnapshot(silent = false) {
   if (!getToken()) return;
-  state = { ...state, pulling: true };
-  persist();
+  if (!silent) { state = { ...state, pulling: true }; persist(); }
   try {
     const data = await api<{
       patients: SrvPatient[];
@@ -769,7 +768,7 @@ async function pullSnapshot() {
     // without touching local state. Update lastSync so the UI knows a check
     // happened, but never let a server empty-response wipe local forms.
     if (serverForms.length === 0) {
-      state = { ...state, lastSync: Date.now(), initDone: true, pulling: false };
+      state = { ...state, lastSync: Date.now(), initDone: true, ...(silent ? {} : { pulling: false }) };
       persist();
       return;
     }
@@ -808,12 +807,11 @@ async function pullSnapshot() {
       submissions: [...submissionMap.values()].sort((a, b) => b.createdAt - a.createdAt),
       lastSync: Date.now(),
       initDone: true,
-      pulling: false,
+      ...(silent ? {} : { pulling: false }),
     };
     persist();
   } catch (e) {
-    state = { ...state, pulling: false };
-    persist();
+    if (!silent) { state = { ...state, pulling: false }; persist(); }
     if (e instanceof ApiError && e.status === 401) {
       // Auth bad — caller will handle (logout)
       throw e;
@@ -964,6 +962,7 @@ function serializeFormForApi(f: FormDef) {
 export const sync = {
   drain,
   pull: pullSnapshot,
+  pullSilent: () => pullSnapshot(true),
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;
