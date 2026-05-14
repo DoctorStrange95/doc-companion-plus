@@ -991,7 +991,7 @@ export default function FormBuilderPage() {
     }
   };
 
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "updated">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const save = () => {
@@ -1021,7 +1021,7 @@ export default function FormBuilderPage() {
         savedForm = store.addForm(formData);
       }
 
-      setSaving(true);
+      setSaveStatus("saving");
       setSaveError(null);
 
       // 2. Direct push to the server — we await this before navigating so that
@@ -1029,11 +1029,13 @@ export default function FormBuilderPage() {
       //    If the backend is cold-starting (Render free tier) this waits up to ~60s.
       void sync.pushForm(savedForm)
         .then(() => {
-          nav({ to: "/forms" });
+          setSaveStatus("updated");
+          setTimeout(() => nav({ to: "/forms" }), 1200);
         })
-        .catch(() => {
-          setSaving(false);
-          setSaveError("Server is unavailable. Form saved locally — it will sync automatically when the server is back online.");
+        .catch((err: unknown) => {
+          setSaveStatus("idle");
+          const msg = err instanceof Error ? err.message : null;
+          setSaveError(msg ?? "Server is unavailable. Form saved locally — it will sync automatically when the server is back online.");
         });
     });
   };
@@ -1083,12 +1085,28 @@ export default function FormBuilderPage() {
           <button onClick={() => nav({ to: "/forms" })} className="border-2 border-border bg-card px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">
             ← Back
           </button>
-          <span className="font-display text-xl uppercase leading-none hidden sm:block">
-            {isEditing ? (title || "Edit form") : (title || "New form")}
-          </span>
+          <div className="hidden sm:flex flex-col leading-none">
+            <span className="font-display text-xl uppercase leading-none">
+              {isEditing ? (title || "Edit form") : (title || "New form")}
+            </span>
+            {saveStatus === "saving" && (
+              <span className="text-[9px] font-bold uppercase tracking-widest text-foreground/60 mt-0.5">
+                {isEditing ? "Syncing update to server…" : "Saving to server…"}
+              </span>
+            )}
+            {saveStatus === "updated" && (
+              <span className="text-[9px] font-bold uppercase tracking-widest text-green-700 dark:text-green-400 mt-0.5">
+                Updated — all changes synced
+              </span>
+            )}
+          </div>
         </div>
-        <button onClick={save} disabled={saving} className="btn-brutal text-sm disabled:opacity-60">
-          {saving ? "Saving…" : isEditing ? "Update" : "Save"}
+        <button onClick={save} disabled={saveStatus !== "idle"} className="btn-brutal text-sm disabled:opacity-60">
+          {saveStatus === "saving"
+            ? (isEditing ? "Updating…" : "Saving…")
+            : saveStatus === "updated"
+            ? "Updated ✓"
+            : isEditing ? "Update" : "Save"}
         </button>
       </div>
 

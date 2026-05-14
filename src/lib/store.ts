@@ -688,10 +688,11 @@ async function pullSnapshot() {
     // (subIds unused — submissions use union-merge, not set-diff)
 
     // Safety guard: if the server returned 0 forms but we have synced forms locally,
-    // treat it as a suspicious empty response (Render returning stale data, partial
-    // response, etc.) and preserve existing local forms rather than wiping them.
+    // treat it as a suspicious empty response (cold start, network hiccup, etc.)
+    // and bail out so we never wipe local data. This is independent of the pending
+    // queue — a user with queued edits deserves the same protection.
     const localSyncedFormsCount = state.forms.filter((f) => !!f.ownerId).length;
-    if (serverForms.length === 0 && localSyncedFormsCount > 0 && pendingFormMap.size === 0) {
+    if (serverForms.length === 0 && localSyncedFormsCount > 0) {
       return;
     }
 
@@ -760,41 +761,47 @@ async function executeDrain(): Promise<void> {
     const submissions = batch.flatMap((o) =>
       o.kind === "submission" ? [o.payload] : [],
     );
+    let deniedFormIds = new Set<string>();
+
     if (patients.length || forms.length || submissions.length) {
-      await api("/api/sync/push", {
-        method: "POST",
-        body: JSON.stringify({
-          patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, guardianName, shareToken: _st, ...rest }) => ({
-            ...rest,
-            guardian_name: guardianName ?? null,
-          })),
-          forms: forms.map(({
-            ownerId: _o, shared: _s, createdAt: _c,
-            shareToken, analyticsToken, isPublic, allowedFillerEmails,
-            formRole, parentFormId, subjectIdentifierFieldId, parentLinkFieldId,
-            responseCount: _rc,
-            requireRespondentInfo: _rri, requireRespondentId: _rrid,
-            ...rest
-          }) => ({
-            ...rest,
-            share_token: shareToken ?? null,
-            analytics_token: analyticsToken ?? null,
-            is_public: isPublic ?? true,
-            allowed_filler_emails: allowedFillerEmails ?? [],
-            form_role: formRole ?? "standalone",
-            parent_form_id: parentFormId ?? null,
-            subject_identifier_field_id: subjectIdentifierFieldId ?? null,
-            parent_link_field_id: parentLinkFieldId ?? null,
-          })),
-          submissions: submissions.map(({ ownerId: _o, createdAt: _c, ...rest }) => ({
-            id: rest.id,
-            patient_id: rest.patientId,
-            form_id: rest.formId,
-            form_name: rest.formName,
-            data: rest.data,
-          })),
-        }),
-      });
+      const pushResult = await api<{ patients: number; forms: number; submissions: number; denied_forms?: string[] }>(
+        "/api/sync/push",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            patients: patients.map(({ ownerId: _o, shared: _s, createdAt: _c, guardianName, shareToken: _st, ...rest }) => ({
+              ...rest,
+              guardian_name: guardianName ?? null,
+            })),
+            forms: forms.map(({
+              ownerId: _o, shared: _s, createdAt: _c,
+              shareToken, analyticsToken, isPublic, allowedFillerEmails,
+              formRole, parentFormId, subjectIdentifierFieldId, parentLinkFieldId,
+              responseCount: _rc,
+              requireRespondentInfo: _rri, requireRespondentId: _rrid,
+              ...rest
+            }) => ({
+              ...rest,
+              share_token: shareToken ?? null,
+              analytics_token: analyticsToken ?? null,
+              is_public: isPublic ?? true,
+              allowed_filler_emails: allowedFillerEmails ?? [],
+              form_role: formRole ?? "standalone",
+              parent_form_id: parentFormId ?? null,
+              subject_identifier_field_id: subjectIdentifierFieldId ?? null,
+              parent_link_field_id: parentLinkFieldId ?? null,
+            })),
+            submissions: submissions.map(({ ownerId: _o, createdAt: _c, ...rest }) => ({
+              id: rest.id,
+              patient_id: rest.patientId,
+              form_id: rest.formId,
+              form_name: rest.formName,
+              data: rest.data,
+            })),
+          }),
+        },
+      );
+      deniedFormIds = new Set(pushResult?.denied_forms ?? []);
     }
 
     // Process deletes one by one
@@ -815,8 +822,12 @@ async function executeDrain(): Promise<void> {
       }
     }
 
-    // Remove only the ops we just sent; preserve any items enqueued during drain
-    state = { ...state, queue: state.queue.filter((op) => !batch.includes(op)), syncing: false };
+    // Clear ops from queue, but keep denied form ops so pullSnapshot won't
+    // overwrite the local edit with the stale server version.
+    const successfulBatch = batch.filter(
+      (op) => !(op.kind === "form" && deniedFormIds.has(op.payload.id)),
+    );
+    state = { ...state, queue: state.queue.filter((op) => !successfulBatch.includes(op)), syncing: false };
     persist();
     await pullSnapshot();
   } catch (e) {
@@ -857,10 +868,16 @@ export const sync = {
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;
-    await api("/api/sync/push", {
-      method: "POST",
-      body: JSON.stringify({ patients: [], forms: [serializeFormForApi(f)], submissions: [] }),
-    });
+    const result = await api<{ patients: number; forms: number; submissions: number; denied_forms?: string[] }>(
+      "/api/sync/push",
+      {
+        method: "POST",
+        body: JSON.stringify({ patients: [], forms: [serializeFormForApi(f)], submissions: [] }),
+      },
+    );
+    if (result?.denied_forms?.includes(f.id)) {
+      throw new Error("You do not have permission to edit this form. Ask the owner to grant edit access.");
+    }
   },
   pushPatient: async (p: Patient) => {
     const token = getToken();

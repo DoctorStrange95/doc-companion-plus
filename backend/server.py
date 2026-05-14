@@ -21,8 +21,9 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select, or_, and_, text
+from sqlalchemy import select, or_, and_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from database import get_db, engine, AsyncSessionLocal, Base
 from models import User, Patient, FormDef, Submission, Share
@@ -600,14 +601,14 @@ async def can_write_resource(
     res = await db.execute(
         select(Share).where(
             and_(
-                Share.shared_with == user.id,
+                Share.shared_with == str(user.id),
                 Share.resource_type == rtype,
-                Share.resource_id == rid,
-                Share.can_edit.is_(True),
+                Share.resource_id == str(rid),
             )
         )
     )
-    return res.scalar_one_or_none() is not None
+    sh = res.scalar_one_or_none()
+    return sh is not None and bool(getattr(sh, "can_edit", False))
 
 
 # ============================================================================
@@ -782,6 +783,8 @@ async def create_or_upsert_form(
                 raise HTTPException(403, "Forbidden")
             for k, v in body.model_dump(exclude={"id"}).items():
                 setattr(existing, k, v)
+            flag_modified(existing, "fields")
+            flag_modified(existing, "allowed_filler_emails")
             await db.commit()
             await db.refresh(existing)
             return FormOut(
@@ -1086,7 +1089,7 @@ async def sync_push(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    out = {"patients": 0, "forms": 0, "submissions": 0}
+    out: dict = {"patients": 0, "forms": 0, "submissions": 0, "denied_forms": []}
     for p in body.patients:
         if p.id:
             res = await db.execute(select(Patient).where(Patient.id == p.id))
@@ -1105,11 +1108,15 @@ async def sync_push(
             existing = res.scalar_one_or_none()
             if existing:
                 # Form already exists: update only if owner or collaborator with edit access.
-                # If neither, skip silently — never INSERT with the same ID (PK conflict).
+                # If neither, signal denial — never INSERT with same ID (PK conflict).
                 if str(existing.owner_id) == str(user.id) or await can_write_resource(db, user, "form", existing.id):
                     for k, v in f.model_dump(exclude={"id"}).items():
                         setattr(existing, k, v)
+                    flag_modified(existing, "fields")
+                    flag_modified(existing, "allowed_filler_emails")
                     out["forms"] += 1
+                else:
+                    out["denied_forms"].append(f.id)
                 continue
         db.add(FormDef(id=f.id, owner_id=user.id, **f.model_dump(exclude={"id"})))
         out["forms"] += 1
