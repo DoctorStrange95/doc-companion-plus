@@ -172,6 +172,7 @@ function SortableFieldCard({
   longitudinal,
   onSetFixed,
   onSetTracked,
+  onLabelChange,
 }: {
   field: FormField;
   selected: boolean;
@@ -181,6 +182,7 @@ function SortableFieldCard({
   longitudinal?: boolean;
   onSetFixed?: () => void;
   onSetTracked?: () => void;
+  onLabelChange?: (label: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: field.id });
@@ -218,9 +220,16 @@ function SortableFieldCard({
             <Icon className="h-3 w-3" />
             {palette?.label ?? field.type}
           </div>
-          <div className="text-sm font-bold leading-snug">
-            {field.label || "Untitled question"}
-            {field.required && <span className="ml-1 text-destructive">*</span>}
+          <div className="text-sm font-bold leading-snug flex items-start gap-1">
+            <input
+              className="flex-1 min-w-0 bg-transparent font-bold text-sm leading-snug outline-none border-b-2 border-transparent focus:border-secondary placeholder:text-muted-foreground cursor-text"
+              value={field.label}
+              placeholder="Untitled question"
+              onClick={(e) => { e.stopPropagation(); onSelect(); }}
+              onChange={(e) => onLabelChange?.(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            />
+            {field.required && <span className="shrink-0 text-destructive">*</span>}
           </div>
           {field.hint && (
             <div className="mt-0.5 text-[11px] italic text-muted-foreground">{field.hint}</div>
@@ -1419,6 +1428,7 @@ export default function FormBuilderPage() {
                         onDuplicate={() => duplicateField(f.id)}
                         onDelete={() => deleteField(f.id)}
                         longitudinal={longitudinal}
+                        onLabelChange={(label) => setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, label } : ff))}
                         onSetFixed={() => {
                           setFixedFieldIds(prev => prev.includes(f.id) ? prev : [...prev, f.id]);
                           setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'fixed' as const } : ff));
