@@ -113,10 +113,12 @@ export function evaluateRule(rule: ConditionalRule, state: Record<string, unknow
     case "equals":
       if (Array.isArray(v)) return v.map(String).includes(String(rv));
       if (isYesNo) return normalizeYesNo(v) === normalizeYesNo(rv);
+      if (rv === "" || rv === undefined || rv === null) return false;
       return String(v ?? "") === String(rv ?? "");
     case "not_equals":
       if (Array.isArray(v)) return !v.map(String).includes(String(rv));
       if (isYesNo) return normalizeYesNo(v) !== normalizeYesNo(rv);
+      if (rv === "" || rv === undefined || rv === null) return true;
       return String(v ?? "") !== String(rv ?? "");
     case "greater_than": return Number(v) > Number(rv);
     case "less_than": return Number(v) < Number(rv);
@@ -132,7 +134,7 @@ export function evaluateRule(rule: ConditionalRule, state: Record<string, unknow
     case "is_not_answered": return !answered;
     case "is_one_of": return Array.isArray(rv) && (rv as unknown[]).some((opt) => String(opt) === String(v));
     case "is_not_one_of": return !Array.isArray(rv) || !(rv as unknown[]).some((opt) => String(opt) === String(v));
-    default: return true;
+    default: return false;
   }
 }
 
