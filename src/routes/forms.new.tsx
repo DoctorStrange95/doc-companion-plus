@@ -311,14 +311,19 @@ function FieldPreview({ field }: { field: FormField }) {
           <div className="border-2 border-border px-3 py-1 text-[10px] font-bold uppercase">No</div>
         </div>
       );
-    case "select_one": case "select": case "radio": {
+    case "select_one": case "select": case "radio":
+    case "select_many": case "multiselect": {
       const opts = field.options ?? field.optionObjects?.map((o) => o.label) ?? [];
+      const isMany = field.type === "select_many" || field.type === "multiselect";
+      if (opts.length === 0) {
+        return <div className={`${cls} text-[10px] text-muted-foreground italic`}>No options yet</div>;
+      }
       return (
         <div className={`${cls} flex flex-wrap gap-1`}>
-          {opts.slice(0, 3).map((o) => (
-            <div key={o} className="border-2 border-border px-2 py-0.5 text-[10px] font-bold">{o}</div>
+          {opts.slice(0, 4).map((o) => (
+            <div key={o} className={`border-2 border-border px-2 py-0.5 text-[10px] font-bold ${isMany ? "rounded-sm" : ""}`}>{o}</div>
           ))}
-          {opts.length > 3 && <div className="text-[10px] text-muted-foreground self-center">+{opts.length - 3}</div>}
+          {opts.length > 4 && <div className="text-[10px] text-muted-foreground self-center">+{opts.length - 4} more</div>}
         </div>
       );
     }
