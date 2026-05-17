@@ -96,16 +96,27 @@ export function normalizeShowIf(showIf: unknown): ConditionalLogic | undefined {
   return undefined;
 }
 
+function normalizeYesNo(val: unknown): string {
+  if (typeof val === "boolean") return val ? "yes" : "no";
+  const s = String(val ?? "").toLowerCase().trim();
+  if (s === "true" || s === "yes") return "yes";
+  if (s === "false" || s === "no") return "no";
+  return s;
+}
+
 export function evaluateRule(rule: ConditionalRule, state: Record<string, unknown>): boolean {
   const v = state[rule.fieldId];
   const rv = rule.value;
   const answered = v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+  const isYesNo = typeof v === "boolean";
   switch (rule.operator) {
     case "equals":
       if (Array.isArray(v)) return v.map(String).includes(String(rv));
+      if (isYesNo) return normalizeYesNo(v) === normalizeYesNo(rv);
       return String(v ?? "") === String(rv ?? "");
     case "not_equals":
       if (Array.isArray(v)) return !v.map(String).includes(String(rv));
+      if (isYesNo) return normalizeYesNo(v) !== normalizeYesNo(rv);
       return String(v ?? "") !== String(rv ?? "");
     case "greater_than": return Number(v) > Number(rv);
     case "less_than": return Number(v) < Number(rv);

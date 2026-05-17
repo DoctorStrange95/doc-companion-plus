@@ -850,6 +850,82 @@ const OPERATOR_LABELS: Record<ConditionalOperator, string> = {
 
 const NO_VALUE_OPS = new Set<ConditionalOperator>(["is_answered", "is_not_answered"]);
 
+function RuleValueInput({
+  rule,
+  sourceField,
+  onChange,
+}: {
+  rule: ConditionalLogic["rules"][0];
+  sourceField: FormField | undefined;
+  onChange: (val: string) => void;
+}) {
+  if (NO_VALUE_OPS.has(rule.operator)) {
+    return <div className="input-brutal text-[10px] opacity-40 flex items-center">—</div>;
+  }
+
+  const type = sourceField?.type;
+
+  if (type === "yes_no" || type === "boolean") {
+    return (
+      <select
+        value={String(rule.value ?? "true")}
+        onChange={(e) => onChange(e.target.value)}
+        className="input-brutal text-[10px]"
+      >
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    );
+  }
+
+  if (type === "select_one" || type === "radio" || type === "select") {
+    const opts = sourceField?.optionObjects && sourceField.optionObjects.length > 0
+      ? sourceField.optionObjects
+      : (sourceField?.options ?? []).map((o) => ({ label: o, value: o }));
+    return (
+      <select
+        value={String(rule.value ?? "")}
+        onChange={(e) => onChange(e.target.value)}
+        className="input-brutal text-[10px]"
+      >
+        <option value="">— pick —</option>
+        {opts.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
+  }
+
+  if (type === "select_many" || type === "multiselect") {
+    const opts = sourceField?.optionObjects && sourceField.optionObjects.length > 0
+      ? sourceField.optionObjects
+      : (sourceField?.options ?? []).map((o) => ({ label: o, value: o }));
+    if (opts.length > 0) {
+      return (
+        <select
+          value={String(rule.value ?? "")}
+          onChange={(e) => onChange(e.target.value)}
+          className="input-brutal text-[10px]"
+        >
+          <option value="">— pick —</option>
+          {opts.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      );
+    }
+  }
+
+  return (
+    <input
+      value={String(rule.value ?? "")}
+      onChange={(e) => onChange(e.target.value)}
+      className="input-brutal text-[10px]"
+      placeholder="value"
+    />
+  );
+}
+
 function ConditionalConfig({
   field,
   allFields,
@@ -859,8 +935,10 @@ function ConditionalConfig({
   allFields: FormField[];
   onChange: (p: Partial<FormField>) => void;
 }) {
+  const fieldIdx = allFields.findIndex((f) => f.id === field.id);
+  // Only allow conditions based on fields that appear BEFORE this one
   const others = allFields.filter(
-    (f) => f.id !== field.id && f.type !== "section_header" && f.type !== "page_break",
+    (f, i) => i < fieldIdx && f.type !== "section_header" && f.type !== "page_break",
   );
   const logic: ConditionalLogic | undefined = normalizeShowIf(field.showIf);
   const hasCondition = !!logic;
@@ -960,12 +1038,10 @@ function ConditionalConfig({
                       <option key={op} value={op}>{lbl}</option>
                     ))}
                   </select>
-                  <input
-                    value={NO_VALUE_OPS.has(rule.operator) ? "" : String(rule.value ?? "")}
-                    disabled={NO_VALUE_OPS.has(rule.operator)}
-                    onChange={(e) => updateRule(rule.id, { value: e.target.value })}
-                    className="input-brutal text-[10px] disabled:opacity-40"
-                    placeholder="value"
+                  <RuleValueInput
+                    rule={rule}
+                    sourceField={allFields.find((f) => f.id === rule.fieldId)}
+                    onChange={(val) => updateRule(rule.id, { value: val })}
                   />
                   <button
                     onClick={() => removeRule(rule.id)}
