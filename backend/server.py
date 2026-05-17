@@ -617,7 +617,7 @@ async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get
     try:
         await db.execute(
             text("INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (:id, :uid, :tok, :exp)"),
-            {"id": str(uuid.uuid4()), "uid": user["id"], "tok": token, "exp": expires},
+            {"id": str(uuid.uuid4()), "uid": str(user["id"]), "tok": token, "exp": expires},
         )
         await db.commit()
     except Exception as e:
