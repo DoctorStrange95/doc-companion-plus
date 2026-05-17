@@ -553,7 +553,7 @@ async def me(user: User = Depends(get_current_user)):
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtpout.secureserver.net")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
-SMTP_USER = os.environ.get("SMTP_USER", "admin@vyasaa.com")
+SMTP_USER = os.environ.get("SMTP_USER", "support@vyasaa.com")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://research.vyasaa.com")
 
