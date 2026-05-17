@@ -1092,9 +1092,20 @@ function serializeFormForApi(f: FormDef) {
   };
 }
 
+async function fullPullSnapshot() {
+  // Force a complete re-sync by clearing lastSync before pulling.
+  // Recovers from the state where localStorage had submissions dropped due to
+  // quota overflow but lastSync was still set, causing incremental pulls to
+  // skip all historical data.
+  state = { ...state, lastSync: null };
+  persist();
+  return pullSnapshot();
+}
+
 export const sync = {
   drain,
   pull: pullSnapshot,
+  fullPull: fullPullSnapshot,
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;

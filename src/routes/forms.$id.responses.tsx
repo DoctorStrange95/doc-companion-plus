@@ -470,6 +470,7 @@ function FormResponses() {
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubmissions = useStore((s) => s.submissions);
   const rawLongitudinal = useStore((s) => s.longitudinalSubmissions);
+  const lastSync = useStore((s) => s.lastSync);
   const isOwner = !form?.shared;
   const [selected, setSelected] = useState<Submission | null>(null);
   const [selectedLong, setSelectedLong] = useState<LongitudinalSubmission | null>(null);
@@ -494,14 +495,25 @@ function FormResponses() {
   }, [rawSubmissions, id, form?.longitudinal]);
 
   // Pull on mount — show local data immediately, merge server data in background.
+  // If local shows 0 submissions for a form that existed before the last sync,
+  // force a full pull to recover any submissions dropped from localStorage.
   useEffect(() => {
     setSyncing(true);
-    void sync.pull().finally(() => setSyncing(false));
+    const localCount = form?.longitudinal
+      ? rawLongitudinal.filter((s) => s.formId === id).length
+      : rawSubmissions.filter((s) => s.formId === id).length;
+    const formCreatedAt = form?.createdAt ?? 0;
+    const formExistedBeforeLastSync = lastSync && formCreatedAt < lastSync;
+    const pull = localCount === 0 && formExistedBeforeLastSync
+      ? sync.fullPull
+      : sync.pull;
+    void pull().finally(() => setSyncing(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await sync.pull();
+    await sync.fullPull();
     setRefreshing(false);
   };
 
