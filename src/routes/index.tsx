@@ -50,7 +50,10 @@ function Home() {
       }
     }
 
-    return [...map.values()].sort((a, b) => b.lastAt - a.lastAt).slice(0, 5);
+    const sorted = [...map.values()].sort((a, b) => b.lastAt - a.lastAt);
+    const todayItems = sorted.filter((e) => e.lastAt >= today.getTime());
+    // Show today's activity (up to 5); if nothing today, show max 3 most recent
+    return todayItems.length > 0 ? todayItems.slice(0, 5) : sorted.slice(0, 3);
   }, [submissions, longitudinalSubmissions, forms]);
 
   return (

@@ -84,7 +84,7 @@ function Analytics() {
             {perForm.map(({ form, count, last }) => (
               <li key={form.id}>
                 <Link
-                  to={form.longitudinal ? "/forms/$id" : "/analytics/$id"}
+                  to="/forms/$id/responses"
                   params={{ id: form.id }}
                   className="brutal flex items-center gap-3 p-4 hover:bg-primary/30"
                 >
