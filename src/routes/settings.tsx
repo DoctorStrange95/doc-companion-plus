@@ -63,7 +63,7 @@ function Settings() {
   const submissions = useStore((s) => s.submissions);
   const queue = useStore((s) => s.queue);
   const lastSync = useStore((s) => s.lastSync);
-  const syncing = useStore((s) => s.syncing);
+
   const { user, logout, updateProfile, deleteAccount } = useAuth();
   const nav = useNavigate();
 
@@ -82,6 +82,8 @@ function Settings() {
 
   // Sync state
   const [syncError, setSyncError] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncDone, setSyncDone] = useState(false);
   const online = typeof navigator !== "undefined" ? navigator.onLine : true;
   const syncStuck = queue.length > 10 && lastSync && (Date.now() - lastSync) > 5 * 60 * 1000;
 
@@ -296,14 +298,26 @@ function Settings() {
           {syncError && <p className="mt-1 text-[11px] font-bold text-destructive">{syncError}</p>}
           <button
             onClick={async () => {
+              if (isSyncing) return;
               setSyncError("");
-              try { await sync.drain(); await sync.pull(); }
-              catch { setSyncError("Sync failed — check your connection and try again."); }
+              setSyncDone(false);
+              setIsSyncing(true);
+              try {
+                await sync.drain();
+                await sync.pull();
+                setSyncDone(true);
+                setTimeout(() => setSyncDone(false), 2500);
+              } catch {
+                setSyncError("Sync failed — check your connection and try again.");
+              } finally {
+                setIsSyncing(false);
+              }
             }}
-            disabled={syncing || !online || !user}
-            className="btn-brutal mt-3 flex w-full items-center justify-center gap-2 bg-card disabled:opacity-50"
+            disabled={isSyncing || !online || !user}
+            className={`btn-brutal mt-3 flex w-full items-center justify-center gap-2 disabled:opacity-50 transition-colors ${syncDone ? "bg-green-400 border-green-600" : "bg-card"}`}
           >
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> Sync now
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Syncing…" : syncDone ? "Synced ✓" : "Sync now"}
           </button>
         </section>
 
