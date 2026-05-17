@@ -1093,19 +1093,29 @@ function serializeFormForApi(f: FormDef) {
 }
 
 async function fullPullSnapshot() {
-  // Force a complete re-sync by clearing lastSync before pulling.
-  // Recovers from the state where localStorage had submissions dropped due to
-  // quota overflow but lastSync was still set, causing incremental pulls to
-  // skip all historical data.
   state = { ...state, lastSync: null };
   persist();
   return pullSnapshot();
+}
+
+// Fetch only the submissions for one specific form and merge into local state.
+// Much faster than fullPullSnapshot — used to recover a single stale form view.
+async function fetchFormSubmissions(formId: string) {
+  if (!getToken()) return;
+  const srvSubs = await api<SrvSubmission[]>(`/api/submissions?form_id=${encodeURIComponent(formId)}`);
+  if (!srvSubs.length) return;
+  const mapped = srvSubs.map(mapSubmission);
+  const subMap = new Map<string, Submission>(state.submissions.map((s) => [s.id, s]));
+  for (const s of mapped) subMap.set(s.id, { ...s, data: stripLargeValues(s.data) });
+  state = { ...state, submissions: [...subMap.values()].sort((a, b) => b.createdAt - a.createdAt) };
+  persist();
 }
 
 export const sync = {
   drain,
   pull: pullSnapshot,
   fullPull: fullPullSnapshot,
+  fetchFormSubmissions,
   pushForm: async (f: FormDef) => {
     const token = getToken();
     if (!token) return;

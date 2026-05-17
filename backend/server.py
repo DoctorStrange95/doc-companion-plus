@@ -1046,20 +1046,25 @@ async def delete_form(fid: str, user: User = Depends(get_current_user), db: Asyn
 # Submission routes
 # ============================================================================
 @app.get("/api/submissions", response_model=list[SubmissionOut])
-async def list_submissions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def list_submissions(
+    form_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     shared_p = await shared_resource_ids(db, str(user.id), "patient")
     shared_f = await shared_resource_ids(db, str(user.id), "form")
     # Also include all submissions for forms this user owns, regardless of who submitted them.
     # Without this, collaborator submissions (owner_id=collab) are invisible to the form owner.
     owned_f_res = await db.execute(select(FormDef.id).where(FormDef.owner_id == user.id))
     owned_f = {str(row[0]) for row in owned_f_res.all()}
+    visibility = or_(
+        Submission.owner_id == user.id,
+        Submission.patient_id.in_(shared_p),
+        Submission.form_id.in_(shared_f),
+        Submission.form_id.in_(owned_f),
+    )
     q = select(Submission).where(
-        or_(
-            Submission.owner_id == user.id,
-            Submission.patient_id.in_(shared_p),
-            Submission.form_id.in_(shared_f),
-            Submission.form_id.in_(owned_f),
-        )
+        and_(visibility, Submission.form_id == form_id) if form_id else visibility
     )
     res = await db.execute(q.order_by(Submission.created_at.desc()))
     rows = res.scalars().all()

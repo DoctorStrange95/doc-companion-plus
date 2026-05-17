@@ -504,16 +504,19 @@ function FormResponses() {
       : rawSubmissions.filter((s) => s.formId === id).length;
     const formCreatedAt = form?.createdAt ?? 0;
     const formExistedBeforeLastSync = lastSync && formCreatedAt < lastSync;
-    const pull = localCount === 0 && formExistedBeforeLastSync
-      ? sync.fullPull
-      : sync.pull;
-    void pull().finally(() => setSyncing(false));
+    // If local shows 0 for a form that existed before lastSync, do a targeted
+    // fetch for just this form's submissions (fast — no full re-sync needed).
+    if (!form?.longitudinal && localCount === 0 && formExistedBeforeLastSync) {
+      void sync.fetchFormSubmissions(id).finally(() => setSyncing(false));
+    } else {
+      void sync.pull().finally(() => setSyncing(false));
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await sync.fullPull();
+    await sync.fetchFormSubmissions(id);
     setRefreshing(false);
   };
 
