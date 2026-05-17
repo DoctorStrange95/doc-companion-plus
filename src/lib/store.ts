@@ -1160,6 +1160,25 @@ if (typeof window !== "undefined") {
   };
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
+
+  // Pull fresh data whenever the app comes back to the foreground.
+  // Mobile browsers pause setIntervals in background tabs, so the 5-min
+  // background pull never fires while the phone screen is off or the user
+  // has switched apps. This listener fires the moment the app is visible again.
+  let lastVisibilityPull = 0;
+  const onVisible = () => {
+    if (document.visibilityState !== "visible") return;
+    if (!getToken() || !navigator.onLine) return;
+    // Debounce: don't pull more than once every 30 s from visibility events
+    const now = Date.now();
+    if (now - lastVisibilityPull < 30_000) return;
+    lastVisibilityPull = now;
+    void pullSnapshot();
+    void drain();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  window.addEventListener("focus", onVisible);
+
   // Initial drain attempt on app boot
   setTimeout(() => { void drain(); }, 1500);
   // Fallback: release loading screen after 15 s even if the server never responds
