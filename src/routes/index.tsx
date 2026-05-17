@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PageShell, SectionTitle } from "@/components/PageShell";
 import {
   Users, FilePlus2, ClipboardList, BarChart3, ArrowRight, Stethoscope,
@@ -10,11 +11,17 @@ import {
 export const Route = createFileRoute("/")({ component: Home });
 
 function Home() {
-  const patients = useStore((s) => s.patients);
-  const submissions = useStore((s) => s.submissions);
-  const longitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
+  const { user } = useAuth();
+  const allPatients = useStore((s) => s.patients);
+  const allSubmissions = useStore((s) => s.submissions);
+  const allLongitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const forms = useStore((s) => s.forms);
   const worker = useStore((s) => s.worker);
+
+  // Hide personal data from logged-out visitors
+  const patients = user ? allPatients : [];
+  const submissions = user ? allSubmissions : [];
+  const longitudinalSubmissions = user ? allLongitudinalSubmissions : [];
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

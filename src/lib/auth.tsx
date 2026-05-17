@@ -81,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(null);
           cacheUser(null);
           setUser(null);
+          store.clearForLogout();
         }
         // Any other error (server sleeping, 5xx): keep the cached user, stay logged in.
       });
