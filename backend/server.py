@@ -588,6 +588,21 @@ class ResetPasswordIn(BaseModel):
 
 @app.post("/api/auth/forgot-password")
 async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
+    # Ensure table exists (create inline in case lifespan migration was skipped)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    token TEXT NOT NULL UNIQUE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """))
+    except Exception as e:
+        print(f"[forgot_password] table ensure error: {e}")
+
     row = await db.execute(
         text("SELECT id, email, name FROM users WHERE lower(email) = :e LIMIT 1"),
         {"e": body.email.lower()},
@@ -599,11 +614,15 @@ async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get
 
     token = secrets.token_urlsafe(32)
     expires = datetime.utcnow() + timedelta(hours=1)
-    await db.execute(
-        text("INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (:id, :uid, :tok, :exp)"),
-        {"id": str(uuid.uuid4()), "uid": user["id"], "tok": token, "exp": expires},
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            text("INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (:id, :uid, :tok, :exp)"),
+            {"id": str(uuid.uuid4()), "uid": user["id"], "tok": token, "exp": expires},
+        )
+        await db.commit()
+    except Exception as e:
+        print(f"[forgot_password] token insert error: {e}")
+        return {"ok": True}
 
     reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
     html = f"""

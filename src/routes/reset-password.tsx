@@ -34,7 +34,7 @@ function ResetPasswordPage() {
     try {
       await api("/api/auth/reset-password", {
         method: "POST",
-        body: JSON.stringify({ token, new_password: password }),
+        body: JSON.stringify({ token, password }),
       });
       setDone(true);
       setTimeout(() => nav({ to: "/login", replace: true }), 2500);
