@@ -476,6 +476,13 @@ function FormResponses() {
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(true);
 
+  // Derive fixed field IDs from form field metadata (mapForm doesn't populate fixedFieldIds)
+  const fixedFieldIds = useMemo(() => {
+    if (!form) return [];
+    if (form.fixedFieldIds && form.fixedFieldIds.length > 0) return form.fixedFieldIds;
+    return form.fields.filter((f) => f.longitudinalRole === "fixed").map((f) => f.id);
+  }, [form]);
+
   const longitudinalSubjects = useMemo(
     () => rawLongitudinal.filter((s) => s.formId === id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [rawLongitudinal, id],
@@ -575,7 +582,7 @@ function FormResponses() {
             <LongitudinalTable
               subjects={longitudinalSubjects}
               fields={form.fields}
-              fixedFieldIds={form.fixedFieldIds ?? []}
+              fixedFieldIds={fixedFieldIds}
               onRowClick={setSelectedLong}
             />
           )
@@ -612,7 +619,7 @@ function FormResponses() {
         <LongitudinalDetailModal
           sub={selectedLong}
           fields={form.fields}
-          fixedFieldIds={form.fixedFieldIds ?? []}
+          fixedFieldIds={fixedFieldIds}
           onClose={() => setSelectedLong(null)}
         />
       )}
