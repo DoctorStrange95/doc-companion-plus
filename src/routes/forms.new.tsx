@@ -850,6 +850,12 @@ const OPERATOR_LABELS: Record<ConditionalOperator, string> = {
 
 const NO_VALUE_OPS = new Set<ConditionalOperator>(["is_answered", "is_not_answered"]);
 
+function getFieldOptions(f: FormField | undefined): { label: string; value: string }[] {
+  if (!f) return [];
+  if (f.optionObjects && f.optionObjects.length > 0) return f.optionObjects;
+  return (f.options ?? []).map((o) => ({ label: o, value: o }));
+}
+
 function RuleValueInput({
   rule,
   sourceField,
@@ -865,6 +871,7 @@ function RuleValueInput({
 
   const type = sourceField?.type;
 
+  // Yes / No boolean field
   if (type === "yes_no" || type === "boolean") {
     return (
       <select
@@ -878,10 +885,20 @@ function RuleValueInput({
     );
   }
 
-  if (type === "select_one" || type === "radio" || type === "select") {
-    const opts = sourceField?.optionObjects && sourceField.optionObjects.length > 0
-      ? sourceField.optionObjects
-      : (sourceField?.options ?? []).map((o) => ({ label: o, value: o }));
+  // Any choice field — show its options as a dropdown
+  const isChoiceField = type === "select_one" || type === "radio" || type === "select"
+    || type === "select_many" || type === "multiselect";
+
+  if (isChoiceField) {
+    const opts = getFieldOptions(sourceField);
+    if (opts.length === 0) {
+      // Field exists but has no options yet — show disabled hint
+      return (
+        <select disabled className="input-brutal text-[10px] opacity-50 cursor-not-allowed">
+          <option>Add options first</option>
+        </select>
+      );
+    }
     return (
       <select
         value={String(rule.value ?? "")}
@@ -896,26 +913,7 @@ function RuleValueInput({
     );
   }
 
-  if (type === "select_many" || type === "multiselect") {
-    const opts = sourceField?.optionObjects && sourceField.optionObjects.length > 0
-      ? sourceField.optionObjects
-      : (sourceField?.options ?? []).map((o) => ({ label: o, value: o }));
-    if (opts.length > 0) {
-      return (
-        <select
-          value={String(rule.value ?? "")}
-          onChange={(e) => onChange(e.target.value)}
-          className="input-brutal text-[10px]"
-        >
-          <option value="">— pick —</option>
-          {opts.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      );
-    }
-  }
-
+  // Default: free text (number, date, short_text, etc.)
   return (
     <input
       value={String(rule.value ?? "")}
