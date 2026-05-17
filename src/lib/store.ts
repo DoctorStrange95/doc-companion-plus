@@ -475,9 +475,10 @@ const persist = () => {
         localStorage.setItem(KEY, JSON.stringify(slim));
       } catch {
         // Still too large — persist without submissions (they re-sync from server).
+        // Reset lastSync so the next startup does a full pull and recovers history.
         // Queue entries are preserved so in-flight ops are not lost.
         try {
-          localStorage.setItem(KEY, JSON.stringify({ ...state, submissions: [] }));
+          localStorage.setItem(KEY, JSON.stringify({ ...state, submissions: [], lastSync: null }));
         } catch { /* give up — in-memory state is still correct */ }
       }
     }
