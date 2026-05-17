@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
-import { ApiError, setToken } from "@/lib/api";
+import { ApiError, api, setToken } from "@/lib/api";
 import { Stethoscope, ArrowRight, UserPlus, LogIn } from "lucide-react";
 
 const searchSchema = z.object({
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/login")({
   validateSearch: (s) => searchSchema.parse(s),
 });
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot";
 const BEST_SUITED_ROLES = [
   "Nurse",
   "Doctor",
@@ -38,6 +38,8 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash) {
       const params = new URLSearchParams(window.location.hash.slice(1));
@@ -49,6 +51,23 @@ function LoginPage() {
       }
     }
   }, []);
+
+  const submitForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      setForgotSent(true);
+    } catch (e) {
+      setError(e instanceof ApiError ? String(e.detail) : (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,12 +122,52 @@ function LoginPage() {
                 ResearchMed
               </div>
               <div className="font-display text-2xl uppercase leading-none">
-                {mode === "login" ? "Sign in" : "Create account"}
+                {mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Reset password"}
               </div>
             </div>
           </div>
 
-          <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form">
+          {mode === "forgot" && (
+            <div className="brutal space-y-3 p-5">
+              {forgotSent ? (
+                <div className="border-2 border-primary bg-primary/10 p-4 text-center">
+                  <p className="text-sm font-bold uppercase tracking-widest">Check your email</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A password reset link has been sent to <strong>{email}</strong>
+                  </p>
+                </div>
+              ) : (
+                <form onSubmit={submitForgot} className="space-y-3">
+                  <Field label="Email">
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      className="input-brutal"
+                      autoComplete="email"
+                      placeholder="your@email.com"
+                    />
+                  </Field>
+                  {error && (
+                    <p className="border-2 border-destructive bg-destructive/10 p-2 text-xs font-bold uppercase tracking-wider text-destructive">
+                      {error}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="btn-brutal flex w-full items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {busy ? "Sending…" : "Send reset link"}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form" style={{ display: mode === "forgot" ? "none" : undefined }}>
             {mode === "register" && (
               <>
                 <Field label="Name">
@@ -212,6 +271,13 @@ function LoginPage() {
                     autoComplete="current-password"
                   />
                 </Field>
+                <button
+                  type="button"
+                  onClick={() => { setMode("forgot"); setError(""); }}
+                  className="text-left text-[10px] font-bold uppercase tracking-widest underline text-muted-foreground"
+                >
+                  Forgot password?
+                </button>
               </>
             )}
             <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
@@ -249,8 +315,13 @@ function LoginPage() {
             type="button"
             data-testid="auth-mode-toggle"
             onClick={() => {
-              setMode(mode === "login" ? "register" : "login");
+              if (mode === "forgot") {
+                setMode("login");
+              } else {
+                setMode(mode === "login" ? "register" : "login");
+              }
               setError("");
+              setForgotSent(false);
               if (mode === "register") {
                 setName("");
                 setPhone("");
@@ -262,7 +333,9 @@ function LoginPage() {
           >
             {mode === "login"
               ? "No account? Create one"
-              : "Already registered? Sign in"}
+              : mode === "register"
+              ? "Already registered? Sign in"
+              : "Back to sign in"}
           </button>
 
           <p className="mt-6 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
