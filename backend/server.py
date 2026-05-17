@@ -1358,10 +1358,17 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
         _patients(), _forms(), _submissions()
     )
 
-    # Fetch longitudinal submissions for this user
+    # Fetch longitudinal submissions owned by this user OR belonging to shared forms
+    _long_params: dict = {"owner_id": str(user.id)}
+    _long_extra = ""
+    if shared_f:
+        _placeholders = ", ".join(f":_sfid_{i}" for i in range(len(shared_f)))
+        _long_extra = f" OR form_id IN ({_placeholders})"
+        for i, fid in enumerate(shared_f):
+            _long_params[f"_sfid_{i}"] = str(fid)
     long_subs_rows = (await db.execute(
-        text("SELECT * FROM longitudinal_submissions WHERE owner_id = :owner_id"),
-        {"owner_id": str(user.id)}
+        text(f"SELECT * FROM longitudinal_submissions WHERE owner_id = :owner_id{_long_extra}"),
+        _long_params
     )).mappings().all()
     longitudinal_submissions = [
         {
