@@ -470,7 +470,7 @@ function FormResponses() {
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubmissions = useStore((s) => s.submissions);
   const rawLongitudinal = useStore((s) => s.longitudinalSubmissions);
-  const lastSync = useStore((s) => s.lastSync);
+
   const isOwner = !form?.shared;
   const [selected, setSelected] = useState<Submission | null>(null);
   const [selectedLong, setSelectedLong] = useState<LongitudinalSubmission | null>(null);
@@ -499,18 +499,9 @@ function FormResponses() {
   // force a full pull to recover any submissions dropped from localStorage.
   useEffect(() => {
     setSyncing(true);
-    const localCount = form?.longitudinal
-      ? rawLongitudinal.filter((s) => s.formId === id).length
-      : rawSubmissions.filter((s) => s.formId === id).length;
-    const formCreatedAt = form?.createdAt ?? 0;
-    const formExistedBeforeLastSync = lastSync && formCreatedAt < lastSync;
-    // If local shows 0 for a form that existed before lastSync, do a targeted
-    // fetch for just this form's submissions (fast — no full re-sync needed).
-    if (!form?.longitudinal && localCount === 0 && formExistedBeforeLastSync) {
-      void sync.fetchFormSubmissions(id).finally(() => setSyncing(false));
-    } else {
-      void sync.pull().finally(() => setSyncing(false));
-    }
+    // On mount: drain any pending submissions, then do a targeted fetch
+    // for this form to pick up any new remote submissions.
+    void sync.drain().then(() => sync.fetchFormSubmissions(id)).finally(() => setSyncing(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

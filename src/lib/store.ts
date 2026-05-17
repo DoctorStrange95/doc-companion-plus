@@ -1183,20 +1183,18 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", onOnline);
   window.addEventListener("offline", onOffline);
 
-  // Pull fresh data whenever the app comes back to the foreground.
-  // Mobile browsers pause setIntervals in background tabs, so the 5-min
-  // background pull never fires while the phone screen is off or the user
-  // has switched apps. This listener fires the moment the app is visible again.
+  // Pull fresh data when the app returns to foreground — mobile browsers
+  // pause setIntervals in the background so this is the reliable trigger.
+  // Debounced to 10 minutes to avoid hammering Supabase egress.
   let lastVisibilityPull = 0;
   const onVisible = () => {
     if (document.visibilityState !== "visible") return;
     if (!getToken() || !navigator.onLine) return;
-    // Debounce: don't pull more than once every 30 s from visibility events
     const now = Date.now();
-    if (now - lastVisibilityPull < 30_000) return;
+    if (now - lastVisibilityPull < 600_000) return; // 10-min debounce
     lastVisibilityPull = now;
-    void pullSnapshot();
-    void drain();
+    void drain(); // always drain pending submissions
+    void pullSnapshot(); // then pull new remote changes
   };
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("focus", onVisible);
@@ -1210,21 +1208,19 @@ if (typeof window !== "undefined") {
       persist();
     }
   }, 30_000);
-  // Drain queue every 15 s — flushes any pending submissions quickly,
-  // including after coming back online. Only fires when there's something queued.
+  // Drain queue every 30 s — only fires when there are pending submissions.
   setInterval(() => {
     if (getToken() && (typeof navigator === "undefined" || navigator.onLine) && state.queue.length > 0) {
-      void drain(); // drain pushes to server then pulls (incremental, near-free)
+      void drain();
     }
-  }, 15_000);
-  // Background pull every 5 minutes — fetches remote changes.
-  // With incremental sync (since=lastSync) each call returns only new/changed
-  // records, so this is cheap even at higher frequency.
+  }, 30_000);
+  // Background pull every 30 minutes — cross-device sync.
+  // Incremental (since=lastSync) so only new records are returned.
   setInterval(() => {
     if (getToken() && (typeof navigator === "undefined" || navigator.onLine) && state.queue.length === 0) {
       void pullSnapshot();
     }
-  }, 300_000);
+  }, 1_800_000);
 }
 
 // ---------- Helpers --------------------------------------------------------

@@ -364,12 +364,28 @@ class SubmissionIn(BaseModel):
     data: dict[str, Any] = {}
 
 
+_MAX_FIELD_BYTES = 2048
+
+def _strip_large_fields(data: dict) -> dict:
+    """Remove base64 photos/files from submission data before sync.
+    Large binary values are already stored on the server; stripping them
+    from sync payloads reduces Supabase egress by orders of magnitude."""
+    return {k: ("__binary_stripped__" if isinstance(v, str) and len(v) > _MAX_FIELD_BYTES else v)
+            for k, v in data.items()}
+
+
 class SubmissionOut(SubmissionIn):
     id: str
     owner_id: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        instance = super().model_validate(obj, **kwargs)
+        instance.data = _strip_large_fields(instance.data)
+        return instance
 
 
 class ShareIn(BaseModel):
