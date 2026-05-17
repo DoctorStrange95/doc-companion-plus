@@ -7,7 +7,7 @@ import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import {
   Download, Wifi, WifiOff, LogOut, RefreshCw, AlertTriangle,
-  Edit2, Check, X, Trash2, Zap, Crown, Building2, Sparkles,
+  Edit2, Check, X, Trash2, Zap, Crown, Building2, Sparkles, MailCheck, ShieldCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({ component: Settings });
@@ -65,7 +65,7 @@ function Settings() {
   const queue = useStore((s) => s.queue);
   const lastSync = useStore((s) => s.lastSync);
 
-  const { user, logout, updateProfile, deleteAccount } = useAuth();
+  const { user, logout, updateProfile, deleteAccount, resendVerification } = useAuth();
   const nav = useNavigate();
 
   // Profile edit state
@@ -80,6 +80,11 @@ function Settings() {
   const [deleteStep, setDeleteStep] = useState<"idle" | "confirm" | "typing">("idle");
   const [deleteText, setDeleteText] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // Email verification state
+  const [resending, setResending] = useState(false);
+  const [resendDone, setResendDone] = useState(false);
+  const [resendError, setResendError] = useState("");
 
   // Sync state
   const [syncError, setSyncError] = useState("");
@@ -217,6 +222,39 @@ function Settings() {
                 <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Role</span>
                 <p className="text-sm font-bold">{user.best_suited_role || "Not set"}</p>
               </div>
+              <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                <div className="flex items-center gap-1.5">
+                  {user.email_verified ? (
+                    <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+                  ) : (
+                    <MailCheck className="h-3.5 w-3.5 text-amber-500" />
+                  )}
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${user.email_verified ? "text-green-700" : "text-amber-700"}`}>
+                    {user.email_verified ? "Email verified" : "Email not verified"}
+                  </span>
+                </div>
+                {!user.email_verified && (
+                  <button
+                    onClick={async () => {
+                      setResending(true);
+                      setResendError("");
+                      try {
+                        await resendVerification();
+                        setResendDone(true);
+                      } catch {
+                        setResendError("Failed to send — try again.");
+                      } finally {
+                        setResending(false);
+                      }
+                    }}
+                    disabled={resending || resendDone}
+                    className="text-[10px] font-bold uppercase tracking-widest text-amber-700 underline disabled:opacity-50"
+                  >
+                    {resendDone ? "Email sent ✓" : resending ? "Sending…" : "Resend link"}
+                  </button>
+                )}
+              </div>
+              {resendError && <p className="text-[10px] font-bold text-destructive uppercase tracking-wider">{resendError}</p>}
             </div>
           )}
         </section>

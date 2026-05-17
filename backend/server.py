@@ -147,14 +147,11 @@ async def ensure_form_extra_columns():
 async def ensure_user_profile_columns_in_session(db: AsyncSession):
     # Fallback for environments where lifespan hooks may not run consistently.
     try:
-        await db.execute(
-            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT ''")
-        )
-        await db.execute(
-            text(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''"
-            )
-        )
+        await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT ''"))
+        await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''"))
+        await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(16) NOT NULL DEFAULT 'free'"))
+        await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE"))
+        await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token VARCHAR(128)"))
         await db.commit()
     except Exception:
         await db.rollback()
@@ -164,7 +161,12 @@ async def fetch_user_legacy_by_email(db: AsyncSession, email: str):
     row = (
         await db.execute(
             text(
-                "SELECT id, email, password_hash, name, role FROM users WHERE lower(email) = :email LIMIT 1"
+                "SELECT id, email, password_hash, name, role, "
+                "COALESCE(phone, '') AS phone, "
+                "COALESCE(best_suited_role, '') AS best_suited_role, "
+                "COALESCE(email_verified, TRUE) AS email_verified, "
+                "email_verification_token "
+                "FROM users WHERE lower(email) = :email LIMIT 1"
             ),
             {"email": email.lower()},
         )
@@ -177,8 +179,10 @@ async def fetch_user_legacy_by_email(db: AsyncSession, email: str):
         password_hash=row["password_hash"],
         name=row["name"] or "",
         role=row["role"] or "worker",
-        phone="",
-        best_suited_role="",
+        phone=row["phone"] or "",
+        best_suited_role=row["best_suited_role"] or "",
+        email_verified=bool(row["email_verified"]),
+        email_verification_token=row.get("email_verification_token"),
     )
 
 

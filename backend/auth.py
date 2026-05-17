@@ -106,13 +106,14 @@ async def get_current_user(
     if cached:
         return cached
 
-    # Cache miss — fetch from DB (includes phone + best_suited_role).
+    # Cache miss — fetch from DB (includes phone + best_suited_role + email_verified).
     row = (
         await db.execute(
             text(
                 "SELECT id, email, password_hash, name, role, "
                 "COALESCE(phone, '') AS phone, "
-                "COALESCE(best_suited_role, '') AS best_suited_role "
+                "COALESCE(best_suited_role, '') AS best_suited_role, "
+                "COALESCE(email_verified, TRUE) AS email_verified "
                 "FROM users WHERE id = :id LIMIT 1"
             ),
             {"id": str(user_id)},
@@ -129,6 +130,7 @@ async def get_current_user(
         role=row["role"] or "worker",
         phone=row["phone"] or "",
         best_suited_role=row["best_suited_role"] or "",
+        email_verified=bool(row["email_verified"]),
     )
     _cache_set(str(user_id), user)
     return user
