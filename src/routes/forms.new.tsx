@@ -364,6 +364,17 @@ function FieldPreview({ field }: { field: FormField }) {
 
 // ─── Field Config Panel ───────────────────────────────────────────────────────
 
+const QUICK_ADD_TYPES: PaletteItem[] = [
+  { type: "short_text", label: "Text", icon: Type },
+  { type: "number", label: "Number", icon: Hash },
+  { type: "date", label: "Date", icon: Calendar },
+  { type: "select_one", label: "Select", icon: ListChecks },
+  { type: "yes_no", label: "Yes/No", icon: ToggleLeft },
+  { type: "measurement", label: "Measure", icon: Stethoscope },
+  { type: "photo", label: "Photo", icon: Camera },
+  { type: "section_header", label: "Section", icon: SeparatorHorizontal },
+];
+
 function FieldConfigPanel({
   field,
   allFields,
@@ -373,6 +384,7 @@ function FieldConfigPanel({
   onNext,
   fieldIndex,
   totalFields,
+  onAddAfter,
 }: {
   field: FormField;
   allFields: FormField[];
@@ -382,6 +394,7 @@ function FieldConfigPanel({
   onNext?: () => void;
   fieldIndex?: number;
   totalFields?: number;
+  onAddAfter?: (type: FieldType) => void;
 }) {
   const palette = getPaletteItem(field.type);
   const Icon = palette?.icon ?? Type;
@@ -521,6 +534,28 @@ function FieldConfigPanel({
           </ConfigField>
         )}
       </div>
+
+      {/* Quick-add footer — insert a new field directly after this one */}
+      {onAddAfter && (
+        <div className="border-t-2 border-border p-3">
+          <div className="mb-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+            + Add field after this
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {QUICK_ADD_TYPES.map(({ type, label, icon: Icon }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onAddAfter(type)}
+                className="flex flex-col items-center gap-1 border border-border bg-background px-1 py-2 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/30 active:bg-primary transition-colors"
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1104,6 +1139,19 @@ export default function FormBuilderPage() {
     }, 50);
   }, []);
 
+  const addFieldAfter = useCallback((afterId: string, type: FieldType) => {
+    const f = makeField(type);
+    setFields((prev) => {
+      const idx = prev.findIndex((ff) => ff.id === afterId);
+      const next = [...prev];
+      next.splice(idx + 1, 0, f);
+      return next;
+    });
+    setSelectedId(f.id);
+    setPanelMode("config");
+    setMobileTab(1);
+  }, []);
+
   const updateField = useCallback((id: string, patch: Partial<FormField>) => {
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
   }, []);
@@ -1239,6 +1287,7 @@ export default function FormBuilderPage() {
       onNext={navIdx < navigableFields.length - 1 ? () => setSelectedId(navigableFields[navIdx + 1].id) : undefined}
       fieldIndex={selectedIdx}
       totalFields={fields.length}
+      onAddAfter={(type) => addFieldAfter(selectedField.id, type)}
     />
   ) : (
     <div className="flex-1 p-4 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-8">
