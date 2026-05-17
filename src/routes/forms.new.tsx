@@ -1339,6 +1339,19 @@ export default function FormBuilderPage() {
       //    instead of doing a second separate push — eliminates the double push.
       void sync.drain()
         .then(() => {
+          const alert = store.get().planAlert;
+          if (alert === "form_limit") {
+            store.clearPlanAlert();
+            setSaveStatus("idle");
+            setSaveError("Free tier limit reached (5 forms). Upgrade to Pro or Max in Settings.");
+            return;
+          }
+          if (alert === "submission_limit") {
+            store.clearPlanAlert();
+            setSaveStatus("idle");
+            setSaveError("Monthly submission limit reached (500). Upgrade to Pro or Max in Settings.");
+            return;
+          }
           const stillQueued = store.get().queue.some(
             (op) => op.kind === "form" && "payload" in op && op.payload.id === savedForm.id,
           );

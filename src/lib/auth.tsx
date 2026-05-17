@@ -9,6 +9,7 @@ export interface AuthUser {
   phone: string;
   best_suited_role: string;
   role: string;
+  email_verified: boolean;
 }
 
 interface AuthState {
@@ -24,6 +25,7 @@ interface AuthState {
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, bestSuitedRole: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
+  resendVerification: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -160,8 +162,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     store.clearForLogout();
   };
 
+  const resendVerification = async () => {
+    await api("/api/auth/resend-verification", { method: "POST" });
+  };
+
   return (
-    <Ctx.Provider value={{ user, login, register, logout, updateProfile, deleteAccount }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ user, login, register, logout, updateProfile, deleteAccount, resendVerification }}>{children}</Ctx.Provider>
   );
 }
 

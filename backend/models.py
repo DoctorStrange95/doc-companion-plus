@@ -35,6 +35,8 @@ class User(Base):
     phone = Column(String(32), nullable=False, default="")
     best_suited_role = Column(String(64), nullable=False, default="")
     role = Column(String(32), nullable=False, default="worker")
+    email_verified = Column(Boolean, nullable=False, server_default="true")
+    email_verification_token = Column(String(128), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=now_utc)
 
 

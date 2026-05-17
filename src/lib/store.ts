@@ -273,6 +273,7 @@ interface State {
   pulling: boolean;
   online: boolean;
   initDone: boolean;
+  planAlert: "form_limit" | "submission_limit" | null;
 }
 
 const KEY = "communitymed_pro_v2";
@@ -385,6 +386,7 @@ const seed = (): State => ({
   pulling: false,
   online: typeof navigator !== "undefined" ? navigator.onLine : true,
   initDone: false,
+  planAlert: null,
 });
 
 // ---------- Persistence ----------------------------------------------------
@@ -796,6 +798,16 @@ export const store = {
     void drain();
   },
 
+  clearPlanAlert: () => {
+    state = { ...state, planAlert: null };
+    persist();
+  },
+
+  setPlanAlert: (alert: "form_limit" | "submission_limit") => {
+    state = { ...state, planAlert: alert };
+    persist();
+  },
+
   // ---- Cache lifecycle (for auth) ----
   hydrateFromCache: () => {
     persist();
@@ -997,7 +1009,7 @@ async function executeDrain(): Promise<void> {
     let deniedFormIds = new Set<string>();
 
     if (patients.length || forms.length || submissions.length || longitudinalSubs.length) {
-      const pushResult = await api<{ patients: number; forms: number; submissions: number; denied_forms?: string[] }>(
+      const pushResult = await api<{ patients: number; forms: number; submissions: number; denied_forms?: string[]; limit_exceeded?: string | null }>(
         "/api/sync/push",
         {
           method: "POST",
@@ -1035,6 +1047,34 @@ async function executeDrain(): Promise<void> {
           }),
         },
       );
+
+      // Handle plan limit enforcement: rollback local state for rejected items
+      const limitExceeded = pushResult?.limit_exceeded;
+      if (limitExceeded === "form_limit") {
+        const newFormIds = new Set(forms.filter((f) => !f.ownerId).map((f) => f.id));
+        state = {
+          ...state,
+          forms: state.forms.filter((f) => !newFormIds.has(f.id)),
+          queue: state.queue.filter((op) => !(op.kind === "form" && newFormIds.has(op.payload.id))),
+          syncing: false,
+          planAlert: "form_limit",
+        };
+        persist();
+        return;
+      }
+      if (limitExceeded === "submission_limit") {
+        const newSubIds = new Set(submissions.filter((s) => !s.ownerId).map((s) => s.id));
+        state = {
+          ...state,
+          submissions: state.submissions.filter((s) => !newSubIds.has(s.id)),
+          queue: state.queue.filter((op) => !(op.kind === "submission" && "payload" in op && newSubIds.has((op.payload as Submission).id))),
+          syncing: false,
+          planAlert: "submission_limit",
+        };
+        persist();
+        return;
+      }
+
       deniedFormIds = new Set(pushResult?.denied_forms ?? []);
     }
 

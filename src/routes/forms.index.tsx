@@ -3,7 +3,7 @@ import { useState, useMemo } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw, AlertTriangle } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
@@ -28,11 +28,15 @@ function FormsList() {
   const allSubmissions = useStore((s) => s.submissions);
   const allLongitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const lastSync = useStore((s) => s.lastSync);
+  const planAlert = useStore((s) => s.planAlert);
   const submissions = user ? allSubmissions : [];
   const longitudinalSubmissions = user ? allLongitudinalSubmissions : [];
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  // Free plan: max 5 owned forms
+  const ownedFormCount = user ? forms.filter((f) => f.ownerId === user.id).length : 0;
+  const atFormLimit = user?.role !== "admin" && ownedFormCount >= 5;
 
   const handleSync = async () => {
     if (syncing) return;
@@ -84,16 +88,40 @@ function FormsList() {
                 {syncing ? "Syncing…" : synced ? "Synced ✓" : "Sync"}
               </span>
             </button>
-            <Link
-              to="/forms/new"
-              className="btn-brutal inline-flex items-center gap-1.5 text-xs"
-            >
-              <Plus className="h-3.5 w-3.5" /> New
-            </Link>
+            {atFormLimit ? (
+              <button
+                onClick={() => store.setPlanAlert("form_limit")}
+                className="btn-brutal inline-flex items-center gap-1.5 text-xs bg-destructive/10 text-destructive border-destructive"
+              >
+                <Plus className="h-3.5 w-3.5" /> New
+              </button>
+            ) : (
+              <Link
+                to="/forms/new"
+                className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+              >
+                <Plus className="h-3.5 w-3.5" /> New
+              </Link>
+            )}
           </div>
         }
       />
       <PageShell>
+        {planAlert && (
+          <div className="brutal mb-4 border-2 border-destructive bg-destructive/10 p-3 flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="flex-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-destructive">
+                {planAlert === "form_limit"
+                  ? "Free tier limit reached — max 5 forms. Upgrade to Pro or Max in Settings."
+                  : "Monthly submission limit reached (500). Upgrade to Pro or Max in Settings."}
+              </p>
+            </div>
+            <button onClick={() => store.clearPlanAlert()} className="shrink-0 text-destructive/70 hover:text-destructive text-xs font-bold uppercase tracking-widest">
+              ✕
+            </button>
+          </div>
+        )}
         {forms.length > 0 && (
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

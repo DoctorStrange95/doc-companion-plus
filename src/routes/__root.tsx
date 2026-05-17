@@ -9,7 +9,8 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { MailCheck, X } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { BottomNav } from "@/components/BottomNav";
@@ -22,6 +23,50 @@ function SyncIndicator() {
   return (
     <div className="fixed top-0 left-0 right-0 z-50 h-1 overflow-hidden bg-secondary/20 print:hidden">
       <div className="sync-bar-inner h-full w-1/3 bg-secondary" />
+    </div>
+  );
+}
+
+function EmailVerificationBanner() {
+  const { user, resendVerification } = useAuth();
+  const [dismissed, setDismissed] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  if (!user || user.email_verified || dismissed) return null;
+
+  const handleResend = async () => {
+    setSending(true);
+    try {
+      await resendVerification();
+      setSent(true);
+    } catch {
+      // ignore, user can try again
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 border-b-2 border-amber-400 bg-amber-50 px-4 py-2.5 print:hidden">
+      <MailCheck className="h-4 w-4 shrink-0 text-amber-700" />
+      <p className="flex-1 text-[11px] font-bold uppercase tracking-widest text-amber-800">
+        {sent
+          ? "Verification email sent — check your inbox"
+          : "Verify your email to secure your account"}
+      </p>
+      {!sent && (
+        <button
+          onClick={handleResend}
+          disabled={sending}
+          className="shrink-0 text-[11px] font-bold uppercase tracking-widest text-amber-900 underline disabled:opacity-50"
+        >
+          {sending ? "Sending…" : "Resend"}
+        </button>
+      )}
+      <button onClick={() => setDismissed(true)} className="shrink-0 text-amber-700 hover:text-amber-900">
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -186,6 +231,7 @@ function AuthShell() {
   return (
     <div className="min-h-screen bg-background">
       {!isPublic && !isLoginPage && <SyncIndicator />}
+      {!isPublic && !isLoginPage && <EmailVerificationBanner />}
       <Outlet />
       {!isPublic && !isLoginPage && <BottomNav />}
     </div>

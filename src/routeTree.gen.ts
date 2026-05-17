@@ -9,7 +9,9 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
@@ -32,9 +34,19 @@ import { Route as FormsIdResponsesRouteImport } from './routes/forms.$id.respons
 import { Route as FormsIdPrintRouteImport } from './routes/forms.$id.print'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
 
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -147,7 +159,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRouteWithChildren
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
@@ -171,7 +185,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRouteWithChildren
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
@@ -196,7 +212,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRouteWithChildren
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/analytics/$id': typeof AnalyticsIdRoute
   '/f/$token': typeof FTokenRoute
   '/forms/$id': typeof FormsIdRouteWithChildren
@@ -222,7 +240,9 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/login'
+    | '/reset-password'
     | '/settings'
+    | '/verify-email'
     | '/analytics/$id'
     | '/f/$token'
     | '/forms/$id'
@@ -246,7 +266,9 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/login'
+    | '/reset-password'
     | '/settings'
+    | '/verify-email'
     | '/analytics/$id'
     | '/f/$token'
     | '/forms/$id'
@@ -270,7 +292,9 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/login'
+    | '/reset-password'
     | '/settings'
+    | '/verify-email'
     | '/analytics/$id'
     | '/f/$token'
     | '/forms/$id'
@@ -295,7 +319,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   FTokenRoute: typeof FTokenRoute
   FormsIdRoute: typeof FormsIdRouteWithChildren
   FormsNewRoute: typeof FormsNewRoute
@@ -314,11 +340,25 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -502,7 +542,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRouteWithChildren,
   LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   FTokenRoute: FTokenRoute,
   FormsIdRoute: FormsIdRouteWithChildren,
   FormsNewRoute: FormsNewRoute,

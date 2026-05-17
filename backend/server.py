@@ -79,9 +79,16 @@ async def ensure_user_profile_columns():
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32) NOT NULL DEFAULT ''")
         )
         await conn.execute(
-            text(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''"
-            )
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS best_suited_role VARCHAR(64) NOT NULL DEFAULT ''")
+        )
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(16) NOT NULL DEFAULT 'free'")
+        )
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE")
+        )
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token VARCHAR(128)")
         )
 
 
@@ -230,6 +237,7 @@ class UserOut(BaseModel):
     phone: str
     best_suited_role: str
     role: str
+    email_verified: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -265,6 +273,7 @@ def to_user_out(user: User) -> UserOut:
         phone=getattr(user, "phone", "") or "",
         best_suited_role=getattr(user, "best_suited_role", "") or "",
         role=user.role or "worker",
+        email_verified=bool(getattr(user, "email_verified", True)),
     )
 
 
@@ -491,6 +500,7 @@ def google_success_page(token: str, user: User, return_to: str) -> HTMLResponse:
 async def register(body: RegisterIn, response: Response, db: AsyncSession = Depends(get_db)):
     await ensure_user_profile_columns_in_session(db)
     email = body.email.lower()
+    verify_token = secrets.token_urlsafe(32)
     try:
         res = await db.execute(select(User).where(User.email == email))
         if res.scalar_one_or_none():
@@ -501,6 +511,8 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
             name=body.name.strip() or email.split("@")[0],
             phone=body.phone.strip(),
             best_suited_role=body.best_suited_role.strip(),
+            email_verified=False,
+            email_verification_token=verify_token,
         )
         db.add(user)
         await db.commit()
@@ -510,17 +522,19 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
         existing = await fetch_user_legacy_by_email(db, email)
         if existing:
             raise HTTPException(status_code=409, detail="Email already registered")
+        new_id = str(uuid.uuid4())
         await db.execute(
             text(
-                "INSERT INTO users (id, email, password_hash, name, role, created_at) "
-                "VALUES (:id, :email, :password_hash, :name, :role, now())"
+                "INSERT INTO users (id, email, password_hash, name, role, email_verified, email_verification_token, created_at) "
+                "VALUES (:id, :email, :password_hash, :name, :role, FALSE, :vtok, now())"
             ),
             {
-                "id": str(uuid.uuid4()),
+                "id": new_id,
                 "email": email,
                 "password_hash": hash_password(body.password),
                 "name": body.name.strip() or email.split("@")[0],
                 "role": "worker",
+                "vtok": verify_token,
             },
         )
         await db.commit()
@@ -532,6 +546,30 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
         "access_token", token, httponly=True, secure=False, samesite="lax",
         max_age=60 * 60 * 24 * 7, path="/",
     )
+    # Send verification email — fire-and-forget, never block registration
+    verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
+    verify_html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
+        Verify your email
+      </h2>
+      <p>Hi {body.name.strip() or 'there'},</p>
+      <p>Welcome to Vyasa Research! Please verify your email address to get full access.</p>
+      <p style="margin:28px 0">
+        <a href="{verify_link}"
+           style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
+          Verify email
+        </a>
+      </p>
+      <p style="color:#666;font-size:12px">If you didn't sign up for Vyasa Research, you can ignore this email.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
+    </div>
+    """
+    try:
+        await send_email(email, "Verify your Vyasa Research email", verify_html)
+    except Exception as e:
+        print(f"[register] verification email error: {e}")
     return TokenOut(access_token=token, user=to_user_out(user))
 
 
@@ -599,6 +637,71 @@ async def delete_account(user: User = Depends(get_current_user), db: AsyncSessio
     await db.execute(text("DELETE FROM password_reset_tokens WHERE user_id=:uid"), {"uid": uid})
     await db.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": uid})
     await db.commit()
+
+
+@app.get("/api/auth/verify-email")
+async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+    row = (await db.execute(
+        text("SELECT id FROM users WHERE email_verification_token = :tok AND email_verified = FALSE"),
+        {"tok": token},
+    )).mappings().first()
+    if not row:
+        return HTMLResponse("""
+        <html><head><meta charset="utf-8"><title>Already verified</title></head>
+        <body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2>Link already used or invalid</h2>
+          <p>Your email may already be verified. <a href="https://research.vyasaa.com/">Go to app</a></p>
+        </body></html>
+        """, status_code=400)
+    await db.execute(
+        text("UPDATE users SET email_verified = TRUE, email_verification_token = NULL WHERE id = :uid"),
+        {"uid": str(row["id"])},
+    )
+    await db.commit()
+    from auth import _cache_invalidate
+    _cache_invalidate(str(row["id"]))
+    return HTMLResponse("""
+    <html><head><meta charset="utf-8"><title>Email verified</title>
+    <meta http-equiv="refresh" content="3;url=https://research.vyasaa.com/"></head>
+    <body style="font-family:sans-serif;text-align:center;padding:60px">
+      <h2 style="font-size:24px;font-weight:800">Email verified!</h2>
+      <p>You're all set. Redirecting to the app&hellip;</p>
+      <p><a href="https://research.vyasaa.com/">Click here if you're not redirected</a></p>
+    </body></html>
+    """)
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if getattr(user, "email_verified", True):
+        return {"ok": True}  # already verified, nothing to do
+    new_token = secrets.token_urlsafe(32)
+    await db.execute(
+        text("UPDATE users SET email_verification_token = :tok WHERE id = :uid"),
+        {"tok": new_token, "uid": str(user.id)},
+    )
+    await db.commit()
+    verify_link = f"{FRONTEND_URL}/verify-email?token={new_token}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Verify your email</h2>
+      <p>Hi {user.name or 'there'},</p>
+      <p>Click below to verify your email address.</p>
+      <p style="margin:28px 0">
+        <a href="{verify_link}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
+          Verify email
+        </a>
+      </p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
+    </div>
+    """
+    try:
+        await send_email(user.email, "Verify your Vyasa Research email", html)
+    except Exception as e:
+        print(f"[resend_verification] email error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email — please try again.")
+    return {"ok": True}
 
 
 # ── Email helper ────────────────────────────────────────────────────────────
@@ -1362,6 +1465,42 @@ async def revoke_share_token(
 
 
 # ============================================================================
+# Plan limits
+# ============================================================================
+PLAN_LIMITS: dict[str, dict[str, int]] = {
+    "free": {"forms": 5, "submissions_per_month": 500},
+    "pro":  {"forms": 100, "submissions_per_month": 10_000},
+    "max":  {"forms": 999_999, "submissions_per_month": 50_000},
+}
+
+async def get_plan_usage(db: AsyncSession, user_id: str) -> tuple[str, int, int]:
+    """Return (plan, owned_form_count, submissions_this_month) for a user."""
+    plan_row = (await db.execute(
+        text("SELECT COALESCE(plan, 'free') AS plan FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    )).mappings().first()
+    plan = (plan_row["plan"] if plan_row else "free") or "free"
+
+    form_count_row = (await db.execute(
+        text("SELECT COUNT(*) AS n FROM forms WHERE owner_id = :uid"),
+        {"uid": user_id},
+    )).mappings().first()
+    form_count = int(form_count_row["n"]) if form_count_row else 0
+
+    sub_count_row = (await db.execute(
+        text("""
+            SELECT COUNT(*) AS n FROM submissions
+            WHERE owner_id = :uid
+              AND created_at >= date_trunc('month', now())
+        """),
+        {"uid": user_id},
+    )).mappings().first()
+    sub_count = int(sub_count_row["n"]) if sub_count_row else 0
+
+    return plan, form_count, sub_count
+
+
+# ============================================================================
 # Bulk sync (used by the offline-first client to push queued ops at once)
 # ============================================================================
 class SyncIn(BaseModel):
@@ -1377,7 +1516,23 @@ async def sync_push(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    out: dict = {"patients": 0, "forms": 0, "submissions": 0, "denied_forms": []}
+    out: dict = {"patients": 0, "forms": 0, "submissions": 0, "denied_forms": [], "limit_exceeded": None}
+
+    # Enforce plan limits for non-admin users
+    is_admin = getattr(user, "role", "worker") == "admin"
+    if not is_admin:
+        new_forms = [f for f in body.forms if not f.id or not (await db.execute(select(FormDef).where(FormDef.id == f.id))).scalar_one_or_none()]
+        new_subs  = [s for s in body.submissions if not s.id or not (await db.execute(select(Submission).where(Submission.id == s.id))).scalar_one_or_none()]
+        if new_forms or new_subs:
+            plan, form_count, sub_count = await get_plan_usage(db, str(user.id))
+            limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+            if new_forms and (form_count + len(new_forms)) > limits["forms"]:
+                out["limit_exceeded"] = "form_limit"
+                out["denied_forms"] = [f.id for f in body.forms if f.id]
+                return out
+            if new_subs and (sub_count + len(new_subs)) > limits["submissions_per_month"]:
+                out["limit_exceeded"] = "submission_limit"
+                return out
 
     # Pre-fetch edit permissions for all incoming IDs in two bulk queries
     # instead of one per item (eliminates N+1 on shared resources).
