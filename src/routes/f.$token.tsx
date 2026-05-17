@@ -162,6 +162,7 @@ function PublicFiller() {
   const [submitted, setSubmitted] = useState(false);
   const [submittedOffline, setSubmittedOffline] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingSyncMsg, setPendingSyncMsg] = useState<string | null>(null);
 
   const [respondentName, setRespondentName] = useState("");
   const [respondentEmail, setRespondentEmail] = useState("");
@@ -182,6 +183,42 @@ function PublicFiller() {
   const [subjectResults, setSubjectResults] = useState<LongitudinalSubmission[]>([]);
 
   const longitudinalSubmissions = useStore(s => s.longitudinalSubmissions);
+
+  // ── Persistent retry queue ────────────────────────────────────────────────────
+  // If a public submission fails (network down), we store it in localStorage and
+  // retry automatically when the device comes back online or on next page load.
+  const pendingSubmitKey = `pending_submit_${token}`;
+
+  useEffect(() => {
+    const attempt = async () => {
+      const raw = localStorage.getItem(pendingSubmitKey);
+      if (!raw) return;
+      try {
+        const { url, body } = JSON.parse(raw) as { url: string; body: unknown };
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          localStorage.removeItem(pendingSubmitKey);
+          setPendingSyncMsg(null);
+          setSubmitted(true); // already shows thank-you or was already shown
+        }
+        // non-ok (e.g. 404): remove stale entry so it doesn't retry forever
+        if (res.status === 404 || res.status === 410 || res.status === 403) {
+          localStorage.removeItem(pendingSubmitKey);
+          setPendingSyncMsg(null);
+        }
+      } catch {
+        // still offline — keep in queue, show pending status
+        setPendingSyncMsg("Submission pending — will sync when connection is restored.");
+      }
+    };
+    attempt();
+    window.addEventListener("online", attempt);
+    return () => window.removeEventListener("online", attempt);
+  }, [pendingSubmitKey]);
 
   // ── Public-form fill draft ───────────────────────────────────────────────────
   // All entered data is cached in localStorage under the share token so that
@@ -423,9 +460,11 @@ function PublicFiller() {
         try { localStorage.removeItem(publicDraftKey); } catch {}
         setSubmitted(true);
       } catch {
-        // All retries failed (device is offline). Save locally so data isn't lost.
-        // If the user is logged in, drain() will sync to the server when reconnected.
-        const { getToken } = await import("@/lib/api");
+        // All retries failed (network unreachable). Store for auto-retry on reconnect.
+        const pendingBody = { fixed_data: fixedData, visit_data: visitData, fixed_field_ids: fixedIds };
+        const pendingUrl = `${API_BASE}/api/forms/public/${token}/longitudinal-submit`;
+        try { localStorage.setItem(pendingSubmitKey, JSON.stringify({ url: pendingUrl, body: pendingBody })); } catch {}
+        // Also save to local store so logged-in users get it via drain() immediately
         store.submitLongitudinalVisit(form.id, values, {
           id: form.id, name: form.name, category: form.category,
           fields: form.fields, createdAt: 0,
@@ -433,14 +472,8 @@ function PublicFiller() {
           fixedFieldIds: form.fixed_field_ids ?? [],
         });
         try { localStorage.removeItem(publicDraftKey); } catch {}
-        const isLoggedIn = !!getToken();
         setSubmittedOffline(true);
         setSubmitted(true);
-        if (!isLoggedIn) {
-          // Anonymous users: data is in localStorage but cannot auto-sync.
-          // The message is shown on the thank-you screen.
-          console.warn("[PublicFiller] Anonymous offline submission — will not auto-sync.");
-        }
       } finally {
         setSubmitting(false);
       }
@@ -473,7 +506,11 @@ function PublicFiller() {
         setSubmitted(true);
       }
     } catch {
-      setError("Could not reach the server after multiple attempts. Please check your connection and tap Submit again — your answers are still here.");
+      // Store for auto-retry when device comes back online
+      const pendingUrl = `${API_BASE}/api/forms/public/${token}/submit`;
+      const pendingBody = { respondent_name: respondentName || undefined, respondent_email: respondentEmail || undefined, respondent_id: respondentCode || undefined, data };
+      try { localStorage.setItem(pendingSubmitKey, JSON.stringify({ url: pendingUrl, body: pendingBody })); } catch {}
+      setError("Connection lost. Your answers are saved and will be submitted automatically when you reconnect.");
     } finally {
       setSubmitting(false);
     }
@@ -526,10 +563,16 @@ function PublicFiller() {
           <CheckCircle2 className="h-16 w-16 mx-auto text-primary" />
           <h1 className="font-display text-2xl uppercase tracking-widest">Thank you!</h1>
           {submittedOffline ? (
-            <p className="text-sm text-muted-foreground">
-              The server was temporarily unreachable. Your data has been saved on this device and will sync automatically once you are back online and logged in.
-              If you are not logged in, please retry submission when your connection is restored.
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Your answers were saved. The server was briefly unreachable — we are retrying automatically.
+              </p>
+              {pendingSyncMsg ? (
+                <p className="text-xs font-semibold text-yellow-600">{pendingSyncMsg}</p>
+              ) : (
+                <p className="text-xs font-semibold text-green-600">Synced to server.</p>
+              )}
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">Your response has been recorded.</p>
           )}
