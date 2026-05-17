@@ -32,11 +32,16 @@ function FormsList() {
   const longitudinalSubmissions = user ? allLongitudinalSubmissions : [];
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [synced, setSynced] = useState(false);
 
   const handleSync = async () => {
+    if (syncing) return;
     setSyncing(true);
+    setSynced(false);
     try {
       await sync.pull();
+      setSynced(true);
+      setTimeout(() => setSynced(false), 2500);
     } finally {
       setSyncing(false);
     }
@@ -72,9 +77,12 @@ function FormsList() {
               onClick={handleSync}
               disabled={syncing}
               title="Sync with server"
-              className="btn-brutal inline-flex items-center gap-1.5 text-xs disabled:opacity-60"
+              className={`btn-brutal inline-flex items-center gap-1.5 text-xs disabled:opacity-60 transition-colors ${synced ? "bg-green-400 border-green-600" : ""}`}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+              <span className="font-bold uppercase tracking-widest">
+                {syncing ? "Syncing…" : synced ? "Synced ✓" : "Sync"}
+              </span>
             </button>
             <Link
               to="/forms/new"
