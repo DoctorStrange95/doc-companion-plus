@@ -27,6 +27,16 @@ function FormsIdLayout() {
   return isIndex ? <FormDetail /> : <Outlet />;
 }
 
+function fmtCellVal(val: unknown): string {
+  if (val === undefined || val === null || val === "") return "—";
+  if (typeof val === "object" && val !== null) {
+    const o = val as Record<string, unknown>;
+    if ("systolic" in o) return `${o.systolic}/${o.diastolic}`;
+    return JSON.stringify(val);
+  }
+  return String(val);
+}
+
 function StatusBadge({ status }: { status?: string }) {
   const s = status ?? "active";
   const styles = {
@@ -257,7 +267,9 @@ function FormDetail() {
     );
   }
 
-  const responseCount = submissions.length;
+  const responseCount = form.longitudinal
+    ? longitudinalSubs.reduce((n, s) => n + s.visits.length, 0)
+    : submissions.length;
   const fillLink = form.shareToken ? `${window.location.origin}/f/${form.shareToken}` : null;
   const analyticsLink = form.analyticsToken ? `${window.location.origin}/fa/${form.analyticsToken}` : null;
   const createdDate = new Date(form.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
@@ -328,7 +340,7 @@ function FormDetail() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusBadge status={form.status} />
                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {responseCount} response{responseCount !== 1 ? "s" : ""}
+                    {responseCount} {form.longitudinal ? "visit" : "response"}{responseCount !== 1 ? "s" : ""}
                   </span>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                     · {form.fields.length} fields
@@ -559,7 +571,7 @@ function FormDetail() {
                           return (
                             <tr key={sub.id} className={ri % 2 === 0 ? 'bg-card' : 'bg-muted/30'}>
                               {fixedFields.map(f => (
-                                <td key={f.id} className="px-3 py-2 font-bold border-r border-border whitespace-nowrap">{String(sub.fixedData[f.id] ?? '—')}</td>
+                                <td key={f.id} className="px-3 py-2 font-bold border-r border-border whitespace-nowrap">{fmtCellVal(sub.fixedData[f.id])}</td>
                               ))}
                               <td className="px-3 py-2 border-r border-border text-center font-bold">{sub.visits.length}</td>
                               {Array.from({ length: maxVisits }, (_, i) =>
@@ -567,12 +579,10 @@ function FormDetail() {
                                   <td key={`${f.id}_v${i+1}`} className="px-3 py-2 border-r border-border whitespace-nowrap">
                                     {sub.visits[i] ? (
                                       <>
-                                        <span>{String(sub.visits[i].data[f.id] ?? '—')}</span>
-                                        {i === 0 && (
-                                          <div className="text-[9px] text-muted-foreground mt-0.5">
-                                            {new Date(sub.visits[i].timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                                          </div>
-                                        )}
+                                        <span>{fmtCellVal(sub.visits[i].data[f.id])}</span>
+                                        <div className="text-[9px] text-muted-foreground mt-0.5">
+                                          {new Date(sub.visits[i].timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                        </div>
                                       </>
                                     ) : '—'}
                                   </td>

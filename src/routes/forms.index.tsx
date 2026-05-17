@@ -24,6 +24,7 @@ function StatusBadge({ status }: { status?: string }) {
 function FormsList() {
   const forms = useStore((s) => s.forms);
   const submissions = useStore((s) => s.submissions);
+  const longitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const lastSync = useStore((s) => s.lastSync);
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
@@ -49,7 +50,12 @@ function FormsList() {
     );
   }, [forms, searchQuery]);
 
-  const countFor = (id: string) => submissions.filter((s) => s.formId === id).length;
+  const countFor = (form: typeof forms[0]) => {
+    if (form.longitudinal) {
+      return longitudinalSubmissions.filter(s => s.formId === form.id).reduce((n, s) => n + s.visits.length, 0);
+    }
+    return submissions.filter((s) => s.formId === form.id).length;
+  };
 
   return (
     <>
@@ -103,7 +109,7 @@ function FormsList() {
         ) : (
           <ul className="grid gap-3">
             {filteredForms.map((f) => {
-              const responses = countFor(f.id);
+              const responses = countFor(f);
               return (
                 <li key={f.id} className="brutal">
                   {/* Main clickable area → form detail page */}
@@ -129,7 +135,7 @@ function FormsList() {
                         )}
                       </div>
                       <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                        {f.category} · {f.fields.length} fields · {responses} response{responses !== 1 ? "s" : ""}
+                        {f.category} · {f.fields.length} fields · {responses} {f.longitudinal ? "visit" : "response"}{responses !== 1 ? "s" : ""}
                       </p>
                       {f.description && (
                         <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{f.description}</p>
