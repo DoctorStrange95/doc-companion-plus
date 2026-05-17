@@ -29,6 +29,7 @@ import { Route as FormsIdRouteImport } from './routes/forms.$id'
 import { Route as FTokenRouteImport } from './routes/f.$token'
 import { Route as AnalyticsIdRouteImport } from './routes/analytics.$id'
 import { Route as FormsIdResponsesRouteImport } from './routes/forms.$id.responses'
+import { Route as FormsIdPrintRouteImport } from './routes/forms.$id.print'
 import { Route as FormsIdFillRouteImport } from './routes/forms.$id.fill'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -131,6 +132,11 @@ const FormsIdResponsesRoute = FormsIdResponsesRouteImport.update({
   path: '/responses',
   getParentRoute: () => FormsIdRoute,
 } as any)
+const FormsIdPrintRoute = FormsIdPrintRouteImport.update({
+  id: '/print',
+  path: '/print',
+  getParentRoute: () => FormsIdRoute,
+} as any)
 const FormsIdFillRoute = FormsIdFillRouteImport.update({
   id: '/fill',
   path: '/fill',
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/patients/': typeof PatientsIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/print': typeof FormsIdPrintRoute
   '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRoutesByTo {
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/patients': typeof PatientsIndexRoute
   '/tools': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/print': typeof FormsIdPrintRoute
   '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRoutesById {
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/patients/': typeof PatientsIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/forms/$id/fill': typeof FormsIdFillRoute
+  '/forms/$id/print': typeof FormsIdPrintRoute
   '/forms/$id/responses': typeof FormsIdResponsesRoute
 }
 export interface FileRouteTypes {
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/tools/'
     | '/forms/$id/fill'
+    | '/forms/$id/print'
     | '/forms/$id/responses'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/patients'
     | '/tools'
     | '/forms/$id/fill'
+    | '/forms/$id/print'
     | '/forms/$id/responses'
   id:
     | '__root__'
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/tools/'
     | '/forms/$id/fill'
+    | '/forms/$id/print'
     | '/forms/$id/responses'
   fileRoutesById: FileRoutesById
 }
@@ -442,6 +454,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FormsIdResponsesRouteImport
       parentRoute: typeof FormsIdRoute
     }
+    '/forms/$id/print': {
+      id: '/forms/$id/print'
+      path: '/print'
+      fullPath: '/forms/$id/print'
+      preLoaderRoute: typeof FormsIdPrintRouteImport
+      parentRoute: typeof FormsIdRoute
+    }
     '/forms/$id/fill': {
       id: '/forms/$id/fill'
       path: '/fill'
@@ -466,11 +485,13 @@ const AnalyticsRouteWithChildren = AnalyticsRoute._addFileChildren(
 
 interface FormsIdRouteChildren {
   FormsIdFillRoute: typeof FormsIdFillRoute
+  FormsIdPrintRoute: typeof FormsIdPrintRoute
   FormsIdResponsesRoute: typeof FormsIdResponsesRoute
 }
 
 const FormsIdRouteChildren: FormsIdRouteChildren = {
   FormsIdFillRoute: FormsIdFillRoute,
+  FormsIdPrintRoute: FormsIdPrintRoute,
   FormsIdResponsesRoute: FormsIdResponsesRoute,
 }
 

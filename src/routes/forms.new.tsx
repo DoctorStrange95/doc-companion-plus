@@ -404,12 +404,41 @@ function FieldConfigPanel({
   const palette = getPaletteItem(field.type);
   const Icon = palette?.icon ?? Type;
 
+  function handleTypeChange(newType: FieldType) {
+    if (newType === field.type) return;
+    const defaults = makeField(newType);
+    onChange({
+      ...defaults,
+      id: field.id,
+      label: field.label,
+      variableName: field.variableName,
+      hint: field.hint,
+      required: field.required,
+      showIf: field.showIf,
+      analyticsChart: defaultChart(newType),
+      longitudinalRole: field.longitudinalRole,
+    } as Partial<FormField>);
+  }
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="flex items-center justify-between border-b-2 border-border p-3">
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
           <Icon className="h-4 w-4" />
-          {palette?.label ?? field.type}
+          <select
+            value={field.type}
+            onChange={(e) => handleTypeChange(e.target.value as FieldType)}
+            className="bg-transparent font-bold uppercase tracking-widest text-xs border-none outline-none cursor-pointer hover:text-primary"
+            title="Change field type"
+          >
+            {PALETTE.map((group) => (
+              <optgroup key={group.group} label={group.group}>
+                {group.items.map((item) => (
+                  <option key={item.type} value={item.type}>{item.label}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
           {fieldIndex !== undefined && totalFields !== undefined && (
             <span className="text-muted-foreground font-normal normal-case tracking-normal">
               {fieldIndex + 1}/{totalFields}
