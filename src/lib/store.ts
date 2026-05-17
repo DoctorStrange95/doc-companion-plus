@@ -806,12 +806,16 @@ async function pullSnapshot() {
   state = { ...state, pulling: true };
   persist();
   try {
+    // Pass last-sync timestamp so the server only returns changed records.
+    // On the very first pull (lastSync = 0) we get everything; subsequent
+    // pulls are cheap incremental diffs that dramatically cut egress.
+    const sinceParam = state.lastSync ? `?since=${new Date(state.lastSync).toISOString()}` : "";
     const data = await api<{
       patients: SrvPatient[];
       forms: SrvForm[];
       submissions: SrvSubmission[];
       longitudinal_submissions?: LongitudinalSubmission[];
-    }>("/api/sync/pull");
+    }>(`/api/sync/pull${sinceParam}`);
     const serverPatients = data.patients.map(mapPatient);
     const serverForms = data.forms.map(mapForm);
     const serverSubs = data.submissions.map(mapSubmission);
@@ -830,11 +834,40 @@ async function pullSnapshot() {
     const sIds = new Set(serverPatients.map((p) => p.id));
     // (subIds unused — submissions use union-merge, not set-diff)
 
-    // Safety guard: if the server returned 0 forms, treat it as a suspicious
-    // empty response (cold start, network blip, partial response) and bail
-    // without touching local state. Update lastSync so the UI knows a check
-    // happened, but never let a server empty-response wipe local forms.
+    // Safety guard: if the server returned 0 forms AND this is a full pull
+    // (no since param), treat it as a suspicious empty response (cold start,
+    // network blip) and bail without wiping local state.
+    // For incremental pulls (since != 0) 0 forms simply means nothing changed —
+    // update lastSync and return without touching existing local state.
     if (serverForms.length === 0) {
+      if (state.lastSync) {
+        // Incremental pull — nothing new, just update timestamps and merge any
+        // longitudinal/submission diffs that came back.
+        state = { ...state, lastSync: Date.now(), initDone: true, pulling: false };
+        if (data.longitudinal_submissions && (data.longitudinal_submissions as unknown[]).length > 0) {
+          const lsMap = new Map<string, LongitudinalSubmission>(state.longitudinalSubmissions.map(s => [s.id, s]));
+          for (const s of data.longitudinal_submissions as LongitudinalSubmission[]) {
+            const local = lsMap.get(s.id);
+            if (local) {
+              const visitMap = new Map<string, LongitudinalVisit>(local.visits.map(v => [v.visitId, v]));
+              for (const v of s.visits) visitMap.set(v.visitId, v);
+              lsMap.set(s.id, { ...s, visits: [...visitMap.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp)) });
+            } else {
+              lsMap.set(s.id, s);
+            }
+          }
+          state = { ...state, longitudinalSubmissions: [...lsMap.values()] };
+        }
+        const serverSubs2 = data.submissions.map(mapSubmission);
+        if (serverSubs2.length > 0) {
+          const submissionMap2 = new Map<string, Submission>(state.submissions.map(s => [s.id, s]));
+          for (const s of serverSubs2) submissionMap2.set(s.id, { ...s, data: stripLargeValues(s.data) });
+          state = { ...state, submissions: [...submissionMap2.values()].sort((a, b) => b.createdAt - a.createdAt) };
+        }
+        persist();
+        return;
+      }
+      // Full pull returned 0 forms — suspicious, bail without wiping local state.
       state = { ...state, lastSync: Date.now(), initDone: true, pulling: false };
       persist();
       return;
@@ -1122,19 +1155,22 @@ if (typeof window !== "undefined") {
       state = { ...state, initDone: true };
       persist();
     }
-  }, 15_000);
-  // Background sync every 30 seconds — drains the local queue and pulls fresh
-  // server data. When the queue has items, drain() already calls pullSnapshot
-  // internally after a successful push, so we avoid a double pull here.
-  setInterval(() => {
-    if (getToken() && (typeof navigator === "undefined" || navigator.onLine)) {
-      if (state.queue.length > 0) {
-        void drain(); // drain calls pullSnapshot after push
-      } else {
-        void pullSnapshot();
-      }
-    }
   }, 30_000);
+  // Drain queue every 15 s — flushes any pending submissions quickly,
+  // including after coming back online. Only fires when there's something queued.
+  setInterval(() => {
+    if (getToken() && (typeof navigator === "undefined" || navigator.onLine) && state.queue.length > 0) {
+      void drain(); // drain pushes to server then pulls (incremental, near-free)
+    }
+  }, 15_000);
+  // Background pull every 5 minutes — fetches remote changes.
+  // With incremental sync (since=lastSync) each call returns only new/changed
+  // records, so this is cheap even at higher frequency.
+  setInterval(() => {
+    if (getToken() && (typeof navigator === "undefined" || navigator.onLine) && state.queue.length === 0) {
+      void pullSnapshot();
+    }
+  }, 300_000);
 }
 
 // ---------- Helpers --------------------------------------------------------

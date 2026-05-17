@@ -1283,19 +1283,27 @@ async def sync_push(
 
 
 @app.get("/api/sync/pull")
-async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """Returns the user's full visible dataset for cache hydration.
+async def sync_pull(
+    since: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the user's visible dataset for cache hydration.
 
-    The three list helpers are independent so we fetch shared-resource IDs
-    once and pass them in, then run the three data queries concurrently.
+    When `since` is provided (ISO-8601 timestamp from the client's last sync),
+    only records modified after that time are returned. This makes incremental
+    pulls cheap and dramatically reduces egress on repeated polls.
     """
+    since_dt: Optional[datetime] = _parse_dt(since) if since else None
+
     # One query to get all shared IDs for both resource types at once.
     shared_p, shared_f = await shared_resource_ids_both(db, str(user.id))
 
     # Fetch owned form IDs (needed by list_submissions) in parallel with the
     # patient and form queries.
     async def _patients():
-        q = select(Patient).where(or_(Patient.owner_id == user.id, Patient.id.in_(shared_p)))
+        base = or_(Patient.owner_id == user.id, Patient.id.in_(shared_p))
+        q = select(Patient).where(base if since_dt is None else and_(base, Patient.updated_at > since_dt))
         res = await db.execute(q.order_by(Patient.created_at.desc()))
         rows = res.scalars().all()
         return [
@@ -1307,7 +1315,8 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
         ]
 
     async def _forms():
-        q = select(FormDef).where(or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_f)))
+        base = or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_f))
+        q = select(FormDef).where(base if since_dt is None else and_(base, FormDef.updated_at > since_dt))
         res = await db.execute(q.order_by(FormDef.created_at.desc()))
         rows = res.scalars().all()
 
@@ -1336,13 +1345,14 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
     async def _submissions():
         owned_f_res = await db.execute(select(FormDef.id).where(FormDef.owner_id == user.id))
         owned_f = {str(row[0]) for row in owned_f_res.all()}
+        base = or_(
+            Submission.owner_id == user.id,
+            Submission.patient_id.in_(shared_p),
+            Submission.form_id.in_(shared_f),
+            Submission.form_id.in_(owned_f),
+        )
         q = select(Submission).where(
-            or_(
-                Submission.owner_id == user.id,
-                Submission.patient_id.in_(shared_p),
-                Submission.form_id.in_(shared_f),
-                Submission.form_id.in_(owned_f),
-            )
+            base if since_dt is None else and_(base, Submission.created_at > since_dt)
         )
         res = await db.execute(q.order_by(Submission.created_at.desc()).limit(2000))
         rows = res.scalars().all()
@@ -1358,16 +1368,20 @@ async def sync_pull(user: User = Depends(get_current_user), db: AsyncSession = D
         _patients(), _forms(), _submissions()
     )
 
-    # Fetch longitudinal submissions owned by this user OR belonging to shared forms
+    # Fetch longitudinal submissions owned by this user OR belonging to shared forms.
+    # Apply since filter (updated_at) and cap at 1000 rows to bound egress.
     _long_params: dict = {"owner_id": str(user.id)}
-    _long_extra = ""
+    _long_where = "owner_id = :owner_id"
     if shared_f:
         _placeholders = ", ".join(f":_sfid_{i}" for i in range(len(shared_f)))
-        _long_extra = f" OR form_id IN ({_placeholders})"
+        _long_where = f"(owner_id = :owner_id OR form_id IN ({_placeholders}))"
         for i, fid in enumerate(shared_f):
             _long_params[f"_sfid_{i}"] = str(fid)
+    if since_dt is not None:
+        _long_where += " AND updated_at > :since_dt"
+        _long_params["since_dt"] = since_dt
     long_subs_rows = (await db.execute(
-        text(f"SELECT * FROM longitudinal_submissions WHERE owner_id = :owner_id{_long_extra}"),
+        text(f"SELECT * FROM longitudinal_submissions WHERE {_long_where} ORDER BY updated_at DESC LIMIT 1000"),
         _long_params
     )).mappings().all()
     longitudinal_submissions = [
