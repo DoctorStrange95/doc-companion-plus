@@ -230,6 +230,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Ensure unhandled 500 errors still carry CORS headers so the browser
+# reports the actual HTTP status rather than a network error.
+from fastapi.responses import JSONResponse
+from fastapi import Request as _Request
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(_req: _Request, exc: Exception):
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
 
 # ============================================================================
 # Schemas
@@ -805,7 +820,7 @@ async def verify_register_otp(body: VerifyOtpIn, db: AsyncSession = Depends(get_
     expires = datetime.utcnow() + timedelta(minutes=30)
     await db.execute(
         text("INSERT INTO email_otps (id, email, otp, expires_at) VALUES (:id, :e, :proof, :exp)"),
-        {"id": str(uuid.uuid4()), "e": f"proof:{email}", "otp": proof, "exp": expires},
+        {"id": str(uuid.uuid4()), "e": f"proof:{email}", "proof": proof, "exp": expires},
     )
     await db.commit()
     return {"proof_token": proof}
