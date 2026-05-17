@@ -374,6 +374,21 @@ function PublicFiller() {
     window.scrollTo(0, 0);
   };
 
+  // Retry a fetch up to maxAttempts times with a fixed delay between attempts.
+  // Returns the last Response on success, or throws the last error if all fail.
+  const fetchWithRetry = async (url: string, init: RequestInit, maxAttempts = 3): Promise<Response> => {
+    let lastErr: unknown;
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        return await fetch(url, init);
+      } catch (e) {
+        lastErr = e;
+        if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      }
+    }
+    throw lastErr;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (preview) { setError("Preview mode — responses are not saved."); return; }
@@ -390,22 +405,27 @@ function PublicFiller() {
         .filter(f => f.type !== 'section_header' && f.type !== 'page_break' && !fixedIds.includes(f.id))
         .forEach(f => { visitData[f.id] = values[f.id]; });
       setSubmitting(true);
+      setError("");
       try {
-        const res = await fetch(`${API_BASE}/api/forms/public/${token}/longitudinal-submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fixed_data: fixedData, visit_data: visitData, fixed_field_ids: fixedIds }),
-        });
+        const res = await fetchWithRetry(
+          `${API_BASE}/api/forms/public/${token}/longitudinal-submit`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fixed_data: fixedData, visit_data: visitData, fixed_field_ids: fixedIds }),
+          },
+        );
         if (!res.ok) {
           const body2 = await res.json().catch(() => ({ detail: 'Submission failed' }));
-          setError(body2.detail ?? 'Submission failed');
+          setError(body2.detail ?? 'Submission failed. Please try again.');
           return;
         }
         try { localStorage.removeItem(publicDraftKey); } catch {}
         setSubmitted(true);
       } catch {
-        // Network unreachable — save locally so data isn't lost.
-        // Logged-in users: drain() will sync it to the server when back online.
+        // All retries failed (device is offline). Save locally so data isn't lost.
+        // If the user is logged in, drain() will sync to the server when reconnected.
+        const { getToken } = await import("@/lib/api");
         store.submitLongitudinalVisit(form.id, values, {
           id: form.id, name: form.name, category: form.category,
           fields: form.fields, createdAt: 0,
@@ -413,8 +433,14 @@ function PublicFiller() {
           fixedFieldIds: form.fixed_field_ids ?? [],
         });
         try { localStorage.removeItem(publicDraftKey); } catch {}
+        const isLoggedIn = !!getToken();
         setSubmittedOffline(true);
         setSubmitted(true);
+        if (!isLoggedIn) {
+          // Anonymous users: data is in localStorage but cannot auto-sync.
+          // The message is shown on the thank-you screen.
+          console.warn("[PublicFiller] Anonymous offline submission — will not auto-sync.");
+        }
       } finally {
         setSubmitting(false);
       }
@@ -429,21 +455,25 @@ function PublicFiller() {
     Object.entries(values).forEach(([k, v]) => { if (visibleIds.has(k)) data[k] = v; });
 
     setSubmitting(true);
+    setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/forms/public/${token}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ respondent_name: respondentName || undefined, respondent_email: respondentEmail || undefined, respondent_id: respondentCode || undefined, data }),
-      });
+      const res = await fetchWithRetry(
+        `${API_BASE}/api/forms/public/${token}/submit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ respondent_name: respondentName || undefined, respondent_email: respondentEmail || undefined, respondent_id: respondentCode || undefined, data }),
+        },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({ detail: "Submission failed" }));
-        setError(body.detail ?? "Submission failed");
+        setError(body.detail ?? "Submission failed. Please try again.");
       } else {
         try { localStorage.removeItem(publicDraftKey); } catch {}
         setSubmitted(true);
       }
     } catch {
-      setError("Could not submit. Please check your connection and try again.");
+      setError("Could not reach the server after multiple attempts. Please check your connection and tap Submit again — your answers are still here.");
     } finally {
       setSubmitting(false);
     }
@@ -497,7 +527,8 @@ function PublicFiller() {
           <h1 className="font-display text-2xl uppercase tracking-widest">Thank you!</h1>
           {submittedOffline ? (
             <p className="text-sm text-muted-foreground">
-              Saved on this device. The server was temporarily unreachable — your data will sync automatically when the connection is restored.
+              The server was temporarily unreachable. Your data has been saved on this device and will sync automatically once you are back online and logged in.
+              If you are not logged in, please retry submission when your connection is restored.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">Your response has been recorded.</p>
