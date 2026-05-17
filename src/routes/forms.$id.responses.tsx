@@ -301,27 +301,169 @@ function DataTable({ submissions, fields, onRowClick }: {
   );
 }
 
-// ─── Main component ──────────────────────────────────────────────────────────
+// ─── Longitudinal subject table ───────────────────────────────────────────────
 
-// Flatten longitudinal submissions into Submission-shaped rows for the table
-function flattenLongitudinal(longSubs: LongitudinalSubmission[], formId: string): Submission[] {
-  const rows: Submission[] = [];
-  for (const ls of longSubs) {
-    if (ls.formId !== formId) continue;
-    for (const visit of ls.visits) {
-      const ts = new Date(visit.timestamp).getTime() || Date.now();
-      rows.push({
-        id: `${ls.id}_${visit.visitId}`,
-        formId,
-        formName: "",
-        createdAt: ts,
-        data: { ...ls.fixedData, ...visit.data },
-        patientId: ls.patientId,
-      } as Submission);
-    }
+function LongitudinalTable({
+  subjects,
+  fields,
+  fixedFieldIds,
+  onRowClick,
+}: {
+  subjects: LongitudinalSubmission[];
+  fields: FormField[];
+  fixedFieldIds: string[];
+  onRowClick: (sub: LongitudinalSubmission) => void;
+}) {
+  const fixedFields = fields.filter(
+    (f) => fixedFieldIds.includes(f.id) && f.type !== "section_header" && f.type !== "page_break",
+  );
+
+  if (subjects.length === 0) {
+    return (
+      <div className="brutal-flat p-8 text-center">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No subjects tracked yet</p>
+      </div>
+    );
   }
-  return rows.sort((a, b) => b.createdAt - a.createdAt);
+
+  return (
+    <div className="overflow-x-auto border-2 border-border" style={{ maxHeight: "calc(100vh - 220px)" }}>
+      <table className="min-w-full border-collapse text-[12px] whitespace-nowrap">
+        <thead className="bg-[#171e19] text-white" style={{ position: "sticky", top: 0, zIndex: 2 }}>
+          <tr>
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[36px]">#</th>
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[90px]">Last visit</th>
+            {fixedFields.map((f) => (
+              <th key={f.id} className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[100px] max-w-[160px]" title={f.label}>
+                <div className="truncate">{f.variableName ?? (f.label.length > 14 ? f.label.slice(0, 14) + "…" : f.label)}</div>
+                <div className="font-normal text-[9px] opacity-50 normal-case tracking-normal">{f.type}</div>
+              </th>
+            ))}
+            <th className="px-3 py-2.5 text-left font-bold uppercase tracking-wider text-[10px] border-r border-white/10 min-w-[80px] bg-primary/20">Tracked</th>
+          </tr>
+        </thead>
+        <tbody>
+          {subjects.map((sub, i) => {
+            const lastVisit = sub.visits[sub.visits.length - 1];
+            const lastTs = lastVisit ? new Date(lastVisit.timestamp) : new Date(sub.updatedAt);
+            return (
+              <tr
+                key={sub.id}
+                className="cursor-pointer border-b border-border hover:bg-primary/10 transition-colors"
+                style={{ background: i % 2 === 0 ? "var(--background)" : "var(--muted)" }}
+                onClick={() => onRowClick(sub)}
+              >
+                <td className="px-3 py-2 border-r border-border text-muted-foreground font-mono text-[10px]">{subjects.length - i}</td>
+                <td className="px-3 py-2 border-r border-border text-[11px] whitespace-nowrap">
+                  {lastTs.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })}
+                </td>
+                {fixedFields.map((f) => {
+                  const display = formatCellValue(sub.fixedData[f.id], f);
+                  return (
+                    <td key={f.id} className="px-3 py-2 border-r border-border text-[11px] max-w-[160px] truncate" title={display !== "—" ? display : undefined}>
+                      {display === "—" ? <span className="text-muted-foreground">—</span> : display}
+                    </td>
+                  );
+                })}
+                <td className="px-3 py-2 border-r border-border text-[11px] font-bold bg-primary/5">
+                  <span className="inline-flex items-center gap-1.5 border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-black tracking-widest">
+                    {sub.visits.length}×
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
+
+function LongitudinalDetailModal({
+  sub,
+  fields,
+  fixedFieldIds,
+  onClose,
+}: {
+  sub: LongitudinalSubmission;
+  fields: FormField[];
+  fixedFieldIds: string[];
+  onClose: () => void;
+}) {
+  const fixedFields = fields.filter((f) => fixedFieldIds.includes(f.id) && f.type !== "section_header" && f.type !== "page_break");
+  const visitFields = fields.filter((f) => !fixedFieldIds.includes(f.id) && f.type !== "section_header" && f.type !== "page_break" && f.type !== "calculated");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={onClose}>
+      <div className="w-full max-w-lg border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        {/* Subject header */}
+        <div className="flex items-start justify-between border-b-2 border-border p-4">
+          <div>
+            <div className="font-display text-base uppercase flex items-center gap-2">
+              <User className="h-4 w-4" />
+              {fixedFields.map((f) => sub.fixedData[f.id]).filter(Boolean).join(" · ") || "Subject"}
+            </div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">
+              {sub.visits.length} visit{sub.visits.length !== 1 ? "s" : ""} tracked
+            </div>
+          </div>
+          <button onClick={onClose} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* Fixed fields summary */}
+        <div className="border-b-2 border-border px-4 py-3 bg-muted/40">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Subject info</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {fixedFields.map((f) => (
+              <div key={f.id}>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{f.label}</div>
+                <div className="text-[11px]">
+                  <DetailFieldValue field={f} val={sub.fixedData[f.id]} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Visit timeline */}
+        <div className="px-4 py-3">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-3">Visit history</div>
+          <div className="space-y-3">
+            {[...sub.visits].reverse().map((visit, idx) => {
+              const visitDate = new Date(visit.timestamp);
+              return (
+                <div key={visit.visitId} className="border-2 border-border">
+                  <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Visit {sub.visits.length - idx}
+                    </span>
+                    <span className="text-[10px] font-semibold text-muted-foreground">
+                      {visitDate.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      {" · "}
+                      {visitDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-3 py-2">
+                    {visitFields.map((f) => (
+                      <div key={f.id}>
+                        <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{f.label}</div>
+                        <div className="text-[11px]">
+                          <DetailFieldValue field={f} val={visit.data[f.id]} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
 
 function FormResponses() {
   const { id } = Route.useParams();
@@ -330,15 +472,19 @@ function FormResponses() {
   const rawLongitudinal = useStore((s) => s.longitudinalSubmissions);
   const isOwner = !form?.shared;
   const [selected, setSelected] = useState<Submission | null>(null);
+  const [selectedLong, setSelectedLong] = useState<LongitudinalSubmission | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(true);
 
+  const longitudinalSubjects = useMemo(
+    () => rawLongitudinal.filter((s) => s.formId === id).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [rawLongitudinal, id],
+  );
+
   const submissions = useMemo(() => {
-    if (form?.longitudinal) {
-      return flattenLongitudinal(rawLongitudinal, id);
-    }
+    if (form?.longitudinal) return [];
     return rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt);
-  }, [rawSubmissions, rawLongitudinal, id, form?.longitudinal]);
+  }, [rawSubmissions, id, form?.longitudinal]);
 
   // Pull on mount — show local data immediately, merge server data in background.
   useEffect(() => {
@@ -372,7 +518,11 @@ function FormResponses() {
     <>
       <PageHeader
         title="Responses"
-        subtitle={`${submissions.length} ${form.longitudinal ? "visit" : "response"}${submissions.length !== 1 ? "s" : ""} · ${form.name}`}
+        subtitle={
+          form.longitudinal
+            ? `${longitudinalSubjects.length} subject${longitudinalSubjects.length !== 1 ? "s" : ""} · ${form.name}`
+            : `${submissions.length} response${submissions.length !== 1 ? "s" : ""} · ${form.name}`
+        }
         back={`/forms/${id}`}
         action={
           <div className="flex items-center gap-1.5">
@@ -392,7 +542,7 @@ function FormResponses() {
             >
               <BarChart2 className="h-3.5 w-3.5" />
             </Link>
-            {isOwner && submissions.length > 0 && (
+            {isOwner && submissions.length > 0 && !form.longitudinal && (
               <>
                 <button
                   onClick={() => exportCsv(submissions, form.fields, form.name)}
@@ -415,7 +565,21 @@ function FormResponses() {
       />
 
       <div className="px-4 pb-24 pt-2">
-        {submissions.length === 0 ? (
+        {form.longitudinal ? (
+          syncing && longitudinalSubjects.length === 0 ? (
+            <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-xs font-bold uppercase tracking-widest">Loading subjects…</span>
+            </div>
+          ) : (
+            <LongitudinalTable
+              subjects={longitudinalSubjects}
+              fields={form.fields}
+              fixedFieldIds={form.fixedFieldIds ?? []}
+              onRowClick={setSelectedLong}
+            />
+          )
+        ) : submissions.length === 0 ? (
           syncing ? (
             <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -440,7 +604,16 @@ function FormResponses() {
           fields={form.fields}
           onClose={() => setSelected(null)}
           onDelete={() => handleDelete(selected)}
-          canDelete={isOwner && !form.longitudinal}
+          canDelete={isOwner}
+        />
+      )}
+
+      {selectedLong && (
+        <LongitudinalDetailModal
+          sub={selectedLong}
+          fields={form.fields}
+          fixedFieldIds={form.fixedFieldIds ?? []}
+          onClose={() => setSelectedLong(null)}
         />
       )}
     </>
