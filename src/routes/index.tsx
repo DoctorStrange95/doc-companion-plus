@@ -70,6 +70,9 @@ function Home() {
           <div className="inline-flex items-center gap-1.5 border-2 border-border bg-card px-2 py-1 text-[10px] font-bold uppercase tracking-widest">
             <Stethoscope className="h-3 w-3" />
             ResearchMed
+            <span className="mx-1 opacity-30">·</span>
+            <span className="normal-case font-normal opacity-60 tracking-normal">Powered by</span>
+            <img src="https://www.vyasaa.com/logo.svg" alt="Vyasa" className="h-3 inline-block" />
           </div>
           <h1 className="mt-3 font-display text-5xl uppercase leading-[0.9]">
             Hello,<br />
