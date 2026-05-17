@@ -903,6 +903,21 @@ async function pullSnapshot() {
     const safeServerForms = serverForms.filter((f) => !pendingFormMap.has(f.id));
     const safeServerPatients = serverPatients.filter((p) => !pendingPatientMap.has(p.id));
 
+    // Self-heal: if this was an incremental pull (lastSync set) and the server
+    // returned 0 new submissions AND local state is also empty, submissions were
+    // likely dropped from localStorage due to quota overflow. Reset lastSync so
+    // the next pull is a full pull that recovers all historical data.
+    if (
+      state.lastSync &&
+      serverSubs.length === 0 &&
+      state.submissions.length === 0 &&
+      serverForms.length > 0
+    ) {
+      state = { ...state, lastSync: null, pulling: false };
+      persist();
+      return pullSnapshot();
+    }
+
     // Submissions: union of local + server, server version wins on conflict.
     // Never discard a local submission just because the server didn't return it —
     // the server may return a partial list, and we never want a pull to silently
