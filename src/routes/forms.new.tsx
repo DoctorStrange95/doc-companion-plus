@@ -1015,14 +1015,14 @@ function ConditionalConfig({
           </div>
 
           {others.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground">Add other fields first.</p>
+            <p className="text-[10px] text-muted-foreground">No preceding fields — add fields above this one first.</p>
           ) : (
             <div className="space-y-1.5">
               {logic.rules.map((rule) => (
                 <div key={rule.id} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-1">
                   <select
                     value={rule.fieldId}
-                    onChange={(e) => updateRule(rule.id, { fieldId: e.target.value })}
+                    onChange={(e) => updateRule(rule.id, { fieldId: e.target.value, value: "" })}
                     className="input-brutal text-[10px]"
                   >
                     {others.map((o) => (
