@@ -583,24 +583,17 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
     if pre_verified or not verify_token:
         return TokenOut(access_token=token, user=to_user_out(user))
     verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
-    verify_html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
-      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
-        Verify your email
-      </h2>
+    verify_html = _email_wrap(f"""
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin-top:0">Verify your email</h2>
       <p>Hi {body.name.strip() or 'there'},</p>
-      <p>Welcome to Vyasa Research! Please verify your email address to get full access.</p>
+      <p>Welcome to Vyasa Research! Click below to verify your email address.</p>
       <p style="margin:28px 0">
-        <a href="{verify_link}"
-           style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
+        <a href="{verify_link}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
           Verify email
         </a>
       </p>
       <p style="color:#666;font-size:12px">If you didn't sign up for Vyasa Research, you can ignore this email.</p>
-      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
-    </div>
-    """
+    """)
     try:
         await send_email(email, "Verify your Vyasa Research email", verify_html)
     except Exception as e:
@@ -703,9 +696,8 @@ async def resend_verification(user: User = Depends(get_current_user), db: AsyncS
     )
     await db.commit()
     verify_link = f"{FRONTEND_URL}/verify-email?token={new_token}"
-    html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
-      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">Verify your email</h2>
+    html = _email_wrap(f"""
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin-top:0">Verify your email</h2>
       <p>Hi {user.name or 'there'},</p>
       <p>Click below to verify your email address.</p>
       <p style="margin:28px 0">
@@ -713,12 +705,9 @@ async def resend_verification(user: User = Depends(get_current_user), db: AsyncS
           Verify email
         </a>
       </p>
-      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
-    </div>
-    """
+    """)
     try:
-        await send_email(user.email, "Verify your Vyasa Research email", html)
+        await send_email(user.email, "Verify your ResearchMed email", html)
     except Exception as e:
         print(f"[resend_verification] email error: {e}")
         raise HTTPException(status_code=500, detail="Failed to send email — please try again.")
@@ -778,24 +767,20 @@ async def send_register_otp(body: SendOtpIn, db: AsyncSession = Depends(get_db))
         {"id": str(uuid.uuid4()), "e": email, "otp": otp, "exp": expires},
     )
     await db.commit()
-    html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+    html = _email_wrap(f"""
       <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
         Verify your email
       </h2>
-      <p>Your Vyasa Research verification code is:</p>
+      <p>Your ResearchMed verification code is:</p>
       <div style="margin:28px 0;text-align:center">
         <span style="font-size:40px;font-weight:900;letter-spacing:0.15em;background:#000;color:#fff;padding:16px 28px;display:inline-block">
           {otp}
         </span>
       </div>
       <p style="color:#666;font-size:12px">This code expires in <strong>10 minutes</strong>. If you didn't request this, ignore this email.</p>
-      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
-    </div>
-    """
+    """)
     try:
-        await send_email(email, "Your Vyasa Research verification code", html)
+        await send_email(email, "Your ResearchMed verification code", html)
     except Exception as e:
         print(f"[send_register_otp] email error: {e}")
         raise HTTPException(status_code=500, detail="Failed to send email. Please check the address and try again.")
@@ -824,6 +809,33 @@ async def verify_register_otp(body: VerifyOtpIn, db: AsyncSession = Depends(get_
     )
     await db.commit()
     return {"proof_token": proof}
+
+
+LOGO_URL = "https://www.vyasaa.com/logo.svg"
+
+def _email_wrap(body_html: str) -> str:
+    """Wrap email content with ResearchMed header and 'Powered by Vyasa' footer."""
+    return f"""
+    <div style="font-family:sans-serif;max-width:520px;margin:0 auto;background:#fff">
+      <div style="background:#000;padding:18px 28px;display:flex;align-items:center;gap:12px">
+        <span style="color:#fff;font-weight:900;font-size:18px;letter-spacing:0.08em;text-transform:uppercase">ResearchMed</span>
+      </div>
+      <div style="padding:28px">
+        {body_html}
+        <hr style="border:none;border-top:1px solid #eee;margin:28px 0 16px"/>
+        <table style="width:100%;border-collapse:collapse">
+          <tr>
+            <td style="color:#999;font-size:11px">
+              <a href="https://research.vyasaa.com" style="color:#999;text-decoration:none">research.vyasaa.com</a>
+            </td>
+            <td style="text-align:right;font-size:10px;color:#bbb;white-space:nowrap">
+              Powered by&nbsp;<img src="{LOGO_URL}" alt="Vyasa" height="14" style="vertical-align:middle;display:inline-block" />
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    """
 
 
 def _send_email_sync(to: str, subject: str, html: str) -> None:
@@ -893,8 +905,7 @@ async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get
         return {"ok": True}
 
     reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+    html = _email_wrap(f"""
       <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
         Reset your password
       </h2>
@@ -907,10 +918,7 @@ async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get
         </a>
       </p>
       <p style="color:#666;font-size:12px">If you didn't request this, ignore this email — your password won't change.</p>
-      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-      <p style="color:#999;font-size:11px">ResearchMed · research.vyasaa.com</p>
-    </div>
-    """
+    """)
     try:
         await send_email(user["email"], "Reset your ResearchMed password", html)
     except Exception as e:
