@@ -6,7 +6,7 @@ import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   Edit2, Copy, Trash2, ExternalLink, BarChart2,
   Share2, X, CheckCircle2, AlertTriangle,
-  User, Globe, List, ArrowRight, Link2, Link2Off, Loader2, Lock, Plus,
+  User, Globe, List, ArrowRight, Link2, Link2Off, Loader2, Lock, Plus, Printer,
 } from "lucide-react";
 
 interface FormShareEntry {
@@ -319,15 +319,25 @@ function FormDetail() {
         subtitle={`${form.category}${form.longitudinal ? " · Longitudinal" : ""}`}
         variant="yellow"
         action={
-          (!form.shared || form.canEdit) ? (
+          <div className="flex items-center gap-2">
             <Link
-              to="/forms/new"
-              search={{ edit: form.id }}
+              to="/forms/$id/print"
+              params={{ id: form.id }}
               className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+              title="Print / Save PDF"
             >
-              <Edit2 className="h-3.5 w-3.5" /> Edit
+              <Printer className="h-3.5 w-3.5" />
             </Link>
-          ) : undefined
+            {(!form.shared || form.canEdit) && (
+              <Link
+                to="/forms/new"
+                search={{ edit: form.id }}
+                className="btn-brutal inline-flex items-center gap-1.5 text-xs"
+              >
+                <Edit2 className="h-3.5 w-3.5" /> Edit
+              </Link>
+            )}
+          </div>
         }
       />
 
