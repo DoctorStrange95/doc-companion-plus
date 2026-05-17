@@ -9,11 +9,15 @@ import asyncio
 import os
 import json
 import secrets
+import smtplib
+import ssl
 import uuid
 import urllib.parse
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from typing import Any, Optional, Literal
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -189,6 +193,19 @@ async def lifespan(app: FastAPI):
         await seed_admin()
     except Exception as e:  # noqa: BLE001
         print(f"[seed_admin] warning: {e}")
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    token TEXT NOT NULL UNIQUE,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """))
+    except Exception as e:
+        print(f"[password_reset_tokens] warning: {e}")
     yield
 
 
@@ -530,6 +547,116 @@ async def logout(response: Response, _: User = Depends(get_current_user)):
 @app.get("/api/auth/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
     return to_user_out(user)
+
+
+# ── Email helper ────────────────────────────────────────────────────────────
+
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtpout.secureserver.net")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
+SMTP_USER = os.environ.get("SMTP_USER", "admin@vyasaa.com")
+SMTP_PASS = os.environ.get("SMTP_PASS", "")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://research.vyasaa.com")
+
+
+def _send_email_sync(to: str, subject: str, html: str) -> None:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"ResearchMed <{SMTP_USER}>"
+    msg["To"] = to
+    msg.attach(MIMEText(html, "html"))
+    ctx = ssl.create_default_context()
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx) as s:
+        s.login(SMTP_USER, SMTP_PASS)
+        s.sendmail(SMTP_USER, to, msg.as_string())
+
+
+async def send_email(to: str, subject: str, html: str) -> None:
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _send_email_sync, to, subject, html)
+
+
+# ── Forgot / reset password ──────────────────────────────────────────────────
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str = Field(min_length=6, max_length=128)
+
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordIn, db: AsyncSession = Depends(get_db)):
+    row = await db.execute(
+        text("SELECT id, email, name FROM users WHERE lower(email) = :e LIMIT 1"),
+        {"e": body.email.lower()},
+    )
+    user = row.mappings().first()
+    # Always return 200 so we don't leak whether an email exists
+    if not user:
+        return {"ok": True}
+
+    token = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(hours=1)
+    await db.execute(
+        text("INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (:id, :uid, :tok, :exp)"),
+        {"id": str(uuid.uuid4()), "uid": user["id"], "tok": token, "exp": expires},
+    )
+    await db.commit()
+
+    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
+        Reset your password
+      </h2>
+      <p>Hi {user['name'] or 'there'},</p>
+      <p>We received a request to reset your ResearchMed password. Click the button below — the link expires in <strong>1 hour</strong>.</p>
+      <p style="margin:28px 0">
+        <a href="{reset_link}"
+           style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
+          Reset password
+        </a>
+      </p>
+      <p style="color:#666;font-size:12px">If you didn't request this, ignore this email — your password won't change.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:11px">ResearchMed · research.vyasaa.com</p>
+    </div>
+    """
+    try:
+        await send_email(user["email"], "Reset your ResearchMed password", html)
+    except Exception as e:
+        print(f"[forgot_password] email error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email. Please try again later.")
+
+    return {"ok": True}
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(body: ResetPasswordIn, db: AsyncSession = Depends(get_db)):
+    row = await db.execute(
+        text("SELECT id, user_id, expires_at, used FROM password_reset_tokens WHERE token = :tok LIMIT 1"),
+        {"tok": body.token},
+    )
+    rec = row.mappings().first()
+    if not rec:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+    if rec["used"]:
+        raise HTTPException(status_code=400, detail="This reset link has already been used.")
+    if rec["expires_at"].replace(tzinfo=None) < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="This reset link has expired. Please request a new one.")
+
+    await db.execute(
+        text("UPDATE users SET password_hash = :h WHERE id = :uid"),
+        {"h": hash_password(body.password), "uid": rec["user_id"]},
+    )
+    await db.execute(
+        text("UPDATE password_reset_tokens SET used = TRUE WHERE id = :id"),
+        {"id": rec["id"]},
+    )
+    await db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/auth/google/config", response_model=GoogleAuthConfig)
