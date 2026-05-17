@@ -265,7 +265,7 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
     name: str = Field(default="", max_length=255)
-    phone: str = Field(default="", max_length=32)
+    phone: str = Field(min_length=1, max_length=32)
     best_suited_role: str = Field(default="", max_length=64)
     proof_token: Optional[str] = None  # OTP proof from /api/auth/verify-register-otp
 

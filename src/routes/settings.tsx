@@ -106,6 +106,10 @@ function Settings() {
   const cancelEdit = () => { setEditing(false); setSaveError(""); };
 
   const saveProfile = async () => {
+    if (!editPhone.trim()) {
+      setSaveError("Phone number is required.");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -182,8 +186,8 @@ function Settings() {
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} className="input-brutal" />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Phone</span>
-                <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="input-brutal" type="tel" />
+                <span className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Phone <span className="text-destructive">*</span></span>
+                <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="input-brutal" type="tel" required placeholder="+91 98765 43210" />
               </label>
               <label className="block">
                 <span className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Role</span>

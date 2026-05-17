@@ -299,18 +299,11 @@ function LoginPage() {
                     required
                   />
                 </Field>
-                <Field label="Email">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    data-testid="auth-email"
-                    className="input-brutal"
-                    autoComplete="email"
-                  />
-                </Field>
-                <Field label="Phone Number">
+                <div>
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Email <span className="text-green-700 text-[9px]">✓ Verified</span></span>
+                  <div className="input-brutal bg-muted/30 text-muted-foreground select-none cursor-not-allowed">{email}</div>
+                </div>
+                <Field label="Phone Number *">
                   <input
                     type="tel"
                     value={phone}
