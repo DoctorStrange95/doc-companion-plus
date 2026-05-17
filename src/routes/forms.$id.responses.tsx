@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import type { Submission, FormField } from "@/lib/store";
+import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText, Loader2 } from "lucide-react";
 
@@ -302,19 +303,42 @@ function DataTable({ submissions, fields, onRowClick }: {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
+// Flatten longitudinal submissions into Submission-shaped rows for the table
+function flattenLongitudinal(longSubs: LongitudinalSubmission[], formId: string): Submission[] {
+  const rows: Submission[] = [];
+  for (const ls of longSubs) {
+    if (ls.formId !== formId) continue;
+    for (const visit of ls.visits) {
+      const ts = new Date(visit.timestamp).getTime() || Date.now();
+      rows.push({
+        id: `${ls.id}_${visit.visitId}`,
+        formId,
+        formName: "",
+        createdAt: ts,
+        data: { ...ls.fixedData, ...visit.data },
+        patientId: ls.patientId,
+      } as Submission);
+    }
+  }
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
 function FormResponses() {
   const { id } = Route.useParams();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubmissions = useStore((s) => s.submissions);
+  const rawLongitudinal = useStore((s) => s.longitudinalSubmissions);
   const isOwner = !form?.shared;
   const [selected, setSelected] = useState<Submission | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(true);
 
-  const submissions = useMemo(
-    () => rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt),
-    [rawSubmissions, id],
-  );
+  const submissions = useMemo(() => {
+    if (form?.longitudinal) {
+      return flattenLongitudinal(rawLongitudinal, id);
+    }
+    return rawSubmissions.filter((s) => s.formId === id).sort((a, b) => b.createdAt - a.createdAt);
+  }, [rawSubmissions, rawLongitudinal, id, form?.longitudinal]);
 
   // Pull on mount — show local data immediately, merge server data in background.
   useEffect(() => {
@@ -348,7 +372,7 @@ function FormResponses() {
     <>
       <PageHeader
         title="Responses"
-        subtitle={`${submissions.length} response${submissions.length !== 1 ? "s" : ""} · ${form.name}`}
+        subtitle={`${submissions.length} ${form.longitudinal ? "visit" : "response"}${submissions.length !== 1 ? "s" : ""} · ${form.name}`}
         back={`/forms/${id}`}
         action={
           <div className="flex items-center gap-1.5">
@@ -416,7 +440,7 @@ function FormResponses() {
           fields={form.fields}
           onClose={() => setSelected(null)}
           onDelete={() => handleDelete(selected)}
-          canDelete={isOwner}
+          canDelete={isOwner && !form.longitudinal}
         />
       )}
     </>
