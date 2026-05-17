@@ -33,7 +33,7 @@ import {
   Stethoscope, MapPin, Camera, Upload,
   SeparatorHorizontal, SquareSplitHorizontal,
   GripVertical, Trash2, Copy, GitBranch, Plus, Settings, ChevronRight, X,
-  Repeat,
+  Repeat, ChevronUp, ChevronDown,
 } from "lucide-react";
 
 const searchSchema = z.object({ edit: z.string().optional() });
@@ -369,11 +369,19 @@ function FieldConfigPanel({
   allFields,
   onChange,
   onClose,
+  onPrev,
+  onNext,
+  fieldIndex,
+  totalFields,
 }: {
   field: FormField;
   allFields: FormField[];
   onChange: (patch: Partial<FormField>) => void;
   onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  fieldIndex?: number;
+  totalFields?: number;
 }) {
   const palette = getPaletteItem(field.type);
   const Icon = palette?.icon ?? Type;
@@ -384,10 +392,33 @@ function FieldConfigPanel({
         <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest">
           <Icon className="h-4 w-4" />
           {palette?.label ?? field.type}
+          {fieldIndex !== undefined && totalFields !== undefined && (
+            <span className="text-muted-foreground font-normal normal-case tracking-normal">
+              {fieldIndex + 1}/{totalFields}
+            </span>
+          )}
         </div>
-        <button onClick={onClose} className="border border-border p-1 hover:bg-muted">
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onPrev}
+            disabled={!onPrev}
+            title="Previous field"
+            className="border border-border p-1 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onNext}
+            disabled={!onNext}
+            title="Next field"
+            className="border border-border p-1 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={onClose} className="border border-border p-1 hover:bg-muted ml-1">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="space-y-4 p-4">
@@ -1194,12 +1225,20 @@ export default function FormBuilderPage() {
     </div>
   );
 
+  const selectedIdx = selectedField ? fields.findIndex((f) => f.id === selectedField.id) : -1;
+  const navigableFields = fields.filter((f) => f.type !== "page_break");
+  const navIdx = selectedField ? navigableFields.findIndex((f) => f.id === selectedField.id) : -1;
+
   const ConfigPanel = selectedField ? (
     <FieldConfigPanel
       field={selectedField}
       allFields={fields}
       onChange={(patch) => updateField(selectedField.id, patch)}
       onClose={() => { setSelectedId(null); setPanelMode("palette"); setMobileTab(1); }}
+      onPrev={navIdx > 0 ? () => setSelectedId(navigableFields[navIdx - 1].id) : undefined}
+      onNext={navIdx < navigableFields.length - 1 ? () => setSelectedId(navigableFields[navIdx + 1].id) : undefined}
+      fieldIndex={selectedIdx}
+      totalFields={fields.length}
     />
   ) : (
     <div className="flex-1 p-4 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-8">
