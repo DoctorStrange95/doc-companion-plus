@@ -1,14 +1,20 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { z } from "zod";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
+const searchSchema = z.object({
+  token: z.string().optional(),
+});
+
 export const Route = createFileRoute("/verify-email")({
   component: VerifyEmail,
+  validateSearch: (s) => searchSchema.parse(s),
 });
 
 function VerifyEmail() {
-  const { token } = Route.useSearch() as { token?: string };
+  const { token } = Route.useSearch();
   const nav = useNavigate();
   const { user } = useAuth();
   const [status, setStatus] = useState<"checking" | "success" | "error">("checking");
@@ -18,10 +24,9 @@ function VerifyEmail() {
       setStatus("error");
       return;
     }
-    api(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)
+    api<{ ok: boolean }>(`/api/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then(() => {
         setStatus("success");
-        // Reload user state after a moment so the banner disappears
         setTimeout(() => nav({ to: "/", replace: true }), 2500);
       })
       .catch(() => setStatus("error"));

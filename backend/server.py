@@ -252,6 +252,7 @@ class RegisterIn(BaseModel):
     name: str = Field(default="", max_length=255)
     phone: str = Field(default="", max_length=32)
     best_suited_role: str = Field(default="", max_length=64)
+    proof_token: Optional[str] = None  # OTP proof from /api/auth/verify-register-otp
 
 
 class LoginIn(BaseModel):
@@ -504,7 +505,19 @@ def google_success_page(token: str, user: User, return_to: str) -> HTMLResponse:
 async def register(body: RegisterIn, response: Response, db: AsyncSession = Depends(get_db)):
     await ensure_user_profile_columns_in_session(db)
     email = body.email.lower()
-    verify_token = secrets.token_urlsafe(32)
+
+    # Check if the email was pre-verified via OTP flow
+    pre_verified = False
+    if body.proof_token:
+        proof_row = (await db.execute(
+            text("SELECT id FROM email_otps WHERE email=:e AND otp=:tok AND used=FALSE AND expires_at > now() LIMIT 1"),
+            {"e": f"proof:{email}", "tok": body.proof_token},
+        )).mappings().first()
+        if proof_row:
+            await db.execute(text("UPDATE email_otps SET used=TRUE WHERE id=:id"), {"id": str(proof_row["id"])})
+            pre_verified = True
+
+    verify_token = secrets.token_urlsafe(32) if not pre_verified else None
     try:
         res = await db.execute(select(User).where(User.email == email))
         if res.scalar_one_or_none():
@@ -515,7 +528,7 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
             name=body.name.strip() or email.split("@")[0],
             phone=body.phone.strip(),
             best_suited_role=body.best_suited_role.strip(),
-            email_verified=False,
+            email_verified=pre_verified,
             email_verification_token=verify_token,
         )
         db.add(user)
@@ -530,7 +543,7 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
         await db.execute(
             text(
                 "INSERT INTO users (id, email, password_hash, name, role, email_verified, email_verification_token, created_at) "
-                "VALUES (:id, :email, :password_hash, :name, :role, FALSE, :vtok, now())"
+                "VALUES (:id, :email, :password_hash, :name, :role, :ev, :vtok, now())"
             ),
             {
                 "id": new_id,
@@ -538,6 +551,7 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
                 "password_hash": hash_password(body.password),
                 "name": body.name.strip() or email.split("@")[0],
                 "role": "worker",
+                "ev": pre_verified,
                 "vtok": verify_token,
             },
         )
@@ -550,7 +564,9 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
         "access_token", token, httponly=True, secure=False, samesite="lax",
         max_age=60 * 60 * 24 * 7, path="/",
     )
-    # Send verification email — fire-and-forget, never block registration
+    # Send verification email only if the email was NOT already verified via OTP
+    if pre_verified or not verify_token:
+        return TokenOut(access_token=token, user=to_user_out(user))
     verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
     verify_html = f"""
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
@@ -650,13 +666,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
         {"tok": token},
     )).mappings().first()
     if not row:
-        return HTMLResponse("""
-        <html><head><meta charset="utf-8"><title>Already verified</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding:60px">
-          <h2>Link already used or invalid</h2>
-          <p>Your email may already be verified. <a href="https://research.vyasaa.com/">Go to app</a></p>
-        </body></html>
-        """, status_code=400)
+        raise HTTPException(status_code=400, detail="Link invalid or already used")
     await db.execute(
         text("UPDATE users SET email_verified = TRUE, email_verification_token = NULL WHERE id = :uid"),
         {"uid": str(row["id"])},
@@ -664,15 +674,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
     from auth import _cache_invalidate
     _cache_invalidate(str(row["id"]))
-    return HTMLResponse("""
-    <html><head><meta charset="utf-8"><title>Email verified</title>
-    <meta http-equiv="refresh" content="3;url=https://research.vyasaa.com/"></head>
-    <body style="font-family:sans-serif;text-align:center;padding:60px">
-      <h2 style="font-size:24px;font-weight:800">Email verified!</h2>
-      <p>You're all set. Redirecting to the app&hellip;</p>
-      <p><a href="https://research.vyasaa.com/">Click here if you're not redirected</a></p>
-    </body></html>
-    """)
+    return {"ok": True}
 
 
 @app.post("/api/auth/resend-verification")
@@ -715,6 +717,98 @@ SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
 SMTP_USER = os.environ.get("SMTP_USER", "support@vyasaa.com")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://research.vyasaa.com")
+
+
+# ── Pre-registration email OTP ───────────────────────────────────────────────
+
+class SendOtpIn(BaseModel):
+    email: EmailStr
+
+
+class VerifyOtpIn(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+async def _ensure_otps_table():
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS email_otps (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                otp TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                used BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_otps_email ON email_otps (email)"))
+
+
+@app.post("/api/auth/send-register-otp")
+async def send_register_otp(body: SendOtpIn, db: AsyncSession = Depends(get_db)):
+    """Step 1 of registration: send a 6-digit OTP to verify the email address."""
+    email = body.email.lower()
+    # Check not already registered
+    row = (await db.execute(text("SELECT id FROM users WHERE lower(email) = :e LIMIT 1"), {"e": email})).first()
+    if row:
+        raise HTTPException(status_code=409, detail="Email already registered")
+    await _ensure_otps_table()
+    # Invalidate old OTPs for this email
+    await db.execute(text("UPDATE email_otps SET used=TRUE WHERE email=:e AND used=FALSE"), {"e": email})
+    otp = str(secrets.randbelow(900000) + 100000)  # 6-digit
+    expires = datetime.utcnow() + timedelta(minutes=10)
+    await db.execute(
+        text("INSERT INTO email_otps (id, email, otp, expires_at) VALUES (:id, :e, :otp, :exp)"),
+        {"id": str(uuid.uuid4()), "e": email, "otp": otp, "exp": expires},
+    )
+    await db.commit()
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em">
+        Verify your email
+      </h2>
+      <p>Your Vyasa Research verification code is:</p>
+      <div style="margin:28px 0;text-align:center">
+        <span style="font-size:40px;font-weight:900;letter-spacing:0.15em;background:#000;color:#fff;padding:16px 28px;display:inline-block">
+          {otp}
+        </span>
+      </div>
+      <p style="color:#666;font-size:12px">This code expires in <strong>10 minutes</strong>. If you didn't request this, ignore this email.</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:11px">Vyasa Research · research.vyasaa.com</p>
+    </div>
+    """
+    try:
+        await send_email(email, "Your Vyasa Research verification code", html)
+    except Exception as e:
+        print(f"[send_register_otp] email error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email. Please check the address and try again.")
+    return {"ok": True}
+
+
+@app.post("/api/auth/verify-register-otp")
+async def verify_register_otp(body: VerifyOtpIn, db: AsyncSession = Depends(get_db)):
+    """Step 2 of registration: confirm the OTP. Returns a short-lived proof token."""
+    email = body.email.lower()
+    await _ensure_otps_table()
+    row = (await db.execute(
+        text("SELECT id FROM email_otps WHERE email=:e AND otp=:otp AND used=FALSE AND expires_at > now() LIMIT 1"),
+        {"e": email, "otp": body.otp.strip()},
+    )).mappings().first()
+    if not row:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+    await db.execute(text("UPDATE email_otps SET used=TRUE WHERE id=:id"), {"id": str(row["id"])})
+    await db.commit()
+    # Issue a short-lived proof token so the register endpoint can trust this email
+    proof = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(minutes=30)
+    await db.execute(
+        text("INSERT INTO email_otps (id, email, otp, expires_at) VALUES (:id, :e, :proof, :exp)"),
+        {"id": str(uuid.uuid4()), "e": f"proof:{email}", "otp": proof, "exp": expires},
+    )
+    await db.commit()
+    return {"proof_token": proof}
 
 
 def _send_email_sync(to: str, subject: str, html: str) -> None:

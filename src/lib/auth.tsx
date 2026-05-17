@@ -21,6 +21,7 @@ interface AuthState {
     name: string,
     phone: string,
     bestSuitedRole: string,
+    proofToken?: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (name: string, phone: string, bestSuitedRole: string) => Promise<void>;
@@ -120,12 +121,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     name: string,
     phone: string,
     bestSuitedRole: string,
+    proofToken?: string,
   ) => {
     const res = await api<{ access_token: string; user: AuthUser }>(
       "/api/auth/register",
       {
         method: "POST",
-        body: JSON.stringify({ email, password, name, phone, best_suited_role: bestSuitedRole }),
+        body: JSON.stringify({ email, password, name, phone, best_suited_role: bestSuitedRole, proof_token: proofToken ?? null }),
       },
     );
     setToken(res.access_token);
