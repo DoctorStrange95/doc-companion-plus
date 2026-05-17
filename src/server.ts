@@ -73,13 +73,21 @@ export default {
     const url = new URL(request.url);
 
     // Proxy /api/* to FastAPI backend (Railway in prod, localhost:8001 in dev)
-    const backendUrl = env?.BACKEND_URL ?? "http://localhost:8001";
+    // Prefer env.BACKEND_URL (Cloudflare Workers), fall back to process.env (Vercel Node)
+    const backendUrl = env?.BACKEND_URL
+      ?? (typeof process !== "undefined" ? process.env.BACKEND_URL : undefined)
+      ?? "http://localhost:8001";
     if (url.pathname.startsWith("/api/")) {
       const base = backendUrl.replace(/\/$/, "");
       const target = `${base}${url.pathname}${url.search}`;
+      // Explicitly copy headers to ensure Authorization is not silently dropped
+      const proxyHeaders = new Headers();
+      request.headers.forEach((value, key) => {
+        proxyHeaders.set(key, value);
+      });
       const proxyReq = new Request(target, {
         method: request.method,
-        headers: request.headers,
+        headers: proxyHeaders,
         body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
         redirect: "manual",
       });
