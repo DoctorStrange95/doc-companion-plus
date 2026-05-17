@@ -565,6 +565,39 @@ async def me(user: User = Depends(get_current_user)):
     return to_user_out(user)
 
 
+class UpdateProfileIn(BaseModel):
+    name: str = Field(default="", max_length=255)
+    phone: str = Field(default="", max_length=32)
+    best_suited_role: str = Field(default="", max_length=64)
+
+
+@app.patch("/api/auth/me", response_model=UserOut)
+async def update_profile(body: UpdateProfileIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await db.execute(
+        text("UPDATE users SET name=:name, phone=:phone, best_suited_role=:role WHERE id=:id"),
+        {"name": body.name.strip(), "phone": body.phone.strip(), "role": body.best_suited_role.strip(), "id": str(user.id)},
+    )
+    await db.commit()
+    user.name = body.name.strip()
+    user.phone = body.phone.strip()  # type: ignore[assignment]
+    user.best_suited_role = body.best_suited_role.strip()  # type: ignore[assignment]
+    return to_user_out(user)
+
+
+@app.delete("/api/auth/me", status_code=204)
+async def delete_account(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    uid = str(user.id)
+    # Delete in dependency order
+    await db.execute(text("DELETE FROM submissions WHERE owner_id=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM longitudinal_submissions WHERE owner_id=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM patients WHERE owner_id=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM forms WHERE owner_id=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM shares WHERE owner_id=:uid OR shared_with=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM password_reset_tokens WHERE user_id=:uid"), {"uid": uid})
+    await db.execute(text("DELETE FROM users WHERE id=:uid"), {"uid": uid})
+    await db.commit()
+
+
 # ── Email helper ────────────────────────────────────────────────────────────
 
 SMTP_HOST = os.environ.get("SMTP_HOST", "smtpout.secureserver.net")

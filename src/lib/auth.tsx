@@ -22,6 +22,8 @@ interface AuthState {
     bestSuitedRole: string,
   ) => Promise<void>;
   logout: () => Promise<void>;
+  updateProfile: (name: string, phone: string, bestSuitedRole: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -140,8 +142,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     store.clearForLogout();
   };
 
+  const updateProfile = async (name: string, phone: string, bestSuitedRole: string) => {
+    const updated = await api<AuthUser>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify({ name, phone, best_suited_role: bestSuitedRole }),
+    });
+    cacheUser(updated);
+    setUser(updated);
+    store.setWorker({ name: updated.name, village: store.get().worker.village });
+  };
+
+  const deleteAccount = async () => {
+    await api("/api/auth/me", { method: "DELETE" });
+    setToken(null);
+    cacheUser(null);
+    setUser(null);
+    store.clearForLogout();
+  };
+
   return (
-    <Ctx.Provider value={{ user, login, register, logout }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ user, login, register, logout, updateProfile, deleteAccount }}>{children}</Ctx.Provider>
   );
 }
 
