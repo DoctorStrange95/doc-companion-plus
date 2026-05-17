@@ -77,6 +77,14 @@ function FormDetail() {
 
   const formId = form?.id;
 
+  // Auto-open share modal when navigating here after auto-duplicate
+  useEffect(() => {
+    if (sessionStorage.getItem("autoOpenShare") === id) {
+      sessionStorage.removeItem("autoOpenShare");
+      setShowShare(true);
+    }
+  }, [id]);
+
   // When the share modal opens: ensure the form exists in the backend DB.
   // Seed forms and forms created offline have no ownerId — push them directly
   // so share-token generation succeeds on the first attempt without a 403 retry.
@@ -123,7 +131,18 @@ function FormDetail() {
       let res = await doGenerate();
       // 403 = form not yet in DB. Push it now and retry once.
       if (res.status === 403) {
-        await sync.pushForm(form);
+        try {
+          await sync.pushForm(form);
+        } catch {
+          // Form is owned by a different account on this server (e.g. a seeded template
+          // that another account pushed first). Auto-duplicate with a fresh ID so the
+          // user gets their own copy and can generate a link from there.
+          setTokenWorking(null);
+          const copy = store.duplicateForm(form.id);
+          sessionStorage.setItem("autoOpenShare", copy.id);
+          nav({ to: "/forms/$id", params: { id: copy.id } });
+          return;
+        }
         res = await doGenerate();
       }
       if (!res.ok) {
@@ -442,38 +461,83 @@ function FormDetail() {
                 onClick={() => setActiveTab('longitudinal')}
                 className={`px-4 py-2 text-[11px] font-bold uppercase tracking-wider ${activeTab === 'longitudinal' ? 'bg-primary' : 'bg-card hover:bg-muted'}`}
               >
-                Longitudinal Data ({longitudinalSubs.length})
+                Tracking Data
+                {longitudinalSubs.length > 0 && (
+                  <span className="ml-1.5 border border-border bg-card px-1 py-0.5 text-[9px] font-black">
+                    {longitudinalSubs.length} subject{longitudinalSubs.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </button>
             </div>
           )}
 
           {/* Longitudinal data view */}
           {activeTab === 'longitudinal' && form?.longitudinal && (
-            <div className="pb-4">
+            <div className="pb-4 space-y-3">
               {longitudinalSubs.length === 0 ? (
-                <div className="brutal-flat p-8 text-center text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                  No longitudinal data yet. Share the form link to start collecting.
+                <div className="brutal p-6 space-y-3">
+                  <div className="text-sm font-bold uppercase tracking-wider">No tracking data yet</div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Share the fill link with data collectors. Each submission from the same subject
+                    (identified by fixed fields) is grouped as a new visit automatically.
+                  </p>
+                  {!form.shared && (
+                    <button
+                      onClick={() => setShowShare(true)}
+                      className="flex items-center gap-2 border-2 border-border px-3 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30"
+                    >
+                      Get fill link →
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>
-                  <div className="flex justify-end mb-2">
+                  {/* Summary bar */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="border-2 border-border bg-card p-3 text-center">
+                      <div className="font-display text-2xl leading-none">{longitudinalSubs.length}</div>
+                      <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Subjects</div>
+                    </div>
+                    <div className="border-2 border-border bg-card p-3 text-center">
+                      <div className="font-display text-2xl leading-none">
+                        {longitudinalSubs.reduce((n, s) => n + s.visits.length, 0)}
+                      </div>
+                      <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Total visits</div>
+                    </div>
+                    <div className="border-2 border-border bg-card p-3 text-center">
+                      <div className="font-display text-2xl leading-none">
+                        {Math.max(...longitudinalSubs.map(s => s.visits.length), 0)}
+                      </div>
+                      <div className="mt-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Max visits</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Fixed columns identify the subject · Visit columns track change over time
+                    </p>
                     <button
                       type="button"
                       onClick={() => {
                         import('@/lib/longitudinalExport').then(m => m.exportLongitudinalCSV(longitudinalSubs, form!));
                       }}
-                      className="border-2 border-border bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
+                      className="shrink-0 border-2 border-border bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-wider hover:bg-muted"
                     >
                       Export CSV ↓
                     </button>
                   </div>
+
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse min-w-max">
                       <thead>
                         <tr className="border-b-2 border-border bg-muted">
                           {(form?.fields.filter(f => f.longitudinalRole === 'fixed' && f.type !== 'section_header') ?? []).map(f => (
-                            <th key={f.id} className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[10px] border-r border-border">{f.label} 🔒</th>
+                            <th key={f.id} className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[10px] border-r border-border whitespace-nowrap">
+                              {f.label}
+                              <span className="ml-1 text-[8px] font-black text-muted-foreground">(fixed)</span>
+                            </th>
                           ))}
+                          <th className="px-3 py-2 text-left font-bold uppercase tracking-wider text-[10px] border-r border-border whitespace-nowrap">Visits</th>
                           {(() => {
                             const maxVisits = Math.max(...longitudinalSubs.map(s => s.visits.length), 0);
                             const trackedFields = form?.fields.filter(f => f.longitudinalRole !== 'fixed' && f.type !== 'section_header' && f.type !== 'page_break') ?? [];
@@ -495,11 +559,23 @@ function FormDetail() {
                           return (
                             <tr key={sub.id} className={ri % 2 === 0 ? 'bg-card' : 'bg-muted/30'}>
                               {fixedFields.map(f => (
-                                <td key={f.id} className="px-3 py-2 font-bold border-r border-border">{String(sub.fixedData[f.id] ?? '—')}</td>
+                                <td key={f.id} className="px-3 py-2 font-bold border-r border-border whitespace-nowrap">{String(sub.fixedData[f.id] ?? '—')}</td>
                               ))}
+                              <td className="px-3 py-2 border-r border-border text-center font-bold">{sub.visits.length}</td>
                               {Array.from({ length: maxVisits }, (_, i) =>
                                 trackedFields.map(f => (
-                                  <td key={`${f.id}_v${i+1}`} className="px-3 py-2 border-r border-border">{String(sub.visits[i]?.data[f.id] ?? '—')}</td>
+                                  <td key={`${f.id}_v${i+1}`} className="px-3 py-2 border-r border-border whitespace-nowrap">
+                                    {sub.visits[i] ? (
+                                      <>
+                                        <span>{String(sub.visits[i].data[f.id] ?? '—')}</span>
+                                        {i === 0 && (
+                                          <div className="text-[9px] text-muted-foreground mt-0.5">
+                                            {new Date(sub.visits[i].timestamp).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : '—'}
+                                  </td>
                                 ))
                               )}
                             </tr>

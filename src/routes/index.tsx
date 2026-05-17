@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { useStore } from "@/lib/store";
 import { PageShell, SectionTitle } from "@/components/PageShell";
 import {
@@ -11,6 +12,7 @@ export const Route = createFileRoute("/")({ component: Home });
 function Home() {
   const patients = useStore((s) => s.patients);
   const submissions = useStore((s) => s.submissions);
+  const longitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const forms = useStore((s) => s.forms);
   const worker = useStore((s) => s.worker);
 
@@ -18,6 +20,38 @@ function Home() {
   today.setHours(0, 0, 0, 0);
   const todayCount = submissions.filter((s) => s.createdAt >= today.getTime()).length;
   const activePatients = patients.filter((p) => p.status === "Active").length;
+
+  // Group all activity by form — one card per form, most recent first
+  const recentActivity = useMemo(() => {
+    type ActivityEntry = { formId: string; formName: string; count: number; lastAt: number; isLongitudinal: boolean };
+    const map = new Map<string, ActivityEntry>();
+
+    for (const s of submissions) {
+      const e = map.get(s.formId);
+      if (e) {
+        e.count++;
+        if (s.createdAt > e.lastAt) e.lastAt = s.createdAt;
+      } else {
+        map.set(s.formId, { formId: s.formId, formName: s.formName || "Untitled form", count: 1, lastAt: s.createdAt, isLongitudinal: false });
+      }
+    }
+
+    for (const ls of longitudinalSubmissions) {
+      const form = forms.find((f) => f.id === ls.formId);
+      const lastVisitTs = ls.visits.length > 0
+        ? new Date(ls.visits[ls.visits.length - 1].timestamp).getTime()
+        : 0;
+      const e = map.get(ls.formId);
+      if (e) {
+        e.count += ls.visits.length;
+        if (lastVisitTs > e.lastAt) e.lastAt = lastVisitTs;
+      } else {
+        map.set(ls.formId, { formId: ls.formId, formName: form?.name ?? "Longitudinal form", count: ls.visits.length, lastAt: lastVisitTs, isLongitudinal: true });
+      }
+    }
+
+    return [...map.values()].sort((a, b) => b.lastAt - a.lastAt).slice(0, 5);
+  }, [submissions, longitudinalSubmissions, forms]);
 
   return (
     <>
@@ -53,45 +87,50 @@ function Home() {
         </div>
 
         <div className="mt-8">
-          <SectionTitle kicker={`${submissions.length}`}>Recent activity</SectionTitle>
-          {submissions.length === 0 ? (
+          <SectionTitle kicker={`${submissions.length + longitudinalSubmissions.reduce((n, ls) => n + ls.visits.length, 0)}`}>Recent activity</SectionTitle>
+          {recentActivity.length === 0 ? (
             <div className="brutal-flat p-6 text-center text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               No activity yet.
             </div>
           ) : (
             <ul className="brutal divide-y-2 divide-border">
-              {[...submissions].sort((a, b) => b.createdAt - a.createdAt).slice(0, 5).map((s) => {
-                const p = s.patientId ? patients.find((x) => x.id === s.patientId) : null;
-                const label = p?.name ?? (s.patientId ? "Unknown patient" : s.formName);
-                const sub = p ? `${s.formName} · ${new Date(s.createdAt).toLocaleString()}` : new Date(s.createdAt).toLocaleString();
+              {recentActivity.map((entry) => {
+                const todayResponses = submissions.filter(
+                  (s) => s.formId === entry.formId && s.createdAt >= today.getTime()
+                ).length;
+                const relativeDate = (() => {
+                  const d = new Date(entry.lastAt);
+                  const diffMs = Date.now() - entry.lastAt;
+                  const diffDays = Math.floor(diffMs / 86400000);
+                  if (diffDays === 0) return `Today · ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+                  if (diffDays === 1) return "Yesterday";
+                  if (diffDays < 7) return `${diffDays}d ago`;
+                  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+                })();
                 return (
-                  <li key={s.id}>
-                    {p ? (
-                      <Link
-                        to="/patients/$id"
-                        params={{ id: s.patientId }}
-                        className="flex items-center gap-3 px-4 py-3 hover:bg-primary/30"
-                      >
-                        <div className="flex h-9 w-9 items-center justify-center border-2 border-border bg-primary">
-                          <Activity className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-bold">{label}</div>
-                          <div className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{sub}</div>
-                        </div>
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    ) : (
-                      <div className="flex items-center gap-3 px-4 py-3">
-                        <div className="flex h-9 w-9 items-center justify-center border-2 border-border bg-card">
-                          <ClipboardList className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-bold">{label}</div>
-                          <div className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{sub}</div>
+                  <li key={entry.formId}>
+                    <Link
+                      to="/forms/$id"
+                      params={{ id: entry.formId }}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-primary/30"
+                    >
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center border-2 border-border ${entry.isLongitudinal ? "bg-primary" : "bg-card"}`}>
+                        {entry.isLongitudinal ? <TrendingUp className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold">{entry.formName}</div>
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <span>{entry.count} response{entry.count !== 1 ? "s" : ""}</span>
+                          {todayResponses > 0 && (
+                            <span className="border border-primary bg-primary/20 px-1 py-0.5 text-[9px] font-black tracking-widest text-primary">
+                              +{todayResponses} today
+                            </span>
+                          )}
+                          <span>· {relativeDate}</span>
                         </div>
                       </div>
-                    )}
+                      <ArrowRight className="h-4 w-4 shrink-0" />
+                    </Link>
                   </li>
                 );
               })}
