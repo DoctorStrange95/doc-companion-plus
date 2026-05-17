@@ -2,9 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib/store";
+import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { PatientPicker } from "@/components/PatientPicker";
-import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2 } from "lucide-react";
+import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2, Search } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 const search = z.object({ patient: z.string().optional() });
 
@@ -84,12 +86,19 @@ function FillForm() {
   const nav = useNavigate();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const submissions = useStore((s) => s.submissions);
+  const longitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const [selectedPatient, setSelectedPatient] = useState(patientId ?? "");
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState("");
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
+
+  // Longitudinal subject picker state
+  type SubjectState = { mode: 'new' } | { mode: 'selected'; sub: LongitudinalSubmission };
+  const [subjectState, setSubjectState] = useState<SubjectState>({ mode: 'new' });
+  const [subjectSearch, setSubjectSearch] = useState('');
+  const [subjectResults, setSubjectResults] = useState<LongitudinalSubmission[]>([]);
 
   // ── Fill draft cache ─────────────────────────────────────────────────────────
   // Values entered while filling a form are cached in localStorage so that a
@@ -131,8 +140,53 @@ function FillForm() {
     void sync.pull();
   }, []);
 
+  // Longitudinal subject search — local store + server
+  useEffect(() => {
+    if (!form?.longitudinal || !subjectSearch.trim()) { setSubjectResults([]); return; }
+    const q = subjectSearch.trim().toLowerCase();
+    const localMatches = longitudinalSubmissions
+      .filter(s => s.formId === id)
+      .filter(s => Object.values(s.fixedData).some(v => String(v).toLowerCase().includes(q)));
+    if (form.shareToken) {
+      const ctrl = new AbortController();
+      fetch(`${API_BASE}/api/forms/public/${form.shareToken}/subjects?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+        .then(r => r.ok ? r.json() : [])
+        .then((serverResults: LongitudinalSubmission[]) => {
+          const map = new Map<string, LongitudinalSubmission>();
+          for (const s of localMatches) map.set(s.id, s);
+          for (const s of serverResults) map.set(s.id, s);
+          setSubjectResults([...map.values()].slice(0, 10));
+        })
+        .catch(() => setSubjectResults(localMatches.slice(0, 10)));
+      return () => ctrl.abort();
+    }
+    setSubjectResults(localMatches.slice(0, 10));
+  }, [subjectSearch, longitudinalSubmissions, form, id]);
+
+  const handleSubjectSelect = (sub: LongitudinalSubmission) => {
+    setSubjectState({ mode: 'selected', sub });
+    const fixedIds = form?.fields.filter(f => f.longitudinalRole === 'fixed').map(f => f.id) ?? [];
+    const newVals: Record<string, unknown> = {};
+    fixedIds.forEach(fid => { newVals[fid] = sub.fixedData[fid]; });
+    setValues(newVals);
+    setSubjectSearch('');
+    setSubjectResults([]);
+  };
+
+  const clearSubject = () => {
+    setSubjectState({ mode: 'new' });
+    setValues({});
+    setSubjectSearch('');
+  };
+
   const set = (fieldId: string, val: unknown) =>
     setValues((prev) => ({ ...prev, [fieldId]: val }));
+
+  const fixedFieldIds = useMemo(() => {
+    if (!form?.longitudinal) return [];
+    if (form.fixedFieldIds && form.fixedFieldIds.length > 0) return form.fixedFieldIds;
+    return form.fields.filter((f) => f.longitudinalRole === 'fixed').map((f) => f.id);
+  }, [form]);
 
   const allVisibleFields = useMemo(() => {
     if (!form) return [];
@@ -281,8 +335,8 @@ function FillForm() {
     window.scrollTo(0, 0);
   };
 
-  // Only longitudinal forms (or forms opened from a patient profile) need a patient linked
-  const needsPatient = form.longitudinal || !!patientId;
+  // Only non-longitudinal forms opened from a patient profile need a patient linked
+  const needsPatient = !form.longitudinal && !!patientId;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,8 +348,23 @@ function FillForm() {
     Object.entries(values).forEach(([k, v]) => {
       if (visibleIds.has(k)) cleaned[k] = v;
     });
-    // Clear the fill draft before saving — the submission is now the record of truth.
     try { localStorage.removeItem(fillDraftKey); } catch { /* ignore */ }
+
+    if (form.longitudinal) {
+      store.submitLongitudinalVisit(form.id, cleaned, {
+        id: form.id,
+        name: form.name,
+        category: form.category,
+        fields: form.fields,
+        createdAt: form.createdAt,
+        longitudinal: true,
+        fixedFieldIds: form.fixedFieldIds ?? form.fields.filter(f => f.longitudinalRole === 'fixed').map(f => f.id),
+      });
+      void sync.drain();
+      nav({ to: "/forms/$id", params: { id: form.id } });
+      return;
+    }
+
     store.addSubmission({
       patientId: selectedPatient || "",
       formId: form.id,
@@ -339,6 +408,63 @@ function FillForm() {
           </div>
         )}
         <form onSubmit={submit} className="space-y-4">
+          {/* Longitudinal subject picker */}
+          {form.longitudinal && (
+            <div className="brutal p-4">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                Subject tracking
+              </div>
+              {subjectState.mode === 'selected' ? (
+                <div className="flex items-center justify-between gap-2 border-2 border-primary bg-primary/10 px-3 py-2">
+                  <div>
+                    <div className="text-sm font-bold">
+                      {Object.values(subjectState.sub.fixedData).filter(Boolean).join(' · ') || 'Subject'}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-semibold mt-0.5">
+                      {subjectState.sub.visits.length} previous visit{subjectState.sub.visits.length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                  <button type="button" onClick={clearSubject} className="border border-border p-1 hover:bg-muted">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      className="input-brutal w-full pl-8 text-sm"
+                      placeholder="Search existing subject…"
+                      value={subjectSearch}
+                      onChange={e => setSubjectSearch(e.target.value)}
+                    />
+                  </div>
+                  {subjectResults.length > 0 && (
+                    <ul className="brutal-flat mt-1 divide-y divide-border">
+                      {subjectResults.map(sub => (
+                        <li key={sub.id}>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-primary/20 text-sm"
+                            onClick={() => handleSubjectSelect(sub)}
+                          >
+                            <span className="font-bold">{Object.values(sub.fixedData).filter(Boolean).join(' · ')}</span>
+                            <span className="ml-2 text-[10px] text-muted-foreground">{sub.visits.length} visit{sub.visits.length !== 1 ? 's' : ''}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {subjectSearch.trim() && subjectResults.length === 0 && (
+                    <p className="mt-1 text-[11px] text-muted-foreground px-1">No existing subject — fill in fields below to create new</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Patient picker for non-longitudinal forms opened from patient profile */}
           {needsPatient && !patientId && (
             <div className="brutal p-4">
               <PatientPicker
@@ -381,25 +507,29 @@ function FillForm() {
           )}
 
           <div className="brutal space-y-4 p-4">
-            {visibleFields.map((f) => (
-              <FieldRenderer
-                key={f.id}
-                field={f}
-                value={values[f.id]}
-                values={values}
-                allFields={form.fields}
-                geoLoading={geoLoading}
-                onChange={(v) => set(f.id, v)}
-                onGeo={() => captureGeo(f.id)}
-                onGeoClear={() =>
-                  setValues((prev) => {
-                    const n = { ...prev };
-                    delete n[f.id];
-                    return n;
-                  })
-                }
-              />
-            ))}
+            {visibleFields.map((f) => {
+              const isFixedLocked = form.longitudinal && subjectState.mode === 'selected' && fixedFieldIds.includes(f.id);
+              return (
+                <FieldRenderer
+                  key={f.id}
+                  field={f}
+                  value={values[f.id]}
+                  values={values}
+                  allFields={form.fields}
+                  geoLoading={geoLoading}
+                  readOnly={isFixedLocked}
+                  onChange={(v) => set(f.id, v)}
+                  onGeo={() => captureGeo(f.id)}
+                  onGeoClear={() =>
+                    setValues((prev) => {
+                      const n = { ...prev };
+                      delete n[f.id];
+                      return n;
+                    })
+                  }
+                />
+              );
+            })}
             {visibleFields.length === 0 && (
               <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 No questions to show yet — answer earlier fields above.
@@ -451,6 +581,7 @@ interface FieldRendererProps {
   values: Record<string, unknown>;
   allFields: FormField[];
   geoLoading: string | null;
+  readOnly?: boolean;
   onChange: (v: unknown) => void;
   onGeo: () => void;
   onGeoClear: () => void;
@@ -462,6 +593,7 @@ function FieldRenderer({
   values,
   allFields,
   geoLoading,
+  readOnly,
   onChange,
   onGeo,
   onGeoClear,
@@ -483,6 +615,7 @@ function FieldRenderer({
         {f.label}
         {f.unit && <span className="text-muted-foreground"> ({f.unit})</span>}
         {f.required && <span className="ml-0.5 text-destructive">*</span>}
+        {readOnly && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-widest border border-muted-foreground px-1 py-0.5 text-muted-foreground">fixed</span>}
       </label>
       {f.hint && <p className="mb-1.5 text-[11px] text-muted-foreground">{f.hint}</p>}
 
@@ -490,8 +623,9 @@ function FieldRenderer({
       {(f.type === "short_text" || f.type === "text") && (
         <input
           value={(value as string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
-          className="input-brutal"
+          className={`input-brutal${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
@@ -500,8 +634,9 @@ function FieldRenderer({
         <textarea
           rows={3}
           value={(value as string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
-          className="input-brutal resize-none"
+          className={`input-brutal resize-none${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
@@ -514,10 +649,11 @@ function FieldRenderer({
           min={f.min}
           max={f.max}
           value={(value as number | string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) =>
             onChange(e.target.value === "" ? "" : Number(e.target.value))
           }
-          className="input-brutal font-mono"
+          className={`input-brutal font-mono${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
@@ -526,8 +662,9 @@ function FieldRenderer({
         <input
           type="date"
           value={(value as string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
-          className="input-brutal"
+          className={`input-brutal${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
@@ -536,8 +673,9 @@ function FieldRenderer({
         <input
           type="time"
           value={(value as string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
-          className="input-brutal"
+          className={`input-brutal${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
@@ -546,8 +684,9 @@ function FieldRenderer({
         <input
           type="datetime-local"
           value={(value as string) ?? ""}
+          readOnly={readOnly}
           onChange={(e) => onChange(e.target.value)}
-          className="input-brutal"
+          className={`input-brutal${readOnly ? " opacity-60 cursor-not-allowed" : ""}`}
         />
       )}
 
