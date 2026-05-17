@@ -184,12 +184,13 @@ function FormsList() {
                         >
                           <Edit2 className="h-3 w-3" /> Edit
                         </Link>
-                        <button
-                          onClick={() => { store.duplicateForm(f.id); }}
+                        <Link
+                          to="/forms/$id/responses"
+                          params={{ id: f.id }}
                           className="flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/20 border-r border-border"
                         >
-                          <Copy className="h-3 w-3" /> Duplicate
-                        </button>
+                          <List className="h-3 w-3" /> Responses
+                        </Link>
                         <Link
                           to="/forms/$id"
                           params={{ id: f.id }}
