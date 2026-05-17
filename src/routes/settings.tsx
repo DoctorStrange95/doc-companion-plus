@@ -22,7 +22,7 @@ const PLANS = [
     price: null,
     icon: Sparkles,
     color: "bg-primary",
-    features: ["Lifetime free — selected by core team", "Up to 10 forms", "1,000 submissions", "Offline-first sync"],
+    features: ["Lifetime free — selected by core team", "Up to 5 forms", "500 submissions / month", "Offline-first sync"],
     cta: null,
   },
   {
