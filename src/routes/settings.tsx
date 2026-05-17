@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { ApiError } from "@/lib/api";
 import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
 import {
@@ -105,8 +106,12 @@ function Settings() {
     try {
       await updateProfile(editName.trim(), editPhone.trim(), editRole);
       setEditing(false);
-    } catch {
-      setSaveError("Failed to save — please try again.");
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setSaveError(`Error ${e.status}: ${e.detail ?? "Failed to save"}`);
+      } else {
+        setSaveError((e as Error).message || "Failed to save — please try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -380,7 +385,7 @@ function Settings() {
         </section>
 
         <p className="mt-6 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Vyasa Research · Beta v0.3
+          Vyasa Research · Beta v0.4 · Build 188
         </p>
       </PageShell>
     </>

@@ -578,6 +578,9 @@ async def update_profile(body: UpdateProfileIn, user: User = Depends(get_current
         {"name": body.name.strip(), "phone": body.phone.strip(), "role": body.best_suited_role.strip(), "id": str(user.id)},
     )
     await db.commit()
+    # Invalidate the in-process user cache so the next request re-fetches from DB.
+    from auth import _cache_invalidate
+    _cache_invalidate(str(user.id))
     user.name = body.name.strip()
     user.phone = body.phone.strip()  # type: ignore[assignment]
     user.best_suited_role = body.best_suited_role.strip()  # type: ignore[assignment]
