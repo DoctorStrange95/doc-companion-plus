@@ -300,6 +300,7 @@ function PrintFormPage() {
       <style>{`
         @media print {
           .no-print { display: none !important; }
+          nav, header { display: none !important; }
           body { margin: 0; }
           @page { margin: 18mm 15mm; size: A4 portrait; }
         }

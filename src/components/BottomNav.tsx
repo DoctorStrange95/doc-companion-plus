@@ -24,7 +24,7 @@ export function BottomNav() {
   const tabs = user ? authTabs : guestTabs;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-border bg-card">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t-2 border-border bg-card print:hidden">
       <div className="mx-auto flex max-w-2xl items-stretch justify-between">
         {tabs.map(({ to, label, icon: Icon }, i) => {
           const active =
