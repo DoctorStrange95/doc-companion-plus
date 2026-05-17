@@ -318,19 +318,34 @@ function PublicFiller() {
     if (email) setRespondentEmail(email);
   };
 
-  // Subject search for longitudinal forms
+  // Subject search for longitudinal forms — checks local store AND server
   useEffect(() => {
     if (!form?.longitudinal || !subjectSearch.trim()) {
       setSubjectResults([]);
       return;
     }
     const q = subjectSearch.trim().toLowerCase();
-    const matches = longitudinalSubmissions
+    const localMatches = longitudinalSubmissions
       .filter(s => s.formId === form.id)
-      .filter(s => Object.values(s.fixedData).some(v => String(v).toLowerCase().includes(q)))
-      .slice(0, 8);
-    setSubjectResults(matches);
-  }, [subjectSearch, longitudinalSubmissions, form]);
+      .filter(s => Object.values(s.fixedData).some(v => String(v).toLowerCase().includes(q)));
+
+    // Always fetch from server so public/anonymous users can find existing subjects
+    const controller = new AbortController();
+    fetch(`${API_BASE}/api/forms/public/${token}/subjects?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() : [])
+      .then((serverResults: LongitudinalSubmission[]) => {
+        // Merge: deduplicate by id, preferring server data (more up-to-date visits)
+        const map = new Map<string, LongitudinalSubmission>();
+        for (const s of localMatches) map.set(s.id, s);
+        for (const s of serverResults) map.set(s.id, s);
+        setSubjectResults([...map.values()].slice(0, 10));
+      })
+      .catch(() => {
+        // Offline — show local results only
+        setSubjectResults(localMatches.slice(0, 10));
+      });
+    return () => controller.abort();
+  }, [subjectSearch, longitudinalSubmissions, form, token]);
 
   const handleSubjectSelect = (sub: LongitudinalSubmission) => {
     setSubjectState({ mode: 'selected', sub });
@@ -349,14 +364,22 @@ function PublicFiller() {
     setSubjectSearch('');
   };
 
-  // Check for subjectKey query param on mount
+  // Check for subjectKey query param on mount — check local store then server
   useEffect(() => {
     if (!form?.longitudinal) return;
     const params = new URLSearchParams(window.location.search);
     const sk = params.get('subject');
     if (!sk) return;
     const existing = longitudinalSubmissions.find(s => s.formId === form.id && s.subjectKey === sk);
-    if (existing) handleSubjectSelect(existing);
+    if (existing) { handleSubjectSelect(existing); return; }
+    // Not in local store — fetch from server
+    fetch(`${API_BASE}/api/forms/public/${token}/subjects?q=${encodeURIComponent(sk)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((results: LongitudinalSubmission[]) => {
+        const match = results.find(s => s.subjectKey === sk);
+        if (match) handleSubjectSelect(match);
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, longitudinalSubmissions]);
 
@@ -472,6 +495,7 @@ function PublicFiller() {
           fixedFieldIds: form.fixed_field_ids ?? [],
         });
         try { localStorage.removeItem(publicDraftKey); } catch {}
+        setPendingSyncMsg("Submission pending — will sync when connection is restored.");
         setSubmittedOffline(true);
         setSubmitted(true);
       } finally {

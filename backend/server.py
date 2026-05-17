@@ -36,6 +36,14 @@ from auth import (
 )
 
 
+def _parse_dt(s: "str | None") -> datetime:
+    """Parse an ISO-8601 string (including Z-suffix) to a naive UTC datetime.
+    asyncpg requires datetime objects for TIMESTAMPTZ columns, not strings."""
+    if not s:
+        return datetime.utcnow()
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
 # ============================================================================
 # Lifespan: create tables (Alembic-equivalent) + seed admin
 # ============================================================================
@@ -1243,7 +1251,7 @@ async def sync_push(
                 {
                     "id": sub_id,
                     "visits": json.dumps(merged_visits),
-                    "updated_at": sub.get("updatedAt") or datetime.utcnow().isoformat(),
+                    "updated_at": _parse_dt(sub.get("updatedAt")),
                 }
             )
         else:
@@ -1265,8 +1273,8 @@ async def sync_push(
                     "fixed_data": json.dumps(sub.get("fixedData", {})),
                     "visits": json.dumps(sub.get("visits", [])),
                     "patient_id": sub.get("patientId"),
-                    "created_at": sub.get("createdAt") or datetime.utcnow().isoformat(),
-                    "updated_at": sub.get("updatedAt") or datetime.utcnow().isoformat(),
+                    "created_at": _parse_dt(sub.get("createdAt")),
+                    "updated_at": _parse_dt(sub.get("updatedAt")),
                 }
             )
 
@@ -1412,6 +1420,52 @@ async def get_public_form(share_token: str, response: Response, db: AsyncSession
     )
 
 
+@app.get("/api/forms/public/{share_token}/subjects")
+async def search_public_subjects(
+    share_token: str,
+    q: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """Return existing subjects for a longitudinal form — no auth required."""
+    res = await db.execute(select(FormDef).where(FormDef.share_token == share_token))
+    form = res.scalar_one_or_none()
+    if not form or not getattr(form, "longitudinal", False):
+        return []
+
+    rows = (await db.execute(
+        text("""
+            SELECT id, subject_key, fixed_data, visits, created_at, updated_at
+            FROM longitudinal_submissions
+            WHERE form_id = :form_id
+            ORDER BY updated_at DESC
+            LIMIT 200
+        """),
+        {"form_id": str(form.id)}
+    )).mappings().all()
+
+    q_lower = q.strip().lower()
+    results = []
+    for row in rows:
+        fixed_data = row["fixed_data"] if isinstance(row["fixed_data"], dict) else {}
+        if q_lower and not any(q_lower in str(v).lower() for v in fixed_data.values()):
+            continue
+        visits = row["visits"] if isinstance(row["visits"], list) else []
+        results.append({
+            "id": row["id"],
+            "type": "longitudinal",
+            "formId": str(form.id),
+            "subjectKey": row["subject_key"],
+            "fixedData": fixed_data,
+            "visits": visits,
+            "createdAt": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+            "updatedAt": row["updated_at"].isoformat() if hasattr(row["updated_at"], "isoformat") else str(row["updated_at"]),
+        })
+        if len(results) >= 20:
+            break
+
+    return results
+
+
 class PublicLongitudinalSubmitIn(BaseModel):
     fixed_data: dict[str, Any] = {}
     visit_data: dict[str, Any] = {}
@@ -1437,7 +1491,8 @@ async def submit_public_longitudinal(
     fixed_ids = sorted(body.fixed_field_ids)
     subject_key = "|".join(str(body.fixed_data.get(fid, "")).strip().lower() for fid in fixed_ids)
     sub_id = f"longsub_{form.id}_{subject_key}"
-    now = datetime.utcnow().isoformat()
+    now_dt = datetime.utcnow()
+    now_str = now_dt.isoformat()
 
     existing_row = (await db.execute(
         text("SELECT visits FROM longitudinal_submissions WHERE id = :id"),
@@ -1447,10 +1502,10 @@ async def submit_public_longitudinal(
     if existing_row:
         existing_visits = existing_row["visits"] if isinstance(existing_row["visits"], list) else []
         visit_id = f"v{len(existing_visits) + 1}"
-        merged_visits = existing_visits + [{"visitId": visit_id, "timestamp": now, "data": body.visit_data}]
+        merged_visits = existing_visits + [{"visitId": visit_id, "timestamp": now_str, "data": body.visit_data}]
         await db.execute(
             text("UPDATE longitudinal_submissions SET visits = CAST(:visits AS jsonb), updated_at = :updated_at WHERE id = :id"),
-            {"id": sub_id, "visits": json.dumps(merged_visits), "updated_at": now},
+            {"id": sub_id, "visits": json.dumps(merged_visits), "updated_at": now_dt},
         )
     else:
         await db.execute(
@@ -1468,9 +1523,9 @@ async def submit_public_longitudinal(
                 "owner_id": str(form.owner_id),
                 "subject_key": subject_key,
                 "fixed_data": json.dumps(body.fixed_data),
-                "visits": json.dumps([{"visitId": "v1", "timestamp": now, "data": body.visit_data}]),
-                "created_at": now,
-                "updated_at": now,
+                "visits": json.dumps([{"visitId": "v1", "timestamp": now_str, "data": body.visit_data}]),
+                "created_at": now_dt,
+                "updated_at": now_dt,
             },
         )
 
