@@ -341,7 +341,7 @@ function PatientAccordion({
     <tbody>${rows}</tbody>
   </table>
   <div class="footer">
-    Reference: WHO 2006 standards (0–5 years) · CommunityMed Pro · Generated ${new Date().toLocaleDateString()}
+    Reference: WHO 2006 standards (0–5 years) · ResearchMed · Generated ${new Date().toLocaleDateString()}
   </div>
   <script>window.onload = function() { window.print(); }</script>
 </body>

@@ -138,7 +138,7 @@ function Settings() {
         </section>
 
         <p className="mt-6 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          CommunityMed Pro · MVP v0.2
+          ResearchMed · MVP v0.2
         </p>
       </PageShell>
     </>

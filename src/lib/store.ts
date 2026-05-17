@@ -1,5 +1,5 @@
 /**
- * Hybrid offline-first store for CommunityMed Pro.
+ * Hybrid offline-first store for ResearchMed.
  *
  * - Cache lives in localStorage (works fully offline, identical to the previous
  *   implementation so existing routes keep working without changes).

@@ -2,8 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
-import { API_BASE, ApiError, api, setToken } from "@/lib/api";
-import { Stethoscope, ArrowRight, UserPlus, LogIn, Chrome } from "lucide-react";
+import { ApiError, setToken } from "@/lib/api";
+import { Stethoscope, ArrowRight, UserPlus, LogIn } from "lucide-react";
 
 const searchSchema = z.object({
   returnTo: z.string().optional(),
@@ -16,7 +16,6 @@ export const Route = createFileRoute("/login")({
 });
 
 type Mode = "login" | "register";
-type GoogleStatus = "checking" | "enabled" | "not-configured" | "unavailable";
 const BEST_SUITED_ROLES = [
   "Nurse",
   "Doctor",
@@ -39,8 +38,6 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [googleStatus, setGoogleStatus] = useState<GoogleStatus>("checking");
-
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash) {
       const params = new URLSearchParams(window.location.hash.slice(1));
@@ -49,21 +46,8 @@ function LoginPage() {
         setToken(token);
         window.history.replaceState(null, "", "/login");
         window.location.replace("/");
-        return;
       }
     }
-
-    let mounted = true;
-    api<{ enabled: boolean }>("/api/auth/google/config")
-      .then((config) => {
-        if (mounted) setGoogleStatus(config.enabled ? "enabled" : "not-configured");
-      })
-      .catch(() => {
-        if (mounted) setGoogleStatus("unavailable");
-      });
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -108,19 +92,6 @@ function LoginPage() {
     }
   };
 
-  const startGoogleLogin = () => {
-    setError("");
-    if (googleStatus === "not-configured") {
-      setError(
-        "Google sign-in is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the backend.",
-      );
-      return;
-    }
-    if (googleStatus === "checking") return;
-    const returnTo = typeof window !== "undefined" ? window.location.origin : "/";
-    window.location.href = `${API_BASE}/api/auth/google/start?return_to=${encodeURIComponent(returnTo)}`;
-  };
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="flex flex-1 items-center justify-center px-4 py-10">
@@ -129,7 +100,7 @@ function LoginPage() {
             <Stethoscope className="h-9 w-9" />
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest">
-                CommunityMed Pro
+                ResearchMed
               </div>
               <div className="font-display text-2xl uppercase leading-none">
                 {mode === "login" ? "Sign in" : "Create account"}
@@ -138,25 +109,6 @@ function LoginPage() {
           </div>
 
           <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form">
-            <button
-              type="button"
-              data-testid="google-auth-submit"
-              onClick={startGoogleLogin}
-              disabled={googleStatus === "checking"}
-              className="btn-brutal flex w-full items-center justify-center gap-2 bg-white text-foreground disabled:opacity-50"
-            >
-              <Chrome className="h-4 w-4" />
-              {googleStatus === "checking" ? "Checking Google…" : "Continue with Google"}
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="h-0.5 flex-1 bg-border" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                or
-              </span>
-              <div className="h-0.5 flex-1 bg-border" />
-            </div>
-
             {mode === "register" && (
               <>
                 <Field label="Name">

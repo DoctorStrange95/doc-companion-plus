@@ -229,7 +229,7 @@ function PublicPatientGrowth() {
         )}
 
         <p className="mt-6 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          WHO 2006 standards (0–5 y) · CommunityMed Pro · Read-only shared view
+          WHO 2006 standards (0–5 y) · ResearchMed · Read-only shared view
         </p>
 
       </PageShell>

@@ -100,10 +100,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "CommunityMed Pro" },
+      { title: "ResearchMed" },
       { name: "description", content: "Longitudinal community health records, form builder, and analytics for frontline health workers." },
-      { name: "author", content: "CommunityMed Pro" },
-      { property: "og:title", content: "CommunityMed Pro" },
+      { name: "author", content: "ResearchMed" },
+      { property: "og:title", content: "ResearchMed" },
       { property: "og:description", content: "Longitudinal community health records and analytics for frontline health workers." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
