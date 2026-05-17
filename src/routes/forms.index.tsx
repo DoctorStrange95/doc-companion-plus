@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useStore, store, sync } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
@@ -22,10 +23,13 @@ function StatusBadge({ status }: { status?: string }) {
 }
 
 function FormsList() {
+  const { user } = useAuth();
   const forms = useStore((s) => s.forms);
-  const submissions = useStore((s) => s.submissions);
-  const longitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
+  const allSubmissions = useStore((s) => s.submissions);
+  const allLongitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const lastSync = useStore((s) => s.lastSync);
+  const submissions = user ? allSubmissions : [];
+  const longitudinalSubmissions = user ? allLongitudinalSubmissions : [];
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
 
