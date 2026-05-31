@@ -848,6 +848,11 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                 <div key={r.id} className="px-4 py-3">
                   {editingId === r.id ? (
                     <div className="space-y-2">
+                      <div className="flex items-center gap-2 pb-1 border-b border-border/40">
+                        <Pencil className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="font-bold text-sm uppercase tracking-wide">{r.generic_name}</span>
+                        <span className="text-[10px] text-muted-foreground">— editing regimen</span>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         {(["adult_dose", "pediatric_dose", "route", "site", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
                           <F key={field} label={field.replace(/_/g, " ")}>
