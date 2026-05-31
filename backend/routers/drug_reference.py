@@ -46,6 +46,7 @@ class RegimenIn(BaseModel):
     adult_dose: str = ""
     pediatric_dose: str = ""
     route: str = ""
+    site: str = ""
     frequency: str = ""
     duration: str = ""
     strength: str = ""
@@ -59,6 +60,7 @@ class RegimenUpdate(BaseModel):
     adult_dose: Optional[str] = None
     pediatric_dose: Optional[str] = None
     route: Optional[str] = None
+    site: Optional[str] = None
     frequency: Optional[str] = None
     duration: Optional[str] = None
     strength: Optional[str] = None
@@ -103,6 +105,7 @@ async def ensure_drug_reference_tables(engine):
                 adult_dose TEXT NOT NULL DEFAULT '',
                 pediatric_dose TEXT NOT NULL DEFAULT '',
                 route TEXT NOT NULL DEFAULT '',
+                site TEXT NOT NULL DEFAULT '',
                 frequency TEXT NOT NULL DEFAULT '',
                 duration TEXT NOT NULL DEFAULT '',
                 strength TEXT NOT NULL DEFAULT '',
@@ -125,6 +128,10 @@ async def ensure_drug_reference_tables(engine):
         ))
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_drr_drug ON dr_regimens(drug_id)"
+        ))
+        # Migration: add site column to existing installs
+        await conn.execute(text(
+            "ALTER TABLE dr_regimens ADD COLUMN IF NOT EXISTS site TEXT NOT NULL DEFAULT ''"
         ))
 
 
@@ -304,15 +311,15 @@ async def auto_seed_drug_reference(engine):
 
                 await conn.execute(text("""
                     INSERT INTO dr_regimens
-                    (id, condition_id, drug_id, adult_dose, pediatric_dose, route,
+                    (id, condition_id, drug_id, adult_dose, pediatric_dose, route, site,
                      frequency, duration, strength, formulation, line_of_treatment, notes)
                     VALUES
-                    (:id, :cid, :did, :adult, :ped, :route,
+                    (:id, :cid, :did, :adult, :ped, :route, :site,
                      :freq, :dur, :str, :form, :line, :notes)
                 """), {
                     "id": str(uuid.uuid4()), "cid": cid, "did": did,
                     "adult": r.get("adult", ""), "ped": r.get("ped", ""),
-                    "route": r.get("route", ""), "freq": r.get("freq", ""),
+                    "route": r.get("route", ""), "site": r.get("site", ""), "freq": r.get("freq", ""),
                     "dur": r.get("dur", ""), "str": r.get("str", ""),
                     "form": r.get("form", ""), "line": r.get("line", "First line"),
                     "notes": r.get("notes", ""),
@@ -348,7 +355,7 @@ async def search(q: str = "", type: str = "all", category: str = "", db: AsyncSe
                          'generic_name', d.generic_name,
                          'brand_names', d.brand_names, 'drug_class', d.drug_class,
                          'adult_dose', r.adult_dose, 'pediatric_dose', r.pediatric_dose,
-                         'route', r.route, 'frequency', r.frequency,
+                         'route', r.route, 'site', r.site, 'frequency', r.frequency,
                          'duration', r.duration, 'strength', r.strength,
                          'formulation', r.formulation,
                          'line_of_treatment', r.line_of_treatment,
@@ -519,16 +526,16 @@ async def create_regimen(
     rid = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO dr_regimens
-        (id, condition_id, drug_id, adult_dose, pediatric_dose, route, frequency,
+        (id, condition_id, drug_id, adult_dose, pediatric_dose, route, site, frequency,
          duration, strength, formulation, line_of_treatment, notes, contraindications)
         VALUES
-        (:id, :cid, :did, :adult_dose, :pediatric_dose, :route, :frequency,
+        (:id, :cid, :did, :adult_dose, :pediatric_dose, :route, :site, :frequency,
          :duration, :strength, :formulation, :line_of_treatment, :notes, :contraindications)
     """), {
         "id": rid, "cid": body.condition_id, "did": body.drug_id,
         "adult_dose": body.adult_dose, "pediatric_dose": body.pediatric_dose,
-        "route": body.route, "frequency": body.frequency, "duration": body.duration,
-        "strength": body.strength, "formulation": body.formulation,
+        "route": body.route, "site": body.site, "frequency": body.frequency,
+        "duration": body.duration, "strength": body.strength, "formulation": body.formulation,
         "line_of_treatment": body.line_of_treatment, "notes": body.notes,
         "contraindications": body.contraindications,
     })
@@ -576,7 +583,7 @@ async def delete_regimen(
 CSV_COLS = [
     "condition_name", "condition_aliases", "condition_category", "condition_icd_code",
     "drug_generic_name", "drug_brand_names", "drug_class",
-    "adult_dose", "pediatric_dose", "route", "frequency", "duration",
+    "adult_dose", "pediatric_dose", "route", "site", "frequency", "duration",
     "strength", "formulation", "line_of_treatment", "notes", "contraindications",
 ]
 
@@ -591,7 +598,7 @@ async def export_csv(db: AsyncSession = Depends(get_db), user=Depends(get_curren
                d.generic_name AS drug_generic_name,
                array_to_string(ARRAY(SELECT jsonb_array_elements_text(d.brand_names)), ';') AS drug_brand_names,
                d.drug_class,
-               r.adult_dose, r.pediatric_dose, r.route, r.frequency, r.duration,
+               r.adult_dose, r.pediatric_dose, r.route, r.site, r.frequency, r.duration,
                r.strength, r.formulation, r.line_of_treatment, r.notes, r.contraindications
         FROM dr_regimens r
         JOIN dr_conditions c ON c.id=r.condition_id
@@ -664,14 +671,15 @@ async def import_csv(
             # Insert regimen
             await db.execute(text("""
                 INSERT INTO dr_regimens
-                (id, condition_id, drug_id, adult_dose, pediatric_dose, route, frequency,
+                (id, condition_id, drug_id, adult_dose, pediatric_dose, route, site, frequency,
                  duration, strength, formulation, line_of_treatment, notes, contraindications)
                 VALUES
-                (:id, :cid, :did, :adult, :ped, :route, :freq, :dur, :str, :form, :line, :notes, :contra)
+                (:id, :cid, :did, :adult, :ped, :route, :site, :freq, :dur, :str, :form, :line, :notes, :contra)
             """), {
                 "id": str(uuid.uuid4()), "cid": cid, "did": did,
                 "adult": row.get("adult_dose", ""), "ped": row.get("pediatric_dose", ""),
-                "route": row.get("route", ""), "freq": row.get("frequency", ""),
+                "route": row.get("route", ""), "site": row.get("site", ""),
+                "freq": row.get("frequency", ""),
                 "dur": row.get("duration", ""), "str": row.get("strength", ""),
                 "form": row.get("formulation", ""),
                 "line": row.get("line_of_treatment", "First line"),

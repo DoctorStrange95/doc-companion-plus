@@ -21,6 +21,7 @@ interface Regimen {
   adult_dose: string;
   pediatric_dose: string;
   route: string;
+  site: string;
   frequency: string;
   duration: string;
   strength: string;
@@ -69,7 +70,8 @@ const CATEGORIES = [
   "Gynaecology", "Paediatric", "Psychiatry", "Ophthalmology", "Emergency",
 ];
 const LINE_ORDER = ["First line", "Second line", "Third line", "Adjuvant", "Prophylaxis"];
-const ROUTES = ["Oral", "IM", "IV", "Topical", "Inhaled", "Sublingual", "Eye/Ear drops", "Other"];
+const ROUTES = ["Oral", "IM", "ID", "IV", "SC", "Topical", "Inhaled", "Sublingual", "Eye/Ear drops", "Other"];
+const INJECTION_SITES = ["Deltoid (upper arm)", "Anterolateral thigh", "Gluteal (upper outer)", "Abdomen", "Forearm (ID)", "Dorsal forearm (ID)", "Other"];
 const FREQUENCIES = ["OD", "BD", "TDS", "QID", "SOS", "Weekly", "Stat", "As needed", "Other"];
 const FORMULATIONS = ["Tablet", "Capsule", "Syrup", "Injection", "Ointment/Cream", "Inhaler/MDI", "Eye/Ear drops", "Sachet", "Powder", "Lotion", "Gel", "Other"];
 const LINES = ["First line", "Second line", "Third line", "Adjuvant", "Prophylaxis"];
@@ -192,7 +194,7 @@ function ConditionCard({ condition }: { condition: Condition }) {
                       {r.duration && <span className="font-normal normal-case"> × {r.duration}</span>}
                     </div>
                     <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                      {r.route && <span className="font-semibold uppercase text-foreground/70">[{r.route}]</span>}
+                      {r.route && <span className="font-semibold uppercase text-foreground/70">[{r.route}{r.site ? ` — ${r.site}` : ""}]</span>}
                       {toArr(r.brand_names).length > 0 && (
                         <span>Brands: {toArr(r.brand_names).join(", ")}</span>
                       )}
@@ -317,6 +319,7 @@ function AdminQuickAdd({
   const [adultDose, setAdultDose] = useState("");
   const [pedDose, setPedDose] = useState("");
   const [route, setRoute] = useState("");
+  const [site, setSite] = useState("");
   const [freq, setFreq] = useState("");
   const [dur, setDur] = useState("");
   const [strength, setStrength] = useState("");
@@ -343,7 +346,7 @@ function AdminQuickAdd({
   const reset = () => {
     setCondQ(""); setCondId(null); setCondAliases(""); setCondCategory(""); setCondIcd("");
     setDrugQ(""); setDrugId(null); setDrugBrands(""); setDrugClass("");
-    setAdultDose(""); setPedDose(""); setRoute(""); setFreq(""); setDur("");
+    setAdultDose(""); setPedDose(""); setRoute(""); setSite(""); setFreq(""); setDur("");
     setStrength(""); setFormulation(""); setLine("First line"); setNotes(""); setContra("");
   };
 
@@ -384,7 +387,7 @@ function AdminQuickAdd({
         body: JSON.stringify({
           condition_id: resolvedCondId, drug_id: resolvedDrugId,
           adult_dose: adultDose, pediatric_dose: pedDose,
-          route, frequency: freq, duration: dur, strength, formulation,
+          route, site, frequency: freq, duration: dur, strength, formulation,
           line_of_treatment: line, notes, contraindications: contra,
         }),
       });
@@ -501,6 +504,7 @@ function AdminQuickAdd({
           <F label="Adult Dose"><input className="input-brutal" value={adultDose} onChange={e => setAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
           <F label="Pediatric Dose"><input className="input-brutal" value={pedDose} onChange={e => setPedDose(e.target.value)} placeholder="10 mg/kg/day" /></F>
           <F label="Route"><select className="input-brutal" value={route} onChange={e => setRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
+          <F label="Site (injections)"><select className="input-brutal" value={site} onChange={e => setSite(e.target.value)}><option value="">N/A</option>{INJECTION_SITES.map(s => <option key={s}>{s}</option>)}</select></F>
           <F label="Frequency"><select className="input-brutal" value={freq} onChange={e => setFreq(e.target.value)}><option value="">Select</option>{FREQUENCIES.map(f => <option key={f}>{f}</option>)}</select></F>
           <F label="Duration"><input className="input-brutal" value={dur} onChange={e => setDur(e.target.value)} placeholder="5 days" /></F>
           <F label="Strength"><input className="input-brutal" value={strength} onChange={e => setStrength(e.target.value)} placeholder="500 mg" /></F>
@@ -546,6 +550,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
   const [newAdultDose, setNewAdultDose] = useState("");
   const [newPedDose, setNewPedDose] = useState("");
   const [newRoute, setNewRoute] = useState("");
+  const [newSite, setNewSite] = useState("");
   const [newFreq, setNewFreq] = useState("");
   const [newDur, setNewDur] = useState("");
   const [newStrength, setNewStrength] = useState("");
@@ -575,7 +580,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
 
   const resetNewRegimen = () => {
     setNewDrugQ(""); setNewDrugId(null); setNewDrugBrands(""); setNewDrugClass("");
-    setNewAdultDose(""); setNewPedDose(""); setNewRoute(""); setNewFreq(""); setNewDur("");
+    setNewAdultDose(""); setNewPedDose(""); setNewRoute(""); setNewSite(""); setNewFreq(""); setNewDur("");
     setNewStrength(""); setNewForm(""); setNewLine("First line"); setNewNotes(""); setNewContra("");
   };
 
@@ -649,7 +654,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
         body: JSON.stringify({
           condition_id: conditionId, drug_id: resolvedDrugId,
           adult_dose: newAdultDose, pediatric_dose: newPedDose,
-          route: newRoute, frequency: newFreq, duration: newDur,
+          route: newRoute, site: newSite, frequency: newFreq, duration: newDur,
           strength: newStrength, formulation: newForm,
           line_of_treatment: newLine, notes: newNotes, contraindications: newContra,
         }),
@@ -753,7 +758,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                   {editingId === r.id ? (
                     <div className="space-y-2">
                       <div className="grid grid-cols-2 gap-2">
-                        {(["adult_dose", "pediatric_dose", "route", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
+                        {(["adult_dose", "pediatric_dose", "route", "site", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
                           <F key={field} label={field.replace(/_/g, " ")}>
                             <input className="input-brutal text-sm py-1"
                               value={(editFields as Record<string, string>)[field] ?? (r as unknown as Record<string, string>)[field] ?? ""}
@@ -831,6 +836,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                     <F label="Adult Dose"><input className="input-brutal text-sm" value={newAdultDose} onChange={e => setNewAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
                     <F label="Pediatric Dose"><input className="input-brutal text-sm" value={newPedDose} onChange={e => setNewPedDose(e.target.value)} /></F>
                     <F label="Route"><select className="input-brutal text-sm" value={newRoute} onChange={e => setNewRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
+                    <F label="Site (injections)"><select className="input-brutal text-sm" value={newSite} onChange={e => setNewSite(e.target.value)}><option value="">N/A</option>{INJECTION_SITES.map(s => <option key={s}>{s}</option>)}</select></F>
                     <F label="Frequency"><select className="input-brutal text-sm" value={newFreq} onChange={e => setNewFreq(e.target.value)}><option value="">Select</option>{FREQUENCIES.map(f => <option key={f}>{f}</option>)}</select></F>
                     <F label="Duration"><input className="input-brutal text-sm" value={newDur} onChange={e => setNewDur(e.target.value)} placeholder="5 days" /></F>
                     <F label="Strength"><input className="input-brutal text-sm" value={newStrength} onChange={e => setNewStrength(e.target.value)} placeholder="500 mg" /></F>
