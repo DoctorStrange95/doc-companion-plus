@@ -771,6 +771,36 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
     else setMsg({ ok: true, text: `Saved ${Object.keys(pending).length} regimen(s).` });
   };
 
+  const saveConditionName = async (conditionId: string, newName: string) => {
+    const cond = data?.conditions.find(c => c.id === conditionId);
+    if (!cond) return;
+    await api(`/api/drug-reference/conditions/${conditionId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name: newName,
+        aliases: toArr(cond.aliases),
+        category: cond.category || "",
+        icd_code: cond.icd_code || "",
+        notes: cond.notes || "",
+      }),
+    });
+    onRefresh();
+  };
+
+  const saveDrugName = async (drugId: string, newName: string) => {
+    const drug = data?.drugs.find(d => d.id === drugId);
+    await api(`/api/drug-reference/drugs/${drugId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        generic_name: newName,
+        brand_names: drug ? toArr(drug.brand_names) : [],
+        drug_class: drug?.drug_class || "",
+        category: drug?.category || "",
+      }),
+    });
+    onRefresh();
+  };
+
   const deleteRow = async (rid: string) => {
     if (!confirm("Delete this regimen?")) return;
     try {
@@ -964,12 +994,22 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
               return (
                 <tr key={r.id} className="group">
                   <td style={{ position: "sticky", left: 0, zIndex: 10, background: bg }}
-                    className="border-b border-r border-border/30 px-2 py-1">
-                    <span className="font-bold text-[10px] uppercase leading-tight block">{r.condition_name}</span>
+                    className="border-b border-r border-border/30 px-0 py-0">
+                    <EditCell
+                      value={r.condition_name}
+                      onSave={v => saveConditionName(r.condition_id, v).catch(e =>
+                        setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message })
+                      )}
+                    />
                   </td>
                   <td style={{ position: "sticky", left: COND_W, zIndex: 10, background: bg }}
-                    className="border-b border-r border-border/30 px-2 py-1">
-                    <span className="font-semibold text-[11px]">{r.generic_name}</span>
+                    className="border-b border-r border-border/30 px-0 py-0">
+                    <EditCell
+                      value={r.generic_name}
+                      onSave={v => saveDrugName(r.drug_id, v).catch(e =>
+                        setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message })
+                      )}
+                    />
                   </td>
                   {COLS.map(c => {
                     const isDirty = c.key in rowPending;

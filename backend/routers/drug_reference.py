@@ -716,16 +716,33 @@ async def import_csv(
                       "cls": row.get("drug_class", "")})
 
             p = _regimen_params(cid, did)
-            await db.execute(text("""
-                INSERT INTO dr_regimens
-                (id, condition_id, drug_id, adult_dose, max_dose, pediatric_dose, route, site,
-                 frequency, duration, strength, formulation, line_of_treatment, notes, contraindications)
-                VALUES
-                (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
-                 :freq, :dur, :str, :form, :line, :notes, :contra)
-            """), {"id": str(uuid.uuid4()), **p})
-            await db.commit()
-            inserted += 1
+            # Upsert: update if same condition+drug already exists, else insert
+            existing_r = (await db.execute(
+                text("SELECT id FROM dr_regimens WHERE condition_id=:cid AND drug_id=:did LIMIT 1"),
+                {"cid": cid, "did": did}
+            )).mappings().first()
+            if existing_r:
+                await db.execute(text("""
+                    UPDATE dr_regimens SET
+                      adult_dose=:adult, max_dose=:max_dose, pediatric_dose=:ped,
+                      route=:route, site=:site, frequency=:freq, duration=:dur,
+                      strength=:str, formulation=:form, line_of_treatment=:line,
+                      notes=:notes, contraindications=:contra, updated_at=now()
+                    WHERE id=:rid
+                """), {**p, "rid": str(existing_r["id"])})
+                await db.commit()
+                updated += 1
+            else:
+                await db.execute(text("""
+                    INSERT INTO dr_regimens
+                    (id, condition_id, drug_id, adult_dose, max_dose, pediatric_dose, route, site,
+                     frequency, duration, strength, formulation, line_of_treatment, notes, contraindications)
+                    VALUES
+                    (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
+                     :freq, :dur, :str, :form, :line, :notes, :contra)
+                """), {"id": str(uuid.uuid4()), **p})
+                await db.commit()
+                inserted += 1
         except Exception as e:
             await db.rollback()
             errors.append(f"Row {i}: {str(e)[:120]}")
