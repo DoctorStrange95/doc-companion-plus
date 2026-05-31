@@ -22,8 +22,8 @@ import { Route as ToolsSampleSizeRouteImport } from './routes/tools.sample-size'
 import { Route as ToolsNutritionRouteImport } from './routes/tools.nutrition'
 import { Route as ToolsImnciRouteImport } from './routes/tools.imnci'
 import { Route as ToolsGrowthRouteImport } from './routes/tools.growth'
-import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
 import { Route as ToolsDrugReferenceRouteImport } from './routes/tools.drug-reference'
+import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
 import { Route as PgTokenRouteImport } from './routes/pg.$token'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
@@ -100,14 +100,14 @@ const ToolsGrowthRoute = ToolsGrowthRouteImport.update({
   path: '/tools/growth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ToolsBmiRoute = ToolsBmiRouteImport.update({
-  id: '/tools/bmi',
-  path: '/tools/bmi',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ToolsDrugReferenceRoute = ToolsDrugReferenceRouteImport.update({
   id: '/tools/drug-reference',
   path: '/tools/drug-reference',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsBmiRoute = ToolsBmiRouteImport.update({
+  id: '/tools/bmi',
+  path: '/tools/bmi',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PgTokenRoute = PgTokenRouteImport.update({
@@ -444,18 +444,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsGrowthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/tools/bmi': {
-      id: '/tools/bmi'
-      path: '/tools/bmi'
-      fullPath: '/tools/bmi'
-      preLoaderRoute: typeof ToolsBmiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/tools/drug-reference': {
       id: '/tools/drug-reference'
       path: '/tools/drug-reference'
       fullPath: '/tools/drug-reference'
       preLoaderRoute: typeof ToolsDrugReferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/bmi': {
+      id: '/tools/bmi'
+      path: '/tools/bmi'
+      fullPath: '/tools/bmi'
+      preLoaderRoute: typeof ToolsBmiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pg/$token': {
@@ -584,13 +584,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

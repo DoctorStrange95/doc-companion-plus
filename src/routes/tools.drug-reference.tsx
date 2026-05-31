@@ -673,10 +673,34 @@ function EditCell({ value, onSave, saving }: { value: string; onSave: (v: string
 
 // ── Admin: Manage (inline table) ──────────────────────────────────────────────
 
+const COLS: { key: string; label: string; px: number }[] = [
+  { key: "adult_dose",        label: "Adult Dose", px: 130 },
+  { key: "max_dose",          label: "Max Dose",   px: 90  },
+  { key: "pediatric_dose",    label: "Peds Dose",  px: 120 },
+  { key: "route",             label: "Route",      px: 70  },
+  { key: "site",              label: "Site",       px: 100 },
+  { key: "frequency",         label: "Freq",       px: 70  },
+  { key: "duration",          label: "Duration",   px: 80  },
+  { key: "strength",          label: "Strength",   px: 90  },
+  { key: "formulation",       label: "Form",       px: 90  },
+  { key: "line_of_treatment", label: "Line",       px: 100 },
+  { key: "notes",             label: "Notes",      px: 160 },
+  { key: "contraindications", label: "CI",         px: 140 },
+];
+const COND_W = 160, DRUG_W = 150, DEL_W = 36;
+const TABLE_W = COND_W + DRUG_W + COLS.reduce((s, c) => s + c.px, 0) + DEL_W;
+
+// Shared cell/header bg helpers for sticky columns
+const condBg = (stripe: boolean) => stripe ? "#f5f5f5" : "#ffffff";
+const headBg = "#e8e8e8";
+
 function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: () => void }) {
   const [filterQ, setFilterQ] = useState("");
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState<Record<string, Record<string, string>>>({});
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [addingRow, setAddingRow] = useState(false);
+  const [newRow, setNewRow] = useState<Record<string, string>>({ line_of_treatment: "First line" });
 
   type FlatRow = Regimen & { condition_name: string; condition_id: string };
 
@@ -696,120 +720,257 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
     );
   }, [allRows, filterQ]);
 
-  const saveField = async (rid: string, field: string, value: string) => {
-    const key = rid + "_" + field;
-    setSaving(key);
-    try {
-      await api(`/api/drug-reference/regimens/${rid}`, {
-        method: "PUT",
-        body: JSON.stringify({ [field]: value }),
-      });
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setSaving(null); }
+  const pendingCount = Object.keys(pending).length;
+
+  // Mark a cell as pending (changed but not yet saved)
+  const markPending = (rid: string, field: string, value: string) => {
+    setPending(p => ({ ...p, [rid]: { ...(p[rid] ?? {}), [field]: value } }));
+  };
+
+  // Save all pending changes at once
+  const saveAll = async () => {
+    if (!pendingCount) return;
+    setSaving(true);
+    setMsg(null);
+    let errors = 0;
+    for (const [rid, fields] of Object.entries(pending)) {
+      try {
+        await api(`/api/drug-reference/regimens/${rid}`, {
+          method: "PUT",
+          body: JSON.stringify(fields),
+        });
+      } catch {
+        errors++;
+      }
+    }
+    setPending({});
+    setSaving(false);
+    if (errors) setMsg({ ok: false, text: `${errors} regimen(s) failed to save.` });
+    else setMsg({ ok: true, text: `Saved ${Object.keys(pending).length} regimen(s).` });
   };
 
   const deleteRow = async (rid: string) => {
     if (!confirm("Delete this regimen?")) return;
-    setSaving(rid);
     try {
       await api(`/api/drug-reference/regimens/${rid}`, { method: "DELETE" });
+      setPending(p => { const n = { ...p }; delete n[rid]; return n; });
       onRefresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setSaving(null); }
+    }
   };
 
-  // px widths applied via style to guarantee table-layout:fixed works correctly
-  const COLS: { key: string; label: string; px: number }[] = [
-    { key: "adult_dose",        label: "Adult Dose", px: 130 },
-    { key: "max_dose",          label: "Max Dose",   px: 90  },
-    { key: "pediatric_dose",    label: "Peds Dose",  px: 120 },
-    { key: "route",             label: "Route",      px: 70  },
-    { key: "site",              label: "Site",       px: 110 },
-    { key: "frequency",         label: "Freq",       px: 70  },
-    { key: "duration",          label: "Duration",   px: 80  },
-    { key: "strength",          label: "Strength",   px: 90  },
-    { key: "formulation",       label: "Form",       px: 90  },
-    { key: "line_of_treatment", label: "Line",       px: 100 },
-    { key: "notes",             label: "Notes",      px: 150 },
-    { key: "contraindications", label: "CI",         px: 140 },
-  ];
+  const addRow = async () => {
+    const cname = newRow.condition_name?.trim();
+    const dname = newRow.drug_name?.trim();
+    if (!cname || !dname) { setMsg({ ok: false, text: "Condition name and drug name are required." }); return; }
+    setSaving(true);
+    setMsg(null);
+    try {
+      // Find or create condition using cached data
+      let condId: string | null = data?.conditions.find(c => c.name.toLowerCase() === cname.toLowerCase())?.id ?? null;
+      if (!condId) {
+        const c = await api<{ id: string }>("/api/drug-reference/conditions", {
+          method: "POST", body: JSON.stringify({ name: cname, aliases: [], category: newRow.condition_category ?? "", icd_code: "" }),
+        });
+        condId = c.id;
+      }
+      // Find or create drug using cached data
+      let drugId: string | null = data?.drugs.find(d => d.generic_name.toLowerCase() === dname.toLowerCase())?.id ?? null;
+      if (!drugId) {
+        const d = await api<{ id: string }>("/api/drug-reference/drugs", {
+          method: "POST", body: JSON.stringify({ generic_name: dname, brand_names: [], drug_class: newRow.drug_class ?? "" }),
+        });
+        drugId = d.id;
+      }
+      // Create regimen
+      const body: Record<string, string> = { condition_id: condId!, drug_id: drugId! };
+      for (const c of COLS) body[c.key] = newRow[c.key] ?? "";
+      await api("/api/drug-reference/regimens", { method: "POST", body: JSON.stringify(body) });
+      setAddingRow(false);
+      setNewRow({ line_of_treatment: "First line" });
+      onRefresh();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
+    } finally { setSaving(false); }
+  };
 
-  const totalWidth = 150 + 140 + COLS.reduce((s, c) => s + c.px, 0) + 32; // cond + drug + cols + del
+  const thStyle = (left?: number): React.CSSProperties => ({
+    position: "sticky",
+    left: left !== undefined ? left : undefined,
+    top: 0,
+    zIndex: left !== undefined ? 40 : 30,
+    background: headBg,
+    whiteSpace: "nowrap",
+  });
 
   return (
     <div className="space-y-3">
       {msg && (
-        <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 p-3 text-xs font-bold uppercase text-destructive">
-          <AlertCircle className="h-4 w-4 shrink-0" />{msg.text}
+        <div className={`flex items-center gap-2 border-2 p-3 text-xs font-bold uppercase ${msg.ok ? "border-green-600 bg-green-50 text-green-800" : "border-destructive bg-destructive/10 text-destructive"}`}>
+          {msg.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+          {msg.text}
           <button onClick={() => setMsg(null)} className="ml-auto"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <input className="input-brutal flex-1" placeholder="Filter by condition or drug…"
+      <div className="flex items-center gap-2 flex-wrap">
+        <input className="input-brutal flex-1 min-w-48" placeholder="Filter by condition or drug…"
           value={filterQ} onChange={e => setFilterQ(e.target.value)} />
-        <span className="shrink-0 text-[10px] font-bold uppercase text-muted-foreground">
-          {rows.length} rows
-        </span>
+        <span className="text-[10px] font-bold uppercase text-muted-foreground">{rows.length} rows</span>
+
+        <button onClick={saveAll} disabled={saving || !pendingCount}
+          className="btn-brutal flex items-center gap-1.5 text-xs px-4 py-2 disabled:opacity-50">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {saving ? "Saving…" : pendingCount > 0 ? `Save All (${pendingCount})` : "Save All"}
+        </button>
+
+        <button onClick={() => setAddingRow(v => !v)}
+          className="border-2 border-border px-3 py-2 text-[11px] font-bold uppercase hover:bg-primary/10 flex items-center gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          Add Row
+        </button>
       </div>
 
       <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
-        Click any cell to edit · Enter or Tab to save · Esc to cancel
+        Click any cell to edit · changes highlighted in amber · Save All to commit
       </p>
+
+      {/* Add Row form */}
+      {addingRow && (
+        <div className="brutal p-4 bg-primary/5 space-y-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">New Regimen</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <F label="Condition Name *">
+              <input className="input-brutal text-sm" value={newRow.condition_name ?? ""}
+                onChange={e => setNewRow(r => ({ ...r, condition_name: e.target.value }))} autoFocus />
+            </F>
+            <F label="Drug Generic Name *">
+              <input className="input-brutal text-sm" value={newRow.drug_name ?? ""}
+                onChange={e => setNewRow(r => ({ ...r, drug_name: e.target.value }))} />
+            </F>
+            {COLS.map(c => {
+              const val = newRow[c.key] ?? "";
+              const set = (v: string) => setNewRow(r => ({ ...r, [c.key]: v }));
+              if (c.key === "route") return (
+                <F key={c.key} label={c.label}>
+                  <select className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)}>
+                    <option value="">Select</option>
+                    {ROUTES.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </F>
+              );
+              if (c.key === "site") return (
+                <F key={c.key} label={c.label}>
+                  <select className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)}>
+                    <option value="">N/A</option>
+                    {INJECTION_SITES.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </F>
+              );
+              if (c.key === "frequency") return (
+                <F key={c.key} label={c.label}>
+                  <select className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)}>
+                    <option value="">Select</option>
+                    {FREQUENCIES.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </F>
+              );
+              if (c.key === "formulation") return (
+                <F key={c.key} label={c.label}>
+                  <select className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)}>
+                    <option value="">Select</option>
+                    {FORMULATIONS.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </F>
+              );
+              if (c.key === "line_of_treatment") return (
+                <F key={c.key} label={c.label}>
+                  <select className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)}>
+                    {LINES.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </F>
+              );
+              return (
+                <F key={c.key} label={c.label}>
+                  <input className="input-brutal text-sm" value={val} onChange={e => set(e.target.value)} />
+                </F>
+              );
+            })}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={addRow} disabled={saving}
+              className="btn-brutal text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50">
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+              {saving ? "Saving…" : "Add Regimen"}
+            </button>
+            <button onClick={() => { setAddingRow(false); setNewRow({ line_of_treatment: "First line" }); }}
+              className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {!data && <p className="text-[11px] text-muted-foreground p-2">Loading…</p>}
 
-      <div className="brutal overflow-x-auto">
-        <table
-          className="border-collapse text-[11px]"
-          style={{ width: `${totalWidth}px`, tableLayout: "fixed" }}
-        >
+      <div className="border-2 border-border overflow-auto" style={{ maxHeight: "calc(100vh - 320px)" }}>
+        <table className="border-collapse text-[11px]" style={{ width: TABLE_W, tableLayout: "fixed" }}>
           <colgroup>
-            <col style={{ width: 150 }} />
-            <col style={{ width: 140 }} />
+            <col style={{ width: COND_W }} />
+            <col style={{ width: DRUG_W }} />
             {COLS.map(c => <col key={c.key} style={{ width: c.px }} />)}
-            <col style={{ width: 32 }} />
+            <col style={{ width: DEL_W }} />
           </colgroup>
           <thead>
-            <tr className="bg-secondary/30">
-              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Condition</th>
-              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Drug</th>
+            <tr>
+              <th style={thStyle(0)} className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Condition</th>
+              <th style={thStyle(COND_W)} className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Drug</th>
               {COLS.map(c => (
-                <th key={c.key} className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">
+                <th key={c.key} style={thStyle()} className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">
                   {c.label}
                 </th>
               ))}
-              <th className="border-b-2 border-border" />
+              <th style={thStyle()} className="border-b-2 border-border" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id} className={`${i % 2 ? "bg-muted/10" : ""} hover:bg-primary/5 group`}>
-                <td className="border-b border-r border-border/30 px-2 py-1 align-top">
-                  <span className="font-bold text-[10px] uppercase leading-tight block">{r.condition_name}</span>
-                </td>
-                <td className="border-b border-r border-border/30 px-2 py-1 align-top">
-                  <span className="font-semibold text-[11px] block">{r.generic_name}</span>
-                </td>
-                {COLS.map(c => (
-                  <td key={c.key} className="border-b border-r border-border/30 py-0.5 align-middle">
-                    <EditCell
-                      value={(r as unknown as Record<string, string>)[c.key] ?? ""}
-                      onSave={v => saveField(r.id, c.key, v)}
-                      saving={saving === r.id + "_" + c.key}
-                    />
+            {rows.map((r, i) => {
+              const stripe = i % 2 === 1;
+              const bg = condBg(stripe);
+              const rowPending = pending[r.id] ?? {};
+              return (
+                <tr key={r.id} className="group">
+                  <td style={{ position: "sticky", left: 0, zIndex: 10, background: bg }}
+                    className="border-b border-r border-border/30 px-2 py-1">
+                    <span className="font-bold text-[10px] uppercase leading-tight block">{r.condition_name}</span>
                   </td>
-                ))}
-                <td className="border-b border-border/30 px-1 py-0.5">
-                  <button onClick={() => deleteRow(r.id)} disabled={saving === r.id}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                  <td style={{ position: "sticky", left: COND_W, zIndex: 10, background: bg }}
+                    className="border-b border-r border-border/30 px-2 py-1">
+                    <span className="font-semibold text-[11px]">{r.generic_name}</span>
+                  </td>
+                  {COLS.map(c => {
+                    const isDirty = c.key in rowPending;
+                    const currentVal = isDirty ? rowPending[c.key] : (r as unknown as Record<string, string>)[c.key] ?? "";
+                    return (
+                      <td key={c.key}
+                        className={`border-b border-r border-border/30 py-0.5 ${isDirty ? "bg-amber-50" : ""}`}>
+                        <EditCell
+                          value={currentVal}
+                          onSave={v => markPending(r.id, c.key, v)}
+                        />
+                      </td>
+                    );
+                  })}
+                  <td className="border-b border-border/30 px-1 py-0.5 text-center">
+                    <button onClick={() => deleteRow(r.id)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {data && rows.length === 0 && (
               <tr><td colSpan={COLS.length + 3} className="p-4 text-center text-[11px] text-muted-foreground">No regimens found.</td></tr>
             )}
