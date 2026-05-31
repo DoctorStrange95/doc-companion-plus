@@ -1096,22 +1096,35 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
     if (replaceAll && !confirm("This will DELETE ALL existing drug reference data and reimport from this CSV. Are you sure?")) return;
     setBusy(true);
     setErr("");
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const url = replaceAll ? "/api/drug-reference/import/csv?replace=true" : "/api/drug-reference/import/csv";
-      const res = await apiUpload<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] }>(url, fd);
-      setResult(res);
-      setFile(null);
-      setPreview(null);
-      setReplaceAll(false);
-      onSuccess();
-    } catch (e) {
-      const msg = e instanceof ApiError ? String(e.detail) : (e as Error).message;
-      setErr(msg === "Failed to fetch"
-        ? "Cannot reach the server — it may be waking up (Render cold start). Wait 30 seconds and try again."
-        : msg);
-    } finally { setBusy(false); }
+    const url = replaceAll ? "/api/drug-reference/import/csv?replace=true" : "/api/drug-reference/import/csv";
+    // Retry up to 3 times with 15 s gaps to survive Render cold starts
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        if (attempt > 1) setErr(`Server waking up… retrying (${attempt}/3)`);
+        const res = await apiUpload<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] }>(url, fd);
+        setResult(res);
+        setFile(null);
+        setPreview(null);
+        setReplaceAll(false);
+        setErr("");
+        onSuccess();
+        setBusy(false);
+        return;
+      } catch (e) {
+        const msg = e instanceof ApiError ? String(e.detail) : (e as Error).message;
+        if (msg === "Failed to fetch" && attempt < 3) {
+          await new Promise(r => setTimeout(r, 15000)); // wait 15 s then retry
+          continue;
+        }
+        setErr(msg === "Failed to fetch"
+          ? "Server unreachable after 3 attempts. Check your connection or try again in a minute."
+          : msg);
+        break;
+      }
+    }
+    setBusy(false);
   };
 
   const downloadTemplate = () => {
