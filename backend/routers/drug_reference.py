@@ -382,9 +382,13 @@ async def search(q: str = "", type: str = "all", category: str = "", db: AsyncSe
                        json_build_object(
                          'id', r.id, 'condition_id', r.condition_id,
                          'condition_name', c.name,
-                         'adult_dose', r.adult_dose, 'duration', r.duration,
-                         'line_of_treatment', r.line_of_treatment
-                       ) ORDER BY c.name
+                         'adult_dose', r.adult_dose, 'pediatric_dose', r.pediatric_dose,
+                         'route', r.route, 'site', r.site,
+                         'frequency', r.frequency, 'duration', r.duration,
+                         'strength', r.strength, 'formulation', r.formulation,
+                         'line_of_treatment', r.line_of_treatment,
+                         'notes', r.notes, 'contraindications', r.contraindications
+                       ) ORDER BY r.line_of_treatment, c.name
                      ) FILTER (WHERE r.id IS NOT NULL), '[]'::json
                    ) AS indications
             FROM dr_drugs d

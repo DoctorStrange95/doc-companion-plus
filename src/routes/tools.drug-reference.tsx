@@ -46,8 +46,16 @@ interface DrugIndication {
   condition_id: string;
   condition_name: string;
   adult_dose: string;
+  pediatric_dose: string;
+  route: string;
+  site: string;
+  frequency: string;
   duration: string;
+  strength: string;
+  formulation: string;
   line_of_treatment: string;
+  notes: string;
+  contraindications: string;
 }
 
 interface Drug {
@@ -138,6 +146,64 @@ async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
 
 // ── ConditionCard ─────────────────────────────────────────────────────────────
 
+function RegimenRow({ r }: { r: Regimen }) {
+  const brands = toArr(r.brand_names);
+  const routeStr = [r.route, r.site].filter(Boolean).join(" — ");
+  return (
+    <div className="py-3 border-b border-border/30 last:border-0">
+      {/* Drug name + formulation */}
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="font-bold text-[14px] uppercase tracking-wide">{r.generic_name}</span>
+        {r.strength && <span className="text-[12px] text-muted-foreground">{r.strength}</span>}
+        {r.formulation && (
+          <span className="text-[10px] font-bold uppercase tracking-wider bg-secondary/20 px-1.5 py-0.5">
+            {r.formulation}
+          </span>
+        )}
+      </div>
+      {/* Route */}
+      {routeStr && (
+        <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {routeStr}
+        </div>
+      )}
+      {/* Adult dose */}
+      {r.adult_dose && (
+        <div className="mt-1.5 flex gap-2 text-sm">
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-14 pt-0.5">Adult</span>
+          <span>
+            · {r.adult_dose}
+            {r.duration && <span className="text-muted-foreground"> × {r.duration}</span>}
+            {r.frequency && r.frequency !== r.adult_dose && (
+              <span className="text-muted-foreground"> ({r.frequency})</span>
+            )}
+          </span>
+        </div>
+      )}
+      {/* Pediatric dose */}
+      {r.pediatric_dose && (
+        <div className="mt-0.5 flex gap-2 text-sm">
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-14 pt-0.5">Peds</span>
+          <span className="text-muted-foreground">· {r.pediatric_dose}</span>
+        </div>
+      )}
+      {/* Brands */}
+      {brands.length > 0 && (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          Brands: {brands.join(", ")}
+        </div>
+      )}
+      {/* Notes */}
+      {r.notes && (
+        <div className="mt-1 text-[11px] text-amber-700 font-medium">⚠ {r.notes}</div>
+      )}
+      {r.contraindications && (
+        <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {r.contraindications}</div>
+      )}
+    </div>
+  );
+}
+
 function ConditionCard({ condition }: { condition: Condition }) {
   const [expanded, setExpanded] = useState(true);
   const aliases = toArr(condition.aliases);
@@ -151,7 +217,7 @@ function ConditionCard({ condition }: { condition: Condition }) {
       >
         <div className="min-w-0 flex-1">
           <div className="font-display text-lg uppercase leading-tight">{condition.name}</div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {aliases.length > 0 && (
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {aliases.slice(0, 4).join(" · ")}
@@ -178,44 +244,15 @@ function ConditionCard({ condition }: { condition: Condition }) {
       </button>
 
       {expanded && groups.length > 0 && (
-        <div className="border-t-2 border-border divide-y-2 divide-border/50">
+        <div className="border-t-2 border-border">
           {groups.map(({ line, regimens }) => (
-            <div key={line} className="p-4">
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                ● {line}
+            <div key={line}>
+              <div className="px-4 py-2 bg-secondary/10 flex items-center gap-2">
+                <div className="text-[10px] font-bold uppercase tracking-widest">{line}</div>
+                <div className="flex-1 h-px bg-border/60" />
               </div>
-              <div className="space-y-3">
-                {regimens.map(r => (
-                  <div key={r.id} className="pl-3 border-l-2 border-primary/40">
-                    <div className="font-bold text-sm uppercase tracking-wide">
-                      {r.generic_name}
-                      {r.strength && <span className="font-normal normal-case"> {r.strength}</span>}
-                      {r.adult_dose && <span className="font-normal normal-case"> — {r.adult_dose}</span>}
-                      {r.duration && <span className="font-normal normal-case"> × {r.duration}</span>}
-                    </div>
-                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                      {r.route && <span className="font-semibold uppercase text-foreground/70">[{r.route}{r.site ? ` — ${r.site}` : ""}]</span>}
-                      {toArr(r.brand_names).length > 0 && (
-                        <span>Brands: {toArr(r.brand_names).join(", ")}</span>
-                      )}
-                    </div>
-                    {r.pediatric_dose && (
-                      <div className="mt-0.5 text-[11px] text-muted-foreground">
-                        ↳ Pediatric: {r.pediatric_dose}
-                      </div>
-                    )}
-                    {r.notes && (
-                      <div className="mt-0.5 text-[11px] text-amber-700 font-medium">
-                        ↳ Note: {r.notes}
-                      </div>
-                    )}
-                    {r.contraindications && (
-                      <div className="mt-0.5 text-[11px] text-destructive/80">
-                        ↳ CI: {r.contraindications}
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="px-4">
+                {regimens.map(r => <RegimenRow key={r.id} r={r} />)}
               </div>
             </div>
           ))}
@@ -235,6 +272,8 @@ function ConditionCard({ condition }: { condition: Condition }) {
 function DrugCard({ drug }: { drug: Drug }) {
   const [expanded, setExpanded] = useState(true);
   const brands = toArr(drug.brand_names);
+  const adultInds = drug.indications.filter(i => i.adult_dose);
+  const pedInds = drug.indications.filter(i => i.pediatric_dose);
 
   return (
     <div className="brutal mb-3 overflow-hidden">
@@ -246,8 +285,12 @@ function DrugCard({ drug }: { drug: Drug }) {
           <div className="font-display text-lg uppercase leading-tight">{drug.generic_name}</div>
           <div className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {drug.drug_class}
-            {brands.length > 0 && ` · ${brands.slice(0, 3).join(", ")}`}
           </div>
+          {brands.length > 0 && (
+            <div className="mt-0.5 text-[11px] text-muted-foreground">
+              Brands: {brands.join(", ")}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -258,32 +301,80 @@ function DrugCard({ drug }: { drug: Drug }) {
       </button>
 
       {expanded && (
-        <div className="border-t-2 border-border p-4">
-          {drug.indications.length > 0 ? (
-            <>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Used in:
+        <div className="border-t-2 border-border">
+          {drug.indications.length === 0 && (
+            <p className="p-4 text-[11px] text-muted-foreground">No indications linked yet.</p>
+          )}
+
+          {/* Adult Dosage section */}
+          {adultInds.length > 0 && (
+            <div>
+              <div className="px-4 py-2 bg-secondary/10 flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest">Adult Dosage</span>
+                <div className="flex-1 h-px bg-border/60" />
               </div>
-              <ul className="space-y-1.5">
-                {drug.indications.map(ind => (
-                  <li key={ind.id} className="flex items-baseline gap-2 text-sm">
-                    <span className="shrink-0 text-muted-foreground">·</span>
-                    <span>
-                      <span className="font-bold uppercase text-[13px]">{ind.condition_name}</span>
-                      {ind.adult_dose && <span className="text-muted-foreground"> — {ind.adult_dose}</span>}
-                      {ind.duration && <span className="text-muted-foreground"> × {ind.duration}</span>}
-                      {ind.line_of_treatment && (
-                        <span className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                          ({ind.line_of_treatment})
+              <div className="px-4">
+                {adultInds.map(ind => {
+                  const routeStr = [ind.route, ind.site].filter(Boolean).join(" — ");
+                  return (
+                    <div key={ind.id + "_adult"} className="py-3 border-b border-border/30 last:border-0">
+                      <div className="font-bold text-[13px]">{ind.condition_name}
+                        <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase">
+                          {ind.line_of_treatment}
                         </span>
+                      </div>
+                      {routeStr && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground uppercase tracking-wide">
+                          {routeStr}
+                        </div>
                       )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="text-[11px] text-muted-foreground">No indications linked yet.</p>
+                      <div className="mt-1 text-sm">
+                        · {ind.adult_dose}
+                        {ind.duration && <span className="text-muted-foreground"> × {ind.duration}</span>}
+                        {ind.frequency && (
+                          <span className="text-muted-foreground"> ({ind.frequency})</span>
+                        )}
+                      </div>
+                      {ind.notes && (
+                        <div className="mt-0.5 text-[11px] text-amber-700">⚠ {ind.notes}</div>
+                      )}
+                      {ind.contraindications && (
+                        <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {ind.contraindications}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Pediatric Dosage section */}
+          {pedInds.length > 0 && (
+            <div>
+              <div className="px-4 py-2 bg-secondary/10 flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest">Pediatric Dosage</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+              <div className="px-4">
+                {pedInds.map(ind => {
+                  const routeStr = [ind.route, ind.site].filter(Boolean).join(" — ");
+                  return (
+                    <div key={ind.id + "_ped"} className="py-3 border-b border-border/30 last:border-0">
+                      <div className="font-bold text-[13px]">{ind.condition_name}</div>
+                      {routeStr && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground uppercase tracking-wide">
+                          {routeStr}
+                        </div>
+                      )}
+                      <div className="mt-1 text-sm text-muted-foreground">
+                        · {ind.pediatric_dose}
+                        {ind.duration && <span> × {ind.duration}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}
