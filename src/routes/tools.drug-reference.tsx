@@ -720,20 +720,23 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
     } finally { setSaving(null); }
   };
 
-  const COLS: { key: string; label: string; width: string }[] = [
-    { key: "adult_dose",       label: "Adult Dose",  width: "w-28" },
-    { key: "max_dose",         label: "Max Dose",    width: "w-20" },
-    { key: "pediatric_dose",   label: "Peds Dose",   width: "w-24" },
-    { key: "route",            label: "Route",       width: "w-14" },
-    { key: "site",             label: "Site",        width: "w-20" },
-    { key: "frequency",        label: "Freq",        width: "w-14" },
-    { key: "duration",         label: "Duration",    width: "w-16" },
-    { key: "strength",         label: "Strength",    width: "w-18" },
-    { key: "formulation",      label: "Form",        width: "w-16" },
-    { key: "line_of_treatment",label: "Line",        width: "w-20" },
-    { key: "notes",            label: "Notes",       width: "w-28" },
-    { key: "contraindications",label: "CI",          width: "w-24" },
+  // px widths applied via style to guarantee table-layout:fixed works correctly
+  const COLS: { key: string; label: string; px: number }[] = [
+    { key: "adult_dose",        label: "Adult Dose", px: 130 },
+    { key: "max_dose",          label: "Max Dose",   px: 90  },
+    { key: "pediatric_dose",    label: "Peds Dose",  px: 120 },
+    { key: "route",             label: "Route",      px: 70  },
+    { key: "site",              label: "Site",       px: 110 },
+    { key: "frequency",         label: "Freq",       px: 70  },
+    { key: "duration",          label: "Duration",   px: 80  },
+    { key: "strength",          label: "Strength",   px: 90  },
+    { key: "formulation",       label: "Form",       px: 90  },
+    { key: "line_of_treatment", label: "Line",       px: 100 },
+    { key: "notes",             label: "Notes",      px: 150 },
+    { key: "contraindications", label: "CI",         px: 140 },
   ];
+
+  const totalWidth = 150 + 140 + COLS.reduce((s, c) => s + c.px, 0) + 32; // cond + drug + cols + del
 
   return (
     <div className="space-y-3">
@@ -759,30 +762,39 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
       {!data && <p className="text-[11px] text-muted-foreground p-2">Loading…</p>}
 
       <div className="brutal overflow-x-auto">
-        <table className="border-collapse text-[11px]" style={{ minWidth: "900px" }}>
+        <table
+          className="border-collapse text-[11px]"
+          style={{ width: `${totalWidth}px`, tableLayout: "fixed" }}
+        >
+          <colgroup>
+            <col style={{ width: 150 }} />
+            <col style={{ width: 140 }} />
+            {COLS.map(c => <col key={c.key} style={{ width: c.px }} />)}
+            <col style={{ width: 32 }} />
+          </colgroup>
           <thead>
             <tr className="bg-secondary/30">
-              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] sticky left-0 bg-secondary/30 z-10 w-32">Condition</th>
-              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] w-28">Drug</th>
+              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Condition</th>
+              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">Drug</th>
               {COLS.map(c => (
-                <th key={c.key} className={`border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] ${c.width}`}>
+                <th key={c.key} className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px]">
                   {c.label}
                 </th>
               ))}
-              <th className="border-b-2 border-border px-1 py-2 w-6" />
+              <th className="border-b-2 border-border" />
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id} className={`${i % 2 ? "bg-muted/10" : ""} hover:bg-primary/5 group`}>
-                <td className="border-b border-r border-border/30 px-2 py-0.5 sticky left-0 bg-card group-hover:bg-primary/5 z-10">
-                  <span className="font-bold text-[10px] uppercase leading-tight line-clamp-2">{r.condition_name}</span>
+                <td className="border-b border-r border-border/30 px-2 py-1 align-top">
+                  <span className="font-bold text-[10px] uppercase leading-tight block">{r.condition_name}</span>
                 </td>
-                <td className="border-b border-r border-border/30 px-2 py-0.5">
-                  <span className="font-semibold text-[11px] line-clamp-1">{r.generic_name}</span>
+                <td className="border-b border-r border-border/30 px-2 py-1 align-top">
+                  <span className="font-semibold text-[11px] block">{r.generic_name}</span>
                 </td>
                 {COLS.map(c => (
-                  <td key={c.key} className="border-b border-r border-border/30 py-0.5">
+                  <td key={c.key} className="border-b border-r border-border/30 py-0.5 align-middle">
                     <EditCell
                       value={(r as unknown as Record<string, string>)[c.key] ?? ""}
                       onSave={v => saveField(r.id, c.key, v)}
