@@ -633,7 +633,7 @@ function AdminQuickAdd({
 
 // ── EditCell — click to edit inline ──────────────────────────────────────────
 
-function EditCell({ value, onSave, saving }: { value: string; onSave: (v: string) => void; saving?: boolean }) {
+function EditCell({ value, onSave, saving, options }: { value: string; onSave: (v: string) => void; saving?: boolean; options?: string[] }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -645,6 +645,21 @@ function EditCell({ value, onSave, saving }: { value: string; onSave: (v: string
   };
 
   if (editing) {
+    if (options) {
+      return (
+        <select
+          value={draft}
+          onChange={e => { onSave(e.target.value); setEditing(false); }}
+          onBlur={() => setEditing(false)}
+          onKeyDown={e => { if (e.key === "Escape") setEditing(false); }}
+          autoFocus
+          className="w-full min-w-0 bg-primary/10 border border-primary px-1 py-0.5 text-[11px] outline-none"
+        >
+          <option value="">—</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    }
     return (
       <input
         value={draft}
@@ -687,6 +702,13 @@ const COLS: { key: string; label: string; px: number }[] = [
   { key: "notes",             label: "Notes",      px: 160 },
   { key: "contraindications", label: "CI",         px: 140 },
 ];
+const COL_OPTIONS: Record<string, string[]> = {
+  route: ROUTES,
+  site: INJECTION_SITES,
+  frequency: FREQUENCIES,
+  formulation: FORMULATIONS,
+  line_of_treatment: LINES,
+};
 const COND_W = 160, DRUG_W = 150, DEL_W = 36;
 const TABLE_W = COND_W + DRUG_W + COLS.reduce((s, c) => s + c.px, 0) + DEL_W;
 
@@ -958,6 +980,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                         <EditCell
                           value={currentVal}
                           onSave={v => markPending(r.id, c.key, v)}
+                          options={COL_OPTIONS[c.key]}
                         />
                       </td>
                     );
