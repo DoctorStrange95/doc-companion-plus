@@ -100,9 +100,15 @@ function groupByLine(regimens: Regimen[]) {
     const k = r.line_of_treatment || "Other";
     (map[k] ??= []).push(r);
   }
-  return [...LINE_ORDER, "Other"]
-    .filter(l => map[l])
-    .map(l => ({ line: l, regimens: map[l] }));
+  // Known lines first (in order), then any custom lines alphabetically, then "Other"
+  const known  = LINE_ORDER.filter(l => map[l]);
+  const custom = Object.keys(map).filter(l => !LINE_ORDER.includes(l) && l !== "Other").sort();
+  const other  = map["Other"] ? [{ line: "Other", regimens: map["Other"] }] : [];
+  return [
+    ...known.map(l  => ({ line: l, regimens: map[l] })),
+    ...custom.map(l => ({ line: l, regimens: map[l] })),
+    ...other,
+  ];
 }
 
 function searchLocal(data: CacheData, q: string, type: string, cat: string) {
@@ -112,7 +118,11 @@ function searchLocal(data: CacheData, q: string, type: string, cat: string) {
   if (cat) conditions = conditions.filter(c => c.category === cat);
 
   if (!ql && !cat) return { conditions: [], drugs: [] };
-  if (!ql && cat) return { conditions, drugs: [] };
+  if (!ql && cat) {
+    // Drugs have no category field — only conditions can be category-filtered
+    if (type === "drug") return { conditions: [], drugs: [] };
+    return { conditions, drugs: [] };
+  }
 
   if (type !== "drug") {
     conditions = conditions.filter(c =>
