@@ -1151,9 +1151,12 @@ function DrugReferencePage() {
           </div>
         )}
 
-        {tab === "admin" && isAdmin && (
+      </PageShell>
+
+      {/* Admin uses full viewport width — rendered outside the narrow PageShell */}
+      {tab === "admin" && isAdmin && (
+        <main className="w-full px-4 pb-28 pt-4">
           <div className="space-y-4">
-            {/* Admin section tabs */}
             <div className="flex border-2 border-border">
               {(["manage", "add", "csv"] as const).map(s => (
                 <button key={s} onClick={() => setAdminSection(s)}
@@ -1162,19 +1165,22 @@ function DrugReferencePage() {
                 </button>
               ))}
             </div>
-
             {adminSection === "add" && (
-              <AdminQuickAdd data={cache} onSuccess={() => loadData(true)} />
+              <div className="max-w-2xl">
+                <AdminQuickAdd data={cache} onSuccess={() => loadData(true)} />
+              </div>
             )}
             {adminSection === "manage" && (
               <AdminManage data={cache} onRefresh={() => loadData(true)} />
             )}
             {adminSection === "csv" && (
-              <AdminCsv onSuccess={() => loadData(true)} />
+              <div className="max-w-2xl">
+                <AdminCsv onSuccess={() => loadData(true)} />
+              </div>
             )}
           </div>
-        )}
-      </PageShell>
+        </main>
+      )}
     </>
   );
 }
