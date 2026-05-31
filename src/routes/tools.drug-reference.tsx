@@ -1107,7 +1107,10 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
       setReplaceAll(false);
       onSuccess();
     } catch (e) {
-      setErr(e instanceof ApiError ? String(e.detail) : (e as Error).message);
+      const msg = e instanceof ApiError ? String(e.detail) : (e as Error).message;
+      setErr(msg === "Failed to fetch"
+        ? "Cannot reach the server — it may be waking up (Render cold start). Wait 30 seconds and try again."
+        : msg);
     } finally { setBusy(false); }
   };
 
