@@ -23,6 +23,7 @@ import { Route as ToolsNutritionRouteImport } from './routes/tools.nutrition'
 import { Route as ToolsImnciRouteImport } from './routes/tools.imnci'
 import { Route as ToolsGrowthRouteImport } from './routes/tools.growth'
 import { Route as ToolsBmiRouteImport } from './routes/tools.bmi'
+import { Route as ToolsDrugReferenceRouteImport } from './routes/tools.drug-reference'
 import { Route as PgTokenRouteImport } from './routes/pg.$token'
 import { Route as PatientsNewRouteImport } from './routes/patients.new'
 import { Route as PatientsIdRouteImport } from './routes/patients.$id'
@@ -104,6 +105,11 @@ const ToolsBmiRoute = ToolsBmiRouteImport.update({
   path: '/tools/bmi',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsDrugReferenceRoute = ToolsDrugReferenceRouteImport.update({
+  id: '/tools/drug-reference',
+  path: '/tools/drug-reference',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PgTokenRoute = PgTokenRouteImport.update({
   id: '/pg/$token',
   path: '/pg/$token',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/patients/new': typeof PatientsNewRoute
   '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/drug-reference': typeof ToolsDrugReferenceRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
   '/tools/nutrition': typeof ToolsNutritionRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/patients/new': typeof PatientsNewRoute
   '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/drug-reference': typeof ToolsDrugReferenceRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
   '/tools/nutrition': typeof ToolsNutritionRoute
@@ -223,6 +231,7 @@ export interface FileRoutesById {
   '/patients/new': typeof PatientsNewRoute
   '/pg/$token': typeof PgTokenRoute
   '/tools/bmi': typeof ToolsBmiRoute
+  '/tools/drug-reference': typeof ToolsDrugReferenceRoute
   '/tools/growth': typeof ToolsGrowthRoute
   '/tools/imnci': typeof ToolsImnciRoute
   '/tools/nutrition': typeof ToolsNutritionRoute
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/patients/new'
     | '/pg/$token'
     | '/tools/bmi'
+    | '/tools/drug-reference'
     | '/tools/growth'
     | '/tools/imnci'
     | '/tools/nutrition'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/patients/new'
     | '/pg/$token'
     | '/tools/bmi'
+    | '/tools/drug-reference'
     | '/tools/growth'
     | '/tools/imnci'
     | '/tools/nutrition'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/patients/new'
     | '/pg/$token'
     | '/tools/bmi'
+    | '/tools/drug-reference'
     | '/tools/growth'
     | '/tools/imnci'
     | '/tools/nutrition'
@@ -329,6 +341,7 @@ export interface RootRouteChildren {
   PatientsNewRoute: typeof PatientsNewRoute
   PgTokenRoute: typeof PgTokenRoute
   ToolsBmiRoute: typeof ToolsBmiRoute
+  ToolsDrugReferenceRoute: typeof ToolsDrugReferenceRoute
   ToolsGrowthRoute: typeof ToolsGrowthRoute
   ToolsImnciRoute: typeof ToolsImnciRoute
   ToolsNutritionRoute: typeof ToolsNutritionRoute
@@ -436,6 +449,13 @@ declare module '@tanstack/react-router' {
       path: '/tools/bmi'
       fullPath: '/tools/bmi'
       preLoaderRoute: typeof ToolsBmiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tools/drug-reference': {
+      id: '/tools/drug-reference'
+      path: '/tools/drug-reference'
+      fullPath: '/tools/drug-reference'
+      preLoaderRoute: typeof ToolsDrugReferenceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pg/$token': {
@@ -552,6 +572,7 @@ const rootRouteChildren: RootRouteChildren = {
   PatientsNewRoute: PatientsNewRoute,
   PgTokenRoute: PgTokenRoute,
   ToolsBmiRoute: ToolsBmiRoute,
+  ToolsDrugReferenceRoute: ToolsDrugReferenceRoute,
   ToolsGrowthRoute: ToolsGrowthRoute,
   ToolsImnciRoute: ToolsImnciRoute,
   ToolsNutritionRoute: ToolsNutritionRoute,

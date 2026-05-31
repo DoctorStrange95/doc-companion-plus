@@ -26,6 +26,11 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
+from routers.drug_reference import (
+    router as drug_reference_router,
+    ensure_drug_reference_tables,
+    auto_seed_drug_reference,
+)
 from sqlalchemy import select, or_, and_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -217,10 +222,19 @@ async def lifespan(app: FastAPI):
             """))
     except Exception as e:
         print(f"[password_reset_tokens] warning: {e}")
+    try:
+        await ensure_drug_reference_tables(engine)
+    except Exception as e:
+        print(f"[drug_reference_tables] warning: {e}")
+    try:
+        await auto_seed_drug_reference(engine)
+    except Exception as e:
+        print(f"[drug_reference_seed] warning: {e}")
     yield
 
 
 app = FastAPI(title="CommunityMed Pro API", lifespan=lifespan)
+app.include_router(drug_reference_router)
 
 app.add_middleware(
     CORSMiddleware,

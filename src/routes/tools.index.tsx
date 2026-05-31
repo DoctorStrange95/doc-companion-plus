@@ -1,16 +1,23 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Calculator, Scale, TrendingUp, Apple, BookOpen, FilePlus2 } from "lucide-react";
+import { Calculator, Scale, TrendingUp, Apple, BookOpen, FilePlus2, Pill } from "lucide-react";
 
 export const Route = createFileRoute("/tools/")({ component: ToolsIndex });
 
 const tools = [
   {
+    to: "/tools/drug-reference",
+    title: "Drug Reference",
+    desc: "Conditions · Drugs · Dosage guide",
+    icon: Pill,
+    tone: "primary",
+  },
+  {
     to: "/tools/sample-size",
     title: "Sample Size",
     desc: "Cochran, two-proportion, mean tests",
     icon: Calculator,
-    tone: "primary",
+    tone: "card",
   },
   {
     to: "/tools/bmi",
