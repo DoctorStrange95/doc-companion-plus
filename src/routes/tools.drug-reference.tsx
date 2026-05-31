@@ -1124,7 +1124,8 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
         return;
       } catch (e) {
         const msg = e instanceof ApiError ? String(e.detail) : (e as Error).message;
-        if (msg.includes("reach") && attempt < 3) {
+        const isNetworkErr = msg === "Failed to fetch" || msg.includes("reach") || msg.includes("network");
+        if (isNetworkErr && attempt < 3) {
           await new Promise(r => setTimeout(r, 30000)); // wait 30 s for Cloud Run cold start
           continue;
         }

@@ -650,6 +650,10 @@ async def import_csv(
     updated = inserted = skipped = 0
     errors: list[str] = []
 
+    # Cache conditions/drugs already seen this import to avoid repeated SELECT per row
+    cond_cache: dict[str, str] = {}
+    drug_cache: dict[str, str] = {}
+
     for i, row in enumerate(reader, start=2):
         try:
             rid_csv = row.get("regimen_id", "").strip()
@@ -672,7 +676,7 @@ async def import_csv(
                     "notes": row.get("notes", ""), "contra": row.get("contraindications", ""),
                 }
 
-            # If regimen_id present and exists → UPDATE (no need to touch condition/drug)
+            # If regimen_id present and exists → UPDATE
             if rid_csv:
                 existing = (await db.execute(
                     text("SELECT condition_id, drug_id FROM dr_regimens WHERE id=:id LIMIT 1"),
@@ -688,41 +692,50 @@ async def import_csv(
                           notes=:notes, contraindications=:contra, updated_at=now()
                         WHERE id=:rid
                     """), {**p, "rid": rid_csv})
-                    await db.commit()
                     updated += 1
                     continue
 
-            # New regimen → upsert condition + drug + insert
-            c_row = (await db.execute(
-                text("SELECT id FROM dr_conditions WHERE lower(name)=lower(:n) LIMIT 1"), {"n": cname}
-            )).mappings().first()
-            if c_row:
-                cid = str(c_row["id"])
+            # Upsert condition (use in-memory cache to skip DB round trip)
+            ckey = cname.lower()
+            if ckey in cond_cache:
+                cid = cond_cache[ckey]
             else:
-                cid = str(uuid.uuid4())
-                aliases = [a.strip() for a in row.get("condition_aliases", "").split(";") if a.strip()]
-                await db.execute(text("""
-                    INSERT INTO dr_conditions (id, name, aliases, category, icd_code)
-                    VALUES (:id, :name, CAST(:aliases AS jsonb), :cat, :icd)
-                """), {"id": cid, "name": cname, "aliases": json.dumps(aliases),
-                      "cat": row.get("condition_category", ""), "icd": row.get("condition_icd_code", "")})
+                c_row = (await db.execute(
+                    text("SELECT id FROM dr_conditions WHERE lower(name)=lower(:n) LIMIT 1"), {"n": cname}
+                )).mappings().first()
+                if c_row:
+                    cid = str(c_row["id"])
+                else:
+                    cid = str(uuid.uuid4())
+                    aliases = [a.strip() for a in row.get("condition_aliases", "").split(";") if a.strip()]
+                    await db.execute(text("""
+                        INSERT INTO dr_conditions (id, name, aliases, category, icd_code)
+                        VALUES (:id, :name, CAST(:aliases AS jsonb), :cat, :icd)
+                    """), {"id": cid, "name": cname, "aliases": json.dumps(aliases),
+                          "cat": row.get("condition_category", ""), "icd": row.get("condition_icd_code", "")})
+                cond_cache[ckey] = cid
 
-            d_row = (await db.execute(
-                text("SELECT id FROM dr_drugs WHERE lower(generic_name)=lower(:n) LIMIT 1"), {"n": dname}
-            )).mappings().first()
-            if d_row:
-                did = str(d_row["id"])
+            # Upsert drug (cache)
+            dkey = dname.lower()
+            if dkey in drug_cache:
+                did = drug_cache[dkey]
             else:
-                did = str(uuid.uuid4())
-                brands = [b.strip() for b in row.get("drug_brand_names", "").split(";") if b.strip()]
-                await db.execute(text("""
-                    INSERT INTO dr_drugs (id, generic_name, brand_names, drug_class)
-                    VALUES (:id, :name, CAST(:brands AS jsonb), :cls)
-                """), {"id": did, "name": dname, "brands": json.dumps(brands),
-                      "cls": row.get("drug_class", "")})
+                d_row = (await db.execute(
+                    text("SELECT id FROM dr_drugs WHERE lower(generic_name)=lower(:n) LIMIT 1"), {"n": dname}
+                )).mappings().first()
+                if d_row:
+                    did = str(d_row["id"])
+                else:
+                    did = str(uuid.uuid4())
+                    brands = [b.strip() for b in row.get("drug_brand_names", "").split(";") if b.strip()]
+                    await db.execute(text("""
+                        INSERT INTO dr_drugs (id, generic_name, brand_names, drug_class)
+                        VALUES (:id, :name, CAST(:brands AS jsonb), :cls)
+                    """), {"id": did, "name": dname, "brands": json.dumps(brands),
+                          "cls": row.get("drug_class", "")})
+                drug_cache[dkey] = did
 
             p = _regimen_params(cid, did)
-            # Upsert: update if same condition+drug already exists, else insert
             existing_r = (await db.execute(
                 text("SELECT id FROM dr_regimens WHERE condition_id=:cid AND drug_id=:did LIMIT 1"),
                 {"cid": cid, "did": did}
@@ -736,7 +749,6 @@ async def import_csv(
                       notes=:notes, contraindications=:contra, updated_at=now()
                     WHERE id=:rid
                 """), {**p, "rid": str(existing_r["id"])})
-                await db.commit()
                 updated += 1
             else:
                 await db.execute(text("""
@@ -746,11 +758,16 @@ async def import_csv(
                     VALUES
                     (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
                      :freq, :dur, :str, :form, :line, :notes, :contra)
-                """), {"id": str(uuid.uuid4()), **p})
-                await db.commit()
+                """), {"id": rid_csv or str(uuid.uuid4()), **p})
                 inserted += 1
         except Exception as e:
-            await db.rollback()
             errors.append(f"Row {i}: {str(e)[:120]}")
+
+    # Single commit for all rows — eliminates 150+ round trips
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        errors.append(f"Commit failed: {str(e)[:200]}")
 
     return {"updated": updated, "inserted": inserted, "skipped": skipped, "errors": errors}
