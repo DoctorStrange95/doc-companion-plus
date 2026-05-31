@@ -529,6 +529,31 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Condition name editing
+  const [editingCondId, setEditingCondId] = useState<string | null>(null);
+  const [condNameEdit, setCondNameEdit] = useState("");
+  const [condAliasEdit, setCondAliasEdit] = useState("");
+  const [condCatEdit, setCondCatEdit] = useState("");
+  const [condIcdEdit, setCondIcdEdit] = useState("");
+
+  // Inline add-regimen per condition
+  const [addingRegimenTo, setAddingRegimenTo] = useState<string | null>(null);
+  const [newDrugQ, setNewDrugQ] = useState("");
+  const [newDrugId, setNewDrugId] = useState<string | null>(null);
+  const [newDrugBrands, setNewDrugBrands] = useState("");
+  const [newDrugClass, setNewDrugClass] = useState("");
+  const [showNewDrugDrop, setShowNewDrugDrop] = useState(false);
+  const [newAdultDose, setNewAdultDose] = useState("");
+  const [newPedDose, setNewPedDose] = useState("");
+  const [newRoute, setNewRoute] = useState("");
+  const [newFreq, setNewFreq] = useState("");
+  const [newDur, setNewDur] = useState("");
+  const [newStrength, setNewStrength] = useState("");
+  const [newForm, setNewForm] = useState("");
+  const [newLine, setNewLine] = useState("First line");
+  const [newNotes, setNewNotes] = useState("");
+  const [newContra, setNewContra] = useState("");
+
   const conditions = useMemo(() => {
     if (!data) return [];
     const ql = manageQ.toLowerCase();
@@ -538,6 +563,21 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
       toArr(c.aliases).some(a => a.toLowerCase().includes(ql))
     );
   }, [data, manageQ]);
+
+  const newDrugSuggestions = useMemo(() => {
+    if (!data || !newDrugQ.trim()) return [];
+    const ql = newDrugQ.toLowerCase();
+    return data.drugs.filter(d =>
+      d.generic_name.toLowerCase().includes(ql) ||
+      toArr(d.brand_names).some(b => b.toLowerCase().includes(ql))
+    ).slice(0, 6);
+  }, [data, newDrugQ]);
+
+  const resetNewRegimen = () => {
+    setNewDrugQ(""); setNewDrugId(null); setNewDrugBrands(""); setNewDrugClass("");
+    setNewAdultDose(""); setNewPedDose(""); setNewRoute(""); setNewFreq(""); setNewDur("");
+    setNewStrength(""); setNewForm(""); setNewLine("First line"); setNewNotes(""); setNewContra("");
+  };
 
   const deleteRegimen = async (rid: string) => {
     if (!confirm("Delete this regimen?")) return;
@@ -556,8 +596,23 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
       await api(`/api/drug-reference/regimens/${rid}`, {
         method: "PUT", body: JSON.stringify(editFields),
       });
-      setEditingId(null);
-      setEditFields({});
+      setEditingId(null); setEditFields({});
+      onRefresh();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
+    } finally { setBusy(null); }
+  };
+
+  const saveCondition = async (cid: string) => {
+    if (!condNameEdit.trim()) return;
+    setBusy(cid + "_cond");
+    try {
+      const aliases = condAliasEdit.split(",").map(s => s.trim()).filter(Boolean);
+      await api(`/api/drug-reference/conditions/${cid}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: condNameEdit.trim(), aliases, category: condCatEdit, icd_code: condIcdEdit, notes: "" }),
+      });
+      setEditingCondId(null);
       onRefresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
@@ -570,6 +625,37 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
     try {
       await api(`/api/drug-reference/conditions/${cid}`, { method: "DELETE" });
       setExpanded(null);
+      onRefresh();
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
+    } finally { setBusy(null); }
+  };
+
+  const addRegimen = async (conditionId: string) => {
+    if (!newDrugQ.trim()) return;
+    setBusy(conditionId + "_add");
+    try {
+      let resolvedDrugId = newDrugId;
+      if (!resolvedDrugId) {
+        const brands = newDrugBrands.split(",").map(s => s.trim()).filter(Boolean);
+        const d = await api<{ id: string }>("/api/drug-reference/drugs", {
+          method: "POST",
+          body: JSON.stringify({ generic_name: newDrugQ.trim(), brand_names: brands, drug_class: newDrugClass }),
+        });
+        resolvedDrugId = d.id;
+      }
+      await api("/api/drug-reference/regimens", {
+        method: "POST",
+        body: JSON.stringify({
+          condition_id: conditionId, drug_id: resolvedDrugId,
+          adult_dose: newAdultDose, pediatric_dose: newPedDose,
+          route: newRoute, frequency: newFreq, duration: newDur,
+          strength: newStrength, formulation: newForm,
+          line_of_treatment: newLine, notes: newNotes, contraindications: newContra,
+        }),
+      });
+      setAddingRegimenTo(null);
+      resetNewRegimen();
       onRefresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
@@ -589,23 +675,77 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
       {!data && <p className="text-[11px] text-muted-foreground">Loading…</p>}
       {conditions.map(cond => (
         <div key={cond.id} className="brutal overflow-hidden">
-          <button
-            onClick={() => setExpanded(expanded === cond.id ? null : cond.id)}
-            className="flex w-full items-center gap-3 bg-card px-4 py-3 text-left hover:bg-primary/10"
-          >
-            <span className="flex-1 font-bold text-sm uppercase">{cond.name}</span>
-            <span className="text-[10px] text-muted-foreground">{cond.regimens.length} regimens</span>
-            <button
-              type="button"
-              onClick={e => { e.stopPropagation(); deleteCondition(cond.id); }}
-              disabled={busy === cond.id}
-              className="p-1 hover:text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-            {expanded === cond.id ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
-          </button>
+          {/* Condition header row */}
+          {editingCondId === cond.id ? (
+            <div className="bg-card px-4 py-3 space-y-2 border-b-2 border-border">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Edit Condition</div>
+              <div className="grid grid-cols-2 gap-2">
+                <F label="Condition Name *">
+                  <input className="input-brutal text-sm" value={condNameEdit}
+                    onChange={e => setCondNameEdit(e.target.value)} autoFocus />
+                </F>
+                <F label="Aliases (comma-separated)">
+                  <input className="input-brutal text-sm" value={condAliasEdit}
+                    onChange={e => setCondAliasEdit(e.target.value)} placeholder="URTI, Cold" />
+                </F>
+                <F label="Category">
+                  <select className="input-brutal text-sm" value={condCatEdit} onChange={e => setCondCatEdit(e.target.value)}>
+                    <option value="">Select</option>
+                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </F>
+                <F label="ICD Code">
+                  <input className="input-brutal text-sm" value={condIcdEdit}
+                    onChange={e => setCondIcdEdit(e.target.value)} placeholder="J06.9" />
+                </F>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => saveCondition(cond.id)} disabled={busy === cond.id + "_cond"}
+                  className="btn-brutal text-xs px-3 py-1.5">
+                  {busy === cond.id + "_cond" ? "Saving…" : "Save"}
+                </button>
+                <button onClick={() => setEditingCondId(null)}
+                  className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex w-full items-center gap-2 bg-card px-4 py-3">
+              <button
+                onClick={() => setExpanded(expanded === cond.id ? null : cond.id)}
+                className="flex flex-1 items-center gap-2 text-left min-w-0"
+              >
+                <span className="flex-1 font-bold text-sm uppercase truncate">{cond.name}</span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{cond.regimens.length} regimens</span>
+                {expanded === cond.id ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+              </button>
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setEditingCondId(cond.id);
+                  setCondNameEdit(cond.name);
+                  setCondAliasEdit(toArr(cond.aliases).join(", "));
+                  setCondCatEdit(cond.category);
+                  setCondIcdEdit(cond.icd_code);
+                }}
+                className="shrink-0 p-1 hover:text-primary" title="Edit condition name"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); deleteCondition(cond.id); }}
+                disabled={busy === cond.id}
+                className="shrink-0 p-1 hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
+          {/* Expanded regimens */}
           {expanded === cond.id && (
             <div className="border-t-2 border-border divide-y divide-border/40">
               {cond.regimens.map(r => (
@@ -653,8 +793,72 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                   )}
                 </div>
               ))}
-              {cond.regimens.length === 0 && (
-                <div className="px-4 py-2 text-[11px] text-muted-foreground">No regimens.</div>
+
+              {/* Add regimen inline */}
+              {addingRegimenTo === cond.id ? (
+                <div className="px-4 py-4 bg-primary/5 space-y-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Add Regimen to {cond.name}</div>
+                  <div className="relative">
+                    <F label="Drug Name *">
+                      <input className="input-brutal text-sm" value={newDrugQ} autoFocus
+                        onChange={e => { setNewDrugQ(e.target.value); setNewDrugId(null); setShowNewDrugDrop(true); }}
+                        onFocus={() => setShowNewDrugDrop(true)}
+                        onBlur={() => setTimeout(() => setShowNewDrugDrop(false), 150)}
+                        placeholder="Generic name or brand" />
+                    </F>
+                    {showNewDrugDrop && newDrugSuggestions.length > 0 && (
+                      <ul className="absolute z-20 left-0 right-0 top-full border-2 border-border bg-card shadow-lg">
+                        {newDrugSuggestions.map(d => (
+                          <li key={d.id}>
+                            <button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-primary/10"
+                              onMouseDown={() => { setNewDrugQ(d.generic_name); setNewDrugId(d.id); setShowNewDrugDrop(false); }}>
+                              {d.generic_name}
+                              {toArr(d.brand_names).length > 0 && <span className="text-muted-foreground text-xs ml-2">{toArr(d.brand_names).slice(0, 2).join(", ")}</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {newDrugId && <p className="text-[10px] text-green-700 font-semibold uppercase">✓ Using existing drug</p>}
+                  {!newDrugId && newDrugQ && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <F label="Brand Names"><input className="input-brutal text-sm" value={newDrugBrands} onChange={e => setNewDrugBrands(e.target.value)} placeholder="Azee, Zithromax" /></F>
+                      <F label="Drug Class"><input className="input-brutal text-sm" value={newDrugClass} onChange={e => setNewDrugClass(e.target.value)} placeholder="Macrolide Antibiotic" /></F>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <F label="Adult Dose"><input className="input-brutal text-sm" value={newAdultDose} onChange={e => setNewAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
+                    <F label="Pediatric Dose"><input className="input-brutal text-sm" value={newPedDose} onChange={e => setNewPedDose(e.target.value)} /></F>
+                    <F label="Route"><select className="input-brutal text-sm" value={newRoute} onChange={e => setNewRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
+                    <F label="Frequency"><select className="input-brutal text-sm" value={newFreq} onChange={e => setNewFreq(e.target.value)}><option value="">Select</option>{FREQUENCIES.map(f => <option key={f}>{f}</option>)}</select></F>
+                    <F label="Duration"><input className="input-brutal text-sm" value={newDur} onChange={e => setNewDur(e.target.value)} placeholder="5 days" /></F>
+                    <F label="Strength"><input className="input-brutal text-sm" value={newStrength} onChange={e => setNewStrength(e.target.value)} placeholder="500 mg" /></F>
+                    <F label="Formulation"><select className="input-brutal text-sm" value={newForm} onChange={e => setNewForm(e.target.value)}><option value="">Select</option>{FORMULATIONS.map(f => <option key={f}>{f}</option>)}</select></F>
+                    <F label="Line"><select className="input-brutal text-sm" value={newLine} onChange={e => setNewLine(e.target.value)}>{LINES.map(l => <option key={l}>{l}</option>)}</select></F>
+                  </div>
+                  <F label="Notes"><input className="input-brutal text-sm" value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="Give after food" /></F>
+                  <div className="flex gap-2">
+                    <button onClick={() => addRegimen(cond.id)} disabled={!newDrugQ.trim() || busy === cond.id + "_add"}
+                      className="btn-brutal text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50">
+                      {busy === cond.id + "_add" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                      {busy === cond.id + "_add" ? "Saving…" : "Add Regimen"}
+                    </button>
+                    <button onClick={() => { setAddingRegimenTo(null); resetNewRegimen(); }}
+                      className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-4 py-2">
+                  <button
+                    onClick={() => { setAddingRegimenTo(cond.id); resetNewRegimen(); setExpanded(cond.id); }}
+                    className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Regimen
+                  </button>
+                </div>
               )}
             </div>
           )}
