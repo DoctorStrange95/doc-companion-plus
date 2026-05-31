@@ -373,7 +373,11 @@ function DrugCard({ drug }: { drug: Drug }) {
                   const routeStr = [ind.route, ind.site].filter(Boolean).join(" — ");
                   return (
                     <div key={ind.id + "_ped"} className="py-3 border-b border-border/30 last:border-0">
-                      <div className="font-bold text-[13px]">{ind.condition_name}</div>
+                      <div className="font-bold text-[13px]">{ind.condition_name}
+                        <span className="ml-2 text-[10px] font-normal text-muted-foreground uppercase">
+                          {ind.line_of_treatment}
+                        </span>
+                      </div>
                       {routeStr && (
                         <div className="mt-0.5 text-[11px] text-muted-foreground uppercase tracking-wide">
                           {routeStr}
@@ -382,7 +386,22 @@ function DrugCard({ drug }: { drug: Drug }) {
                       <div className="mt-1 text-sm text-muted-foreground">
                         · {ind.pediatric_dose}
                         {ind.duration && <span> × {ind.duration}</span>}
+                        {ind.frequency && <span> ({ind.frequency})</span>}
                       </div>
+                      {ind.max_dose && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">Max dose: {ind.max_dose}</div>
+                      )}
+                      {(ind.strength || ind.formulation) && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          Available: {[ind.strength, ind.formulation].filter(Boolean).join(" · ")}
+                        </div>
+                      )}
+                      {ind.notes && (
+                        <div className="mt-0.5 text-[11px] text-amber-700 font-medium">⚠ {ind.notes}</div>
+                      )}
+                      {ind.contraindications && (
+                        <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {ind.contraindications}</div>
+                      )}
                     </div>
                   );
                 })}
@@ -765,10 +784,14 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
         errors++;
       }
     }
+    const savedCount = Object.keys(pending).length;
     setPending({});
     setSaving(false);
     if (errors) setMsg({ ok: false, text: `${errors} regimen(s) failed to save.` });
-    else setMsg({ ok: true, text: `Saved ${Object.keys(pending).length} regimen(s).` });
+    else {
+      setMsg({ ok: true, text: `Saved ${savedCount} regimen(s).` });
+      onRefresh();
+    }
   };
 
   const saveConditionName = async (conditionId: string, newName: string) => {
