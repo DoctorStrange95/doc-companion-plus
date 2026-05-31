@@ -278,7 +278,7 @@ async def auto_seed_drug_reference(engine):
             cid = str(uuid.uuid4())
             await conn.execute(text("""
                 INSERT INTO dr_conditions (id, name, aliases, category, icd_code)
-                VALUES (:id, :name, :aliases::jsonb, :category, :icd_code)
+                VALUES (:id, :name, CAST(:aliases AS jsonb), :category, :icd_code)
             """), {
                 "id": cid, "name": cond["name"],
                 "aliases": json.dumps(cond["aliases"]),
@@ -291,7 +291,7 @@ async def auto_seed_drug_reference(engine):
                     did = str(uuid.uuid4())
                     await conn.execute(text("""
                         INSERT INTO dr_drugs (id, generic_name, brand_names, drug_class, category)
-                        VALUES (:id, :generic_name, :brand_names::jsonb, :drug_class, :category)
+                        VALUES (:id, :generic_name, CAST(:brand_names AS jsonb), :drug_class, :category)
                         ON CONFLICT DO NOTHING
                     """), {
                         "id": did, "generic_name": r["drug"],
@@ -429,7 +429,7 @@ async def create_condition(
     cid = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO dr_conditions (id, name, aliases, category, icd_code, notes)
-        VALUES (:id, :name, :aliases::jsonb, :category, :icd_code, :notes)
+        VALUES (:id, :name, CAST(:aliases AS jsonb), :category, :icd_code, :notes)
     """), {"id": cid, "name": body.name, "aliases": json.dumps(body.aliases),
           "category": body.category, "icd_code": body.icd_code, "notes": body.notes})
     await db.commit()
@@ -444,7 +444,7 @@ async def update_condition(
 ):
     _require_admin(user)
     await db.execute(text("""
-        UPDATE dr_conditions SET name=:name, aliases=:aliases::jsonb, category=:category,
+        UPDATE dr_conditions SET name=:name, aliases=CAST(:aliases AS jsonb), category=:category,
         icd_code=:icd_code, notes=:notes, updated_at=now() WHERE id=:id
     """), {"id": cid, "name": body.name, "aliases": json.dumps(body.aliases),
           "category": body.category, "icd_code": body.icd_code, "notes": body.notes})
@@ -474,7 +474,7 @@ async def create_drug(
     did = str(uuid.uuid4())
     await db.execute(text("""
         INSERT INTO dr_drugs (id, generic_name, brand_names, drug_class, category)
-        VALUES (:id, :generic_name, :brand_names::jsonb, :drug_class, :category)
+        VALUES (:id, :generic_name, CAST(:brand_names AS jsonb), :drug_class, :category)
     """), {"id": did, "generic_name": body.generic_name, "brand_names": json.dumps(body.brand_names),
           "drug_class": body.drug_class, "category": body.category})
     await db.commit()
@@ -489,7 +489,7 @@ async def update_drug(
 ):
     _require_admin(user)
     await db.execute(text("""
-        UPDATE dr_drugs SET generic_name=:generic_name, brand_names=:brand_names::jsonb,
+        UPDATE dr_drugs SET generic_name=:generic_name, brand_names=CAST(:brand_names AS jsonb),
         drug_class=:drug_class, category=:category, updated_at=now() WHERE id=:id
     """), {"id": did, "generic_name": body.generic_name, "brand_names": json.dumps(body.brand_names),
           "drug_class": body.drug_class, "category": body.category})
@@ -642,7 +642,7 @@ async def import_csv(
                 aliases = [a.strip() for a in row.get("condition_aliases", "").split(";") if a.strip()]
                 await db.execute(text("""
                     INSERT INTO dr_conditions (id, name, aliases, category, icd_code)
-                    VALUES (:id, :name, :aliases::jsonb, :cat, :icd)
+                    VALUES (:id, :name, CAST(:aliases AS jsonb), :cat, :icd)
                 """), {"id": cid, "name": cname, "aliases": json.dumps(aliases),
                       "cat": row.get("condition_category", ""), "icd": row.get("condition_icd_code", "")})
 
@@ -657,7 +657,7 @@ async def import_csv(
                 brands = [b.strip() for b in row.get("drug_brand_names", "").split(";") if b.strip()]
                 await db.execute(text("""
                     INSERT INTO dr_drugs (id, generic_name, brand_names, drug_class)
-                    VALUES (:id, :name, :brands::jsonb, :cls)
+                    VALUES (:id, :name, CAST(:brands AS jsonb), :cls)
                 """), {"id": did, "name": dname, "brands": json.dumps(brands),
                       "cls": row.get("drug_class", "")})
 

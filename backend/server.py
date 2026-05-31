@@ -1849,7 +1849,20 @@ async def sync_pull(
         )
         res = await db.execute(q.order_by(Submission.created_at.desc()).limit(2000))
         rows = res.scalars().all()
-        return [SubmissionOut.model_validate(r) for r in rows]
+        out = []
+        for r in rows:
+            sub = SubmissionOut.model_validate(r)
+            # Strip base64 binary fields before sending — keeps egress minimal.
+            # The client marks these as __binary_stripped__ and never re-uploads them.
+            if sub.data:
+                sub.data = {
+                    k: "__binary_stripped__"
+                    if isinstance(v, str) and len(v) > 2000
+                    else v
+                    for k, v in sub.data.items()
+                }
+            out.append(sub)
+        return out
 
     # asyncio.gather runs the three coroutines concurrently on the same event
     # loop.  SQLAlchemy's AsyncSession is safe here because asyncio is
