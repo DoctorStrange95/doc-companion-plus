@@ -889,22 +889,22 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
         </div>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <input className="input-brutal flex-1 min-w-48" placeholder="Filter by condition or drug…"
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <input className="input-brutal w-full sm:flex-1 sm:min-w-48" placeholder="Filter by condition or drug…"
           value={filterQ} onChange={e => setFilterQ(e.target.value)} />
-        <span className="text-[10px] font-bold uppercase text-muted-foreground">{rows.length} rows</span>
-
-        <button onClick={saveAll} disabled={saving || !pendingCount}
-          className="btn-brutal flex items-center gap-1.5 text-xs px-4 py-2 disabled:opacity-50">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-          {saving ? "Saving…" : pendingCount > 0 ? `Save All (${pendingCount})` : "Save All"}
-        </button>
-
-        <button onClick={() => setAddingRow(v => !v)}
-          className="border-2 border-border px-3 py-2 text-[11px] font-bold uppercase hover:bg-primary/10 flex items-center gap-1.5">
-          <Plus className="h-3.5 w-3.5" />
-          Add Row
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-bold uppercase text-muted-foreground">{rows.length} rows</span>
+          <button onClick={saveAll} disabled={saving || !pendingCount}
+            className="btn-brutal flex items-center gap-1.5 text-xs px-4 py-2.5 disabled:opacity-50 min-h-[44px]">
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {saving ? "Saving…" : pendingCount > 0 ? `Save All (${pendingCount})` : "Save All"}
+          </button>
+          <button onClick={() => setAddingRow(v => !v)}
+            className="border-2 border-border px-3 py-2.5 text-[11px] font-bold uppercase hover:bg-primary/10 flex items-center gap-1.5 min-h-[44px]">
+            <Plus className="h-3.5 w-3.5" />
+            Add Row
+          </button>
+        </div>
       </div>
 
       <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
@@ -1303,32 +1303,31 @@ function DrugReferencePage() {
       <div className="sticky top-[57px] z-20 border-b-2 border-border bg-card flex">
         <button
           onClick={() => setTab("lookup")}
-          className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest border-r-2 border-border transition-colors ${tab === "lookup" ? "bg-primary" : "hover:bg-primary/10"}`}
+          className={`flex-1 py-3 text-[12px] font-bold uppercase tracking-widest border-r-2 border-border transition-colors min-h-[44px] ${tab === "lookup" ? "bg-primary" : "hover:bg-primary/10"}`}
         >
           Lookup
         </button>
         {isAdmin && (
           <button
             onClick={() => setTab("admin")}
-            className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest transition-colors ${tab === "admin" ? "bg-primary" : "hover:bg-primary/10"}`}
+            className={`flex-1 py-3 text-[12px] font-bold uppercase tracking-widest transition-colors min-h-[44px] ${tab === "admin" ? "bg-primary" : "hover:bg-primary/10"}`}
           >
             Admin
           </button>
         )}
       </div>
 
-      <PageShell>
-        {tab === "lookup" && (
+      {tab === "lookup" && (
+        <PageShell>
           <div className="space-y-4">
             {/* Search */}
             <div className="brutal flex items-center gap-2 bg-card px-3 py-2">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
-                className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
                 placeholder="Search condition, symptom, or drug name…"
                 value={query}
                 onChange={e => { setQuery(e.target.value); setActiveCategory(""); }}
-                autoFocus
               />
               {query && (
                 <button onClick={() => { setQuery(""); setDebouncedQuery(""); }} className="text-muted-foreground hover:text-foreground">
@@ -1396,9 +1395,8 @@ function DrugReferencePage() {
               </div>
             )}
           </div>
-        )}
-
-      </PageShell>
+        </PageShell>
+      )}
 
       {/* Admin uses full viewport width — rendered outside the narrow PageShell */}
       {tab === "admin" && isAdmin && (
@@ -1407,7 +1405,7 @@ function DrugReferencePage() {
             <div className="flex border-2 border-border">
               {(["manage", "add", "csv"] as const).map(s => (
                 <button key={s} onClick={() => setAdminSection(s)}
-                  className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-widest border-r last:border-r-0 border-border transition-colors ${adminSection === s ? "bg-secondary text-secondary-foreground" : "bg-card hover:bg-primary/10"}`}>
+                  className={`flex-1 py-3 text-[12px] font-bold uppercase tracking-widest border-r last:border-r-0 border-border transition-colors min-h-[44px] ${adminSection === s ? "bg-secondary text-secondary-foreground" : "bg-card hover:bg-primary/10"}`}>
                   {s === "manage" ? "Edit Table" : s === "add" ? "Quick Add" : "CSV Import"}
                 </button>
               ))}

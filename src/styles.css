@@ -198,6 +198,16 @@
   .input-brutal:focus {
     box-shadow: var(--shadow-brutal-sm);
   }
+}
+
+/* iOS Safari: font-size < 16px triggers auto-zoom on input focus — prevent it */
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 1rem !important;
+  }
+}
+
+@layer components {
   .chip {
     border: 2px solid var(--color-border);
     background: var(--color-card);
