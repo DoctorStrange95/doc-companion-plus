@@ -635,10 +635,16 @@ async def export_csv(db: AsyncSession = Depends(get_db), user=Depends(get_curren
 @router.post("/import/csv")
 async def import_csv(
     file: UploadFile = File(...),
+    replace: bool = False,
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ):
     _require_admin(user)
+    if replace:
+        await db.execute(text("DELETE FROM dr_regimens"))
+        await db.execute(text("DELETE FROM dr_drugs"))
+        await db.execute(text("DELETE FROM dr_conditions"))
+        await db.commit()
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
     updated = inserted = skipped = 0

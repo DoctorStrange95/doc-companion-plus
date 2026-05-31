@@ -1076,6 +1076,7 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
   const [result, setResult] = useState<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [replaceAll, setReplaceAll] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (f: File) => {
@@ -1092,17 +1093,18 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
 
   const upload = async () => {
     if (!file) return;
+    if (replaceAll && !confirm("This will DELETE ALL existing drug reference data and reimport from this CSV. Are you sure?")) return;
     setBusy(true);
     setErr("");
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await apiUpload<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] }>(
-        "/api/drug-reference/import/csv", fd
-      );
+      const url = replaceAll ? "/api/drug-reference/import/csv?replace=true" : "/api/drug-reference/import/csv";
+      const res = await apiUpload<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] }>(url, fd);
       setResult(res);
       setFile(null);
       setPreview(null);
+      setReplaceAll(false);
       onSuccess();
     } catch (e) {
       setErr(e instanceof ApiError ? String(e.detail) : (e as Error).message);
@@ -1194,11 +1196,21 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
       {err && <p className="text-xs font-bold uppercase text-destructive">{err}</p>}
 
       {file && (
-        <button onClick={upload} disabled={busy}
-          className="btn-brutal flex items-center justify-center gap-2 w-full disabled:opacity-50">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          {busy ? "Uploading…" : `Upload ${file.name}`}
-        </button>
+        <div className="space-y-3">
+          <label className={`flex items-center gap-3 border-2 p-3 cursor-pointer transition-colors ${replaceAll ? "border-destructive bg-destructive/10" : "border-border hover:bg-muted/40"}`}>
+            <input type="checkbox" checked={replaceAll} onChange={e => setReplaceAll(e.target.checked)}
+              className="h-4 w-4 accent-destructive" />
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-destructive">Replace All (wipe + reimport)</div>
+              <div className="text-[10px] text-muted-foreground">Deletes ALL existing data first, then imports this CSV fresh</div>
+            </div>
+          </label>
+          <button onClick={upload} disabled={busy}
+            className={`flex items-center justify-center gap-2 w-full border-2 border-border font-bold uppercase text-sm px-4 py-3 disabled:opacity-50 ${replaceAll ? "bg-destructive text-white" : "btn-brutal"}`}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {busy ? "Uploading…" : replaceAll ? `⚠ Replace All with ${file.name}` : `Upload ${file.name}`}
+          </button>
+        </div>
       )}
     </div>
   );
