@@ -593,6 +593,7 @@ async def delete_regimen(
 # ── CSV import / export ───────────────────────────────────────────────────────
 
 CSV_COLS = [
+    "regimen_id",  # include so re-upload updates instead of duplicating
     "condition_name", "condition_aliases", "condition_category", "condition_icd_code",
     "drug_generic_name", "drug_brand_names", "drug_class",
     "adult_dose", "max_dose", "pediatric_dose", "route", "site", "frequency", "duration",
@@ -604,7 +605,8 @@ CSV_COLS = [
 async def export_csv(db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     _require_admin(user)
     rows = (await db.execute(text("""
-        SELECT c.name AS condition_name,
+        SELECT r.id AS regimen_id,
+               c.name AS condition_name,
                array_to_string(ARRAY(SELECT jsonb_array_elements_text(c.aliases)), ';') AS condition_aliases,
                c.category AS condition_category, c.icd_code AS condition_icd_code,
                d.generic_name AS drug_generic_name,
@@ -639,18 +641,52 @@ async def import_csv(
     _require_admin(user)
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
-    imported = skipped = 0
+    updated = inserted = skipped = 0
     errors: list[str] = []
 
     for i, row in enumerate(reader, start=2):
         try:
+            rid_csv = row.get("regimen_id", "").strip()
             cname = row.get("condition_name", "").strip()
             dname = row.get("drug_generic_name", "").strip()
             if not cname or not dname:
                 skipped += 1
                 continue
 
-            # Upsert condition
+            def _regimen_params(cid: str, did: str) -> dict:
+                return {
+                    "cid": cid, "did": did,
+                    "adult": row.get("adult_dose", ""), "max_dose": row.get("max_dose", ""),
+                    "ped": row.get("pediatric_dose", ""),
+                    "route": row.get("route", ""), "site": row.get("site", ""),
+                    "freq": row.get("frequency", ""),
+                    "dur": row.get("duration", ""), "str": row.get("strength", ""),
+                    "form": row.get("formulation", ""),
+                    "line": row.get("line_of_treatment", "First line"),
+                    "notes": row.get("notes", ""), "contra": row.get("contraindications", ""),
+                }
+
+            # If regimen_id present and exists → UPDATE (no need to touch condition/drug)
+            if rid_csv:
+                existing = (await db.execute(
+                    text("SELECT condition_id, drug_id FROM dr_regimens WHERE id=:id LIMIT 1"),
+                    {"id": rid_csv}
+                )).mappings().first()
+                if existing:
+                    p = _regimen_params(str(existing["condition_id"]), str(existing["drug_id"]))
+                    await db.execute(text("""
+                        UPDATE dr_regimens SET
+                          adult_dose=:adult, max_dose=:max_dose, pediatric_dose=:ped,
+                          route=:route, site=:site, frequency=:freq, duration=:dur,
+                          strength=:str, formulation=:form, line_of_treatment=:line,
+                          notes=:notes, contraindications=:contra, updated_at=now()
+                        WHERE id=:rid
+                    """), {**p, "rid": rid_csv})
+                    await db.commit()
+                    updated += 1
+                    continue
+
+            # New regimen → upsert condition + drug + insert
             c_row = (await db.execute(
                 text("SELECT id FROM dr_conditions WHERE lower(name)=lower(:n) LIMIT 1"), {"n": cname}
             )).mappings().first()
@@ -665,7 +701,6 @@ async def import_csv(
                 """), {"id": cid, "name": cname, "aliases": json.dumps(aliases),
                       "cat": row.get("condition_category", ""), "icd": row.get("condition_icd_code", "")})
 
-            # Upsert drug
             d_row = (await db.execute(
                 text("SELECT id FROM dr_drugs WHERE lower(generic_name)=lower(:n) LIMIT 1"), {"n": dname}
             )).mappings().first()
@@ -680,28 +715,19 @@ async def import_csv(
                 """), {"id": did, "name": dname, "brands": json.dumps(brands),
                       "cls": row.get("drug_class", "")})
 
-            # Insert regimen
+            p = _regimen_params(cid, did)
             await db.execute(text("""
                 INSERT INTO dr_regimens
-                (id, condition_id, drug_id, adult_dose, max_dose, pediatric_dose, route, site, frequency,
-                 duration, strength, formulation, line_of_treatment, notes, contraindications)
+                (id, condition_id, drug_id, adult_dose, max_dose, pediatric_dose, route, site,
+                 frequency, duration, strength, formulation, line_of_treatment, notes, contraindications)
                 VALUES
-                (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site, :freq, :dur, :str, :form, :line, :notes, :contra)
-            """), {
-                "id": str(uuid.uuid4()), "cid": cid, "did": did,
-                "adult": row.get("adult_dose", ""), "max_dose": row.get("max_dose", ""),
-                "ped": row.get("pediatric_dose", ""),
-                "route": row.get("route", ""), "site": row.get("site", ""),
-                "freq": row.get("frequency", ""),
-                "dur": row.get("duration", ""), "str": row.get("strength", ""),
-                "form": row.get("formulation", ""),
-                "line": row.get("line_of_treatment", "First line"),
-                "notes": row.get("notes", ""), "contra": row.get("contraindications", ""),
-            })
+                (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
+                 :freq, :dur, :str, :form, :line, :notes, :contra)
+            """), {"id": str(uuid.uuid4()), **p})
             await db.commit()
-            imported += 1
+            inserted += 1
         except Exception as e:
             await db.rollback()
             errors.append(f"Row {i}: {str(e)[:120]}")
 
-    return {"imported": imported, "skipped": skipped, "errors": errors}
+    return {"updated": updated, "inserted": inserted, "skipped": skipped, "errors": errors}

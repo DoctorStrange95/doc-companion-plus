@@ -631,148 +631,109 @@ function AdminQuickAdd({
 
 // ── Admin: Manage ─────────────────────────────────────────────────────────────
 
-function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: () => void }) {
-  const [manageQ, setManageQ] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFields, setEditFields] = useState<Partial<Regimen>>({});
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+// ── EditCell — click to edit inline ──────────────────────────────────────────
 
-  // Condition name editing
-  const [editingCondId, setEditingCondId] = useState<string | null>(null);
-  const [condNameEdit, setCondNameEdit] = useState("");
-  const [condAliasEdit, setCondAliasEdit] = useState("");
-  const [condCatEdit, setCondCatEdit] = useState("");
-  const [condIcdEdit, setCondIcdEdit] = useState("");
+function EditCell({ value, onSave, saving }: { value: string; onSave: (v: string) => void; saving?: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
 
-  // Inline add-regimen per condition
-  const [addingRegimenTo, setAddingRegimenTo] = useState<string | null>(null);
-  const [newDrugQ, setNewDrugQ] = useState("");
-  const [newDrugId, setNewDrugId] = useState<string | null>(null);
-  const [newDrugBrands, setNewDrugBrands] = useState("");
-  const [newDrugClass, setNewDrugClass] = useState("");
-  const [showNewDrugDrop, setShowNewDrugDrop] = useState(false);
-  const [newAdultDose, setNewAdultDose] = useState("");
-  const [newMaxDose, setNewMaxDose] = useState("");
-  const [newPedDose, setNewPedDose] = useState("");
-  const [newRoute, setNewRoute] = useState("");
-  const [newSite, setNewSite] = useState("");
-  const [newFreq, setNewFreq] = useState("");
-  const [newDur, setNewDur] = useState("");
-  const [newStrength, setNewStrength] = useState("");
-  const [newForm, setNewForm] = useState("");
-  const [newLine, setNewLine] = useState("First line");
-  const [newNotes, setNewNotes] = useState("");
-  const [newContra, setNewContra] = useState("");
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
 
-  const conditions = useMemo(() => {
-    if (!data) return [];
-    const ql = manageQ.toLowerCase();
-    if (!ql) return data.conditions;
-    return data.conditions.filter(c =>
-      c.name.toLowerCase().includes(ql) ||
-      toArr(c.aliases).some(a => a.toLowerCase().includes(ql))
-    );
-  }, [data, manageQ]);
-
-  const newDrugSuggestions = useMemo(() => {
-    if (!data || !newDrugQ.trim()) return [];
-    const ql = newDrugQ.toLowerCase();
-    return data.drugs.filter(d =>
-      d.generic_name.toLowerCase().includes(ql) ||
-      toArr(d.brand_names).some(b => b.toLowerCase().includes(ql))
-    ).slice(0, 6);
-  }, [data, newDrugQ]);
-
-  const resetNewRegimen = () => {
-    setNewDrugQ(""); setNewDrugId(null); setNewDrugBrands(""); setNewDrugClass("");
-    setNewAdultDose(""); setNewMaxDose(""); setNewPedDose(""); setNewRoute(""); setNewSite(""); setNewFreq(""); setNewDur("");
-    setNewStrength(""); setNewForm(""); setNewLine("First line"); setNewNotes(""); setNewContra("");
+  const commit = () => {
+    setEditing(false);
+    if (draft !== value) onSave(draft);
   };
 
-  const deleteRegimen = async (rid: string) => {
+  if (editing) {
+    return (
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { setDraft(value); setEditing(false); }
+        }}
+        autoFocus
+        className="w-full min-w-0 bg-primary/10 border border-primary px-1 py-0.5 text-[11px] outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setDraft(value); setEditing(true); }}
+      className={`block w-full text-left px-1 py-0.5 hover:bg-primary/10 text-[11px] min-h-5 ${saving ? "opacity-40" : ""}`}
+      title="Click to edit"
+    >
+      {saving ? "…" : (value || <span className="text-muted-foreground/25 select-none">—</span>)}
+    </button>
+  );
+}
+
+// ── Admin: Manage (inline table) ──────────────────────────────────────────────
+
+function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: () => void }) {
+  const [filterQ, setFilterQ] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  type FlatRow = Regimen & { condition_name: string; condition_id: string };
+
+  const allRows = useMemo((): FlatRow[] => {
+    if (!data) return [];
+    return data.conditions.flatMap(c =>
+      c.regimens.map(r => ({ ...r, condition_name: c.name, condition_id: c.id }))
+    );
+  }, [data]);
+
+  const rows = useMemo(() => {
+    const ql = filterQ.trim().toLowerCase();
+    if (!ql) return allRows;
+    return allRows.filter(r =>
+      r.condition_name.toLowerCase().includes(ql) ||
+      r.generic_name.toLowerCase().includes(ql)
+    );
+  }, [allRows, filterQ]);
+
+  const saveField = async (rid: string, field: string, value: string) => {
+    const key = rid + "_" + field;
+    setSaving(key);
+    try {
+      await api(`/api/drug-reference/regimens/${rid}`, {
+        method: "PUT",
+        body: JSON.stringify({ [field]: value }),
+      });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
+    } finally { setSaving(null); }
+  };
+
+  const deleteRow = async (rid: string) => {
     if (!confirm("Delete this regimen?")) return;
-    setBusy(rid);
+    setSaving(rid);
     try {
       await api(`/api/drug-reference/regimens/${rid}`, { method: "DELETE" });
       onRefresh();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setBusy(null); }
+    } finally { setSaving(null); }
   };
 
-  const saveEdit = async (rid: string) => {
-    setBusy(rid + "_save");
-    try {
-      await api(`/api/drug-reference/regimens/${rid}`, {
-        method: "PUT", body: JSON.stringify(editFields),
-      });
-      setEditingId(null); setEditFields({});
-      onRefresh();
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setBusy(null); }
-  };
-
-  const saveCondition = async (cid: string) => {
-    if (!condNameEdit.trim()) return;
-    setBusy(cid + "_cond");
-    try {
-      const aliases = condAliasEdit.split(",").map(s => s.trim()).filter(Boolean);
-      await api(`/api/drug-reference/conditions/${cid}`, {
-        method: "PUT",
-        body: JSON.stringify({ name: condNameEdit.trim(), aliases, category: condCatEdit, icd_code: condIcdEdit, notes: "" }),
-      });
-      setEditingCondId(null);
-      onRefresh();
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setBusy(null); }
-  };
-
-  const deleteCondition = async (cid: string) => {
-    if (!confirm("Delete this condition and ALL its regimens?")) return;
-    setBusy(cid);
-    try {
-      await api(`/api/drug-reference/conditions/${cid}`, { method: "DELETE" });
-      setExpanded(null);
-      onRefresh();
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setBusy(null); }
-  };
-
-  const addRegimen = async (conditionId: string) => {
-    if (!newDrugQ.trim()) return;
-    setBusy(conditionId + "_add");
-    try {
-      let resolvedDrugId = newDrugId;
-      if (!resolvedDrugId) {
-        const brands = newDrugBrands.split(",").map(s => s.trim()).filter(Boolean);
-        const d = await api<{ id: string }>("/api/drug-reference/drugs", {
-          method: "POST",
-          body: JSON.stringify({ generic_name: newDrugQ.trim(), brand_names: brands, drug_class: newDrugClass }),
-        });
-        resolvedDrugId = d.id;
-      }
-      await api("/api/drug-reference/regimens", {
-        method: "POST",
-        body: JSON.stringify({
-          condition_id: conditionId, drug_id: resolvedDrugId,
-          adult_dose: newAdultDose, max_dose: newMaxDose, pediatric_dose: newPedDose,
-          route: newRoute, site: newSite, frequency: newFreq, duration: newDur,
-          strength: newStrength, formulation: newForm,
-          line_of_treatment: newLine, notes: newNotes, contraindications: newContra,
-        }),
-      });
-      setAddingRegimenTo(null);
-      resetNewRegimen();
-      onRefresh();
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof ApiError ? String(e.detail) : (e as Error).message });
-    } finally { setBusy(null); }
-  };
+  const COLS: { key: string; label: string; width: string }[] = [
+    { key: "adult_dose",       label: "Adult Dose",  width: "w-28" },
+    { key: "max_dose",         label: "Max Dose",    width: "w-20" },
+    { key: "pediatric_dose",   label: "Peds Dose",   width: "w-24" },
+    { key: "route",            label: "Route",       width: "w-14" },
+    { key: "site",             label: "Site",        width: "w-20" },
+    { key: "frequency",        label: "Freq",        width: "w-14" },
+    { key: "duration",         label: "Duration",    width: "w-16" },
+    { key: "strength",         label: "Strength",    width: "w-18" },
+    { key: "formulation",      label: "Form",        width: "w-16" },
+    { key: "line_of_treatment",label: "Line",        width: "w-20" },
+    { key: "notes",            label: "Notes",       width: "w-28" },
+    { key: "contraindications",label: "CI",          width: "w-24" },
+  ];
 
   return (
     <div className="space-y-3">
@@ -782,220 +743,78 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
           <button onClick={() => setMsg(null)} className="ml-auto"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
-      <input className="input-brutal w-full" placeholder="Filter conditions…"
-        value={manageQ} onChange={e => setManageQ(e.target.value)} />
-      {!data && <p className="text-[11px] text-muted-foreground">Loading…</p>}
-      {conditions.map(cond => (
-        <div key={cond.id} className="brutal overflow-hidden">
-          {/* Condition header row */}
-          {editingCondId === cond.id ? (
-            <div className="bg-card px-4 py-3 space-y-2 border-b-2 border-border">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Edit Condition</div>
-              <div className="grid grid-cols-2 gap-2">
-                <F label="Condition Name *">
-                  <input className="input-brutal text-sm" value={condNameEdit}
-                    onChange={e => setCondNameEdit(e.target.value)} autoFocus />
-                </F>
-                <F label="Aliases (comma-separated)">
-                  <input className="input-brutal text-sm" value={condAliasEdit}
-                    onChange={e => setCondAliasEdit(e.target.value)} placeholder="URTI, Cold" />
-                </F>
-                <F label="Category">
-                  <select className="input-brutal text-sm" value={condCatEdit} onChange={e => setCondCatEdit(e.target.value)}>
-                    <option value="">Select</option>
-                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                  </select>
-                </F>
-                <F label="ICD Code">
-                  <input className="input-brutal text-sm" value={condIcdEdit}
-                    onChange={e => setCondIcdEdit(e.target.value)} placeholder="J06.9" />
-                </F>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => saveCondition(cond.id)} disabled={busy === cond.id + "_cond"}
-                  className="btn-brutal text-xs px-3 py-1.5">
-                  {busy === cond.id + "_cond" ? "Saving…" : "Save"}
-                </button>
-                <button onClick={() => setEditingCondId(null)}
-                  className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex w-full items-center gap-2 bg-card px-4 py-3">
-              <button
-                onClick={() => setExpanded(expanded === cond.id ? null : cond.id)}
-                className="flex flex-1 items-center gap-2 text-left min-w-0"
-              >
-                <span className="flex-1 font-bold text-sm uppercase truncate">{cond.name}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{cond.regimens.length} regimens</span>
-                {expanded === cond.id ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
-              </button>
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  setEditingCondId(cond.id);
-                  setCondNameEdit(cond.name);
-                  setCondAliasEdit(toArr(cond.aliases).join(", "));
-                  setCondCatEdit(cond.category);
-                  setCondIcdEdit(cond.icd_code);
-                }}
-                className="shrink-0 p-1 hover:text-primary" title="Edit condition name"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); deleteCondition(cond.id); }}
-                disabled={busy === cond.id}
-                className="shrink-0 p-1 hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
 
-          {/* Expanded regimens */}
-          {expanded === cond.id && (
-            <div className="border-t-2 border-border divide-y divide-border/40">
-              {cond.regimens.map(r => (
-                <div key={r.id} className="px-4 py-3">
-                  {editingId === r.id ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 pb-1 border-b border-border/40">
-                        <Pencil className="h-3.5 w-3.5 shrink-0 text-primary" />
-                        <span className="font-bold text-sm uppercase tracking-wide">{r.generic_name}</span>
-                        <span className="text-[10px] text-muted-foreground">— editing regimen</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["adult_dose", "max_dose", "pediatric_dose", "route", "site", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
-                          <F key={field} label={field.replace(/_/g, " ")}>
-                            <input className="input-brutal text-sm py-1"
-                              value={(editFields as Record<string, string>)[field] ?? (r as unknown as Record<string, string>)[field] ?? ""}
-                              onChange={e => setEditFields(prev => ({ ...prev, [field]: e.target.value }))} />
-                          </F>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => saveEdit(r.id)} disabled={busy === r.id + "_save"}
-                          className="btn-brutal text-xs px-3 py-1.5">
-                          {busy === r.id + "_save" ? "Saving…" : "Save"}
-                        </button>
-                        <button onClick={() => { setEditingId(null); setEditFields({}); }}
-                          className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-sm">{r.generic_name}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {r.adult_dose}{r.duration ? ` × ${r.duration}` : ""} · {r.route} · {r.line_of_treatment}
-                        </div>
-                        {r.notes && <div className="text-[11px] text-amber-700">{r.notes}</div>}
-                      </div>
-                      <button onClick={() => { setEditingId(r.id); setEditFields({}); }}
-                        className="shrink-0 p-1 hover:text-primary">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => deleteRegimen(r.id)} disabled={busy === r.id}
-                        className="shrink-0 p-1 hover:text-destructive">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
+      <div className="flex items-center gap-2">
+        <input className="input-brutal flex-1" placeholder="Filter by condition or drug…"
+          value={filterQ} onChange={e => setFilterQ(e.target.value)} />
+        <span className="shrink-0 text-[10px] font-bold uppercase text-muted-foreground">
+          {rows.length} rows
+        </span>
+      </div>
+
+      <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
+        Click any cell to edit · Enter or Tab to save · Esc to cancel
+      </p>
+
+      {!data && <p className="text-[11px] text-muted-foreground p-2">Loading…</p>}
+
+      <div className="brutal overflow-x-auto">
+        <table className="border-collapse text-[11px]" style={{ minWidth: "900px" }}>
+          <thead>
+            <tr className="bg-secondary/30">
+              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] sticky left-0 bg-secondary/30 z-10 w-32">Condition</th>
+              <th className="border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] w-28">Drug</th>
+              {COLS.map(c => (
+                <th key={c.key} className={`border-b-2 border-r border-border px-2 py-2 text-left font-bold uppercase tracking-wide text-[10px] ${c.width}`}>
+                  {c.label}
+                </th>
               ))}
-
-              {/* Add regimen inline */}
-              {addingRegimenTo === cond.id ? (
-                <div className="px-4 py-4 bg-primary/5 space-y-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Add Regimen to {cond.name}</div>
-                  <div className="relative">
-                    <F label="Drug Name *">
-                      <input className="input-brutal text-sm" value={newDrugQ} autoFocus
-                        onChange={e => { setNewDrugQ(e.target.value); setNewDrugId(null); setShowNewDrugDrop(true); }}
-                        onFocus={() => setShowNewDrugDrop(true)}
-                        onBlur={() => setTimeout(() => setShowNewDrugDrop(false), 150)}
-                        placeholder="Generic name or brand" />
-                    </F>
-                    {showNewDrugDrop && newDrugSuggestions.length > 0 && (
-                      <ul className="absolute z-20 left-0 right-0 top-full border-2 border-border bg-card shadow-lg">
-                        {newDrugSuggestions.map(d => (
-                          <li key={d.id}>
-                            <button type="button" className="w-full px-3 py-2 text-left text-sm hover:bg-primary/10"
-                              onMouseDown={() => { setNewDrugQ(d.generic_name); setNewDrugId(d.id); setShowNewDrugDrop(false); }}>
-                              {d.generic_name}
-                              {toArr(d.brand_names).length > 0 && <span className="text-muted-foreground text-xs ml-2">{toArr(d.brand_names).slice(0, 2).join(", ")}</span>}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  {newDrugId && <p className="text-[10px] text-green-700 font-semibold uppercase">✓ Using existing drug</p>}
-                  {!newDrugId && newDrugQ && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <F label="Brand Names"><input className="input-brutal text-sm" value={newDrugBrands} onChange={e => setNewDrugBrands(e.target.value)} placeholder="Azee, Zithromax" /></F>
-                      <F label="Drug Class"><input className="input-brutal text-sm" value={newDrugClass} onChange={e => setNewDrugClass(e.target.value)} placeholder="Macrolide Antibiotic" /></F>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <F label="Adult Dose"><input className="input-brutal text-sm" value={newAdultDose} onChange={e => setNewAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
-                    <F label="Max Dose"><input className="input-brutal text-sm" value={newMaxDose} onChange={e => setNewMaxDose(e.target.value)} placeholder="2 g/day" /></F>
-                    <F label="Pediatric Dose"><input className="input-brutal text-sm" value={newPedDose} onChange={e => setNewPedDose(e.target.value)} /></F>
-                    <F label="Route"><select className="input-brutal text-sm" value={newRoute} onChange={e => setNewRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
-                    <F label="Site (injections)"><select className="input-brutal text-sm" value={newSite} onChange={e => setNewSite(e.target.value)}><option value="">N/A</option>{INJECTION_SITES.map(s => <option key={s}>{s}</option>)}</select></F>
-                    <F label="Frequency"><select className="input-brutal text-sm" value={newFreq} onChange={e => setNewFreq(e.target.value)}><option value="">Select</option>{FREQUENCIES.map(f => <option key={f}>{f}</option>)}</select></F>
-                    <F label="Duration"><input className="input-brutal text-sm" value={newDur} onChange={e => setNewDur(e.target.value)} placeholder="5 days" /></F>
-                    <F label="Strength"><input className="input-brutal text-sm" value={newStrength} onChange={e => setNewStrength(e.target.value)} placeholder="500 mg" /></F>
-                    <F label="Formulation"><select className="input-brutal text-sm" value={newForm} onChange={e => setNewForm(e.target.value)}><option value="">Select</option>{FORMULATIONS.map(f => <option key={f}>{f}</option>)}</select></F>
-                    <F label="Line"><select className="input-brutal text-sm" value={newLine} onChange={e => setNewLine(e.target.value)}>{LINES.map(l => <option key={l}>{l}</option>)}</select></F>
-                  </div>
-                  <F label="Notes"><input className="input-brutal text-sm" value={newNotes} onChange={e => setNewNotes(e.target.value)} placeholder="Give after food" /></F>
-                  <div className="flex gap-2">
-                    <button onClick={() => addRegimen(cond.id)} disabled={!newDrugQ.trim() || busy === cond.id + "_add"}
-                      className="btn-brutal text-xs px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50">
-                      {busy === cond.id + "_add" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                      {busy === cond.id + "_add" ? "Saving…" : "Add Regimen"}
-                    </button>
-                    <button onClick={() => { setAddingRegimenTo(null); resetNewRegimen(); }}
-                      className="border-2 border-border px-3 py-1.5 text-xs font-bold uppercase hover:bg-muted">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="px-4 py-2">
-                  <button
-                    onClick={() => { setAddingRegimenTo(cond.id); resetNewRegimen(); setExpanded(cond.id); }}
-                    className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Regimen
+              <th className="border-b-2 border-border px-1 py-2 w-6" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.id} className={`${i % 2 ? "bg-muted/10" : ""} hover:bg-primary/5 group`}>
+                <td className="border-b border-r border-border/30 px-2 py-0.5 sticky left-0 bg-card group-hover:bg-primary/5 z-10">
+                  <span className="font-bold text-[10px] uppercase leading-tight line-clamp-2">{r.condition_name}</span>
+                </td>
+                <td className="border-b border-r border-border/30 px-2 py-0.5">
+                  <span className="font-semibold text-[11px] line-clamp-1">{r.generic_name}</span>
+                </td>
+                {COLS.map(c => (
+                  <td key={c.key} className="border-b border-r border-border/30 py-0.5">
+                    <EditCell
+                      value={(r as unknown as Record<string, string>)[c.key] ?? ""}
+                      onSave={v => saveField(r.id, c.key, v)}
+                      saving={saving === r.id + "_" + c.key}
+                    />
+                  </td>
+                ))}
+                <td className="border-b border-border/30 px-1 py-0.5">
+                  <button onClick={() => deleteRow(r.id)} disabled={saving === r.id}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-opacity">
+                    <Trash2 className="h-3 w-3" />
                   </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-      {conditions.length === 0 && data && (
-        <p className="text-center text-sm text-muted-foreground py-6">No conditions found.</p>
-      )}
+                </td>
+              </tr>
+            ))}
+            {data && rows.length === 0 && (
+              <tr><td colSpan={COLS.length + 3} className="p-4 text-center text-[11px] text-muted-foreground">No regimens found.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
+
 
 // ── Admin: CSV ────────────────────────────────────────────────────────────────
 
 function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string[][] | null>(null);
-  const [result, setResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [result, setResult] = useState<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1019,7 +838,7 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await apiUpload<{ imported: number; skipped: number; errors: string[] }>(
+      const res = await apiUpload<{ updated?: number; inserted?: number; imported?: number; skipped: number; errors: string[] }>(
         "/api/drug-reference/import/csv", fd
       );
       setResult(res);
@@ -1065,7 +884,11 @@ function AdminCsv({ onSuccess }: { onSuccess: () => void }) {
           <div className="flex items-center gap-2 text-sm font-bold text-green-700">
             <CheckCircle2 className="h-4 w-4" /> Import complete
           </div>
-          <p className="text-[12px]">Imported: <strong>{result.imported}</strong> · Skipped: <strong>{result.skipped}</strong></p>
+          <p className="text-[12px]">
+            {result.updated != null && <>Updated: <strong>{result.updated}</strong> · </>}
+            {(result.inserted ?? result.imported) != null && <>New: <strong>{result.inserted ?? result.imported}</strong> · </>}
+            Skipped: <strong>{result.skipped}</strong>
+          </p>
           {result.errors.length > 0 && (
             <div className="mt-2 space-y-1">
               {result.errors.map((e, i) => (
@@ -1152,7 +975,7 @@ function DrugReferencePage() {
   const isAdmin = user?.role === "admin";
 
   const [tab, setTab] = useState<"lookup" | "admin">("lookup");
-  const [adminSection, setAdminSection] = useState<"add" | "manage" | "csv">("add");
+  const [adminSection, setAdminSection] = useState<"add" | "manage" | "csv">("manage");
 
   const [cache, setCache] = useState<CacheData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1320,10 +1143,10 @@ function DrugReferencePage() {
           <div className="space-y-4">
             {/* Admin section tabs */}
             <div className="flex border-2 border-border">
-              {(["add", "manage", "csv"] as const).map(s => (
+              {(["manage", "add", "csv"] as const).map(s => (
                 <button key={s} onClick={() => setAdminSection(s)}
                   className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-widest border-r last:border-r-0 border-border transition-colors ${adminSection === s ? "bg-secondary text-secondary-foreground" : "bg-card hover:bg-primary/10"}`}>
-                  {s === "add" ? "Quick Add" : s === "manage" ? "Manage" : "CSV Import"}
+                  {s === "manage" ? "Edit Table" : s === "add" ? "Quick Add" : "CSV Import"}
                 </button>
               ))}
             </div>
