@@ -20,6 +20,7 @@ interface Regimen {
   drug_class: string;
   adult_dose: string;
   pediatric_dose: string;
+  max_dose: string;
   route: string;
   site: string;
   frequency: string;
@@ -47,6 +48,7 @@ interface DrugIndication {
   condition_name: string;
   adult_dose: string;
   pediatric_dose: string;
+  max_dose: string;
   route: string;
   site: string;
   frequency: string;
@@ -151,7 +153,7 @@ function RegimenRow({ r }: { r: Regimen }) {
   const routeStr = [r.route, r.site].filter(Boolean).join(" — ");
   return (
     <div className="py-3 border-b border-border/30 last:border-0">
-      {/* Drug name + formulation */}
+      {/* Drug name + strength + formulation */}
       <div className="flex items-baseline gap-2 flex-wrap">
         <span className="font-bold text-[14px] uppercase tracking-wide">{r.generic_name}</span>
         {r.strength && <span className="text-[12px] text-muted-foreground">{r.strength}</span>}
@@ -161,7 +163,7 @@ function RegimenRow({ r }: { r: Regimen }) {
           </span>
         )}
       </div>
-      {/* Route */}
+      {/* Route + site */}
       {routeStr && (
         <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {routeStr}
@@ -180,6 +182,13 @@ function RegimenRow({ r }: { r: Regimen }) {
           </span>
         </div>
       )}
+      {/* Max dose */}
+      {r.max_dose && (
+        <div className="mt-0.5 flex gap-2 text-sm">
+          <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground w-14 pt-0.5">Max</span>
+          <span className="text-muted-foreground">· {r.max_dose}</span>
+        </div>
+      )}
       {/* Pediatric dose */}
       {r.pediatric_dose && (
         <div className="mt-0.5 flex gap-2 text-sm">
@@ -194,12 +203,8 @@ function RegimenRow({ r }: { r: Regimen }) {
         </div>
       )}
       {/* Notes */}
-      {r.notes && (
-        <div className="mt-1 text-[11px] text-amber-700 font-medium">⚠ {r.notes}</div>
-      )}
-      {r.contraindications && (
-        <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {r.contraindications}</div>
-      )}
+      {r.notes && <div className="mt-1 text-[11px] text-amber-700 font-medium">⚠ {r.notes}</div>}
+      {r.contraindications && <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {r.contraindications}</div>}
     </div>
   );
 }
@@ -335,8 +340,16 @@ function DrugCard({ drug }: { drug: Drug }) {
                           <span className="text-muted-foreground"> ({ind.frequency})</span>
                         )}
                       </div>
+                      {ind.max_dose && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">Max dose: {ind.max_dose}</div>
+                      )}
+                      {(ind.strength || ind.formulation) && (
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
+                          Available: {[ind.strength, ind.formulation].filter(Boolean).join(" · ")}
+                        </div>
+                      )}
                       {ind.notes && (
-                        <div className="mt-0.5 text-[11px] text-amber-700">⚠ {ind.notes}</div>
+                        <div className="mt-0.5 text-[11px] text-amber-700 font-medium">⚠ {ind.notes}</div>
                       )}
                       {ind.contraindications && (
                         <div className="mt-0.5 text-[11px] text-destructive/80">✕ CI: {ind.contraindications}</div>
@@ -408,6 +421,7 @@ function AdminQuickAdd({
 
   // Regimen
   const [adultDose, setAdultDose] = useState("");
+  const [maxDose, setMaxDose] = useState("");
   const [pedDose, setPedDose] = useState("");
   const [route, setRoute] = useState("");
   const [site, setSite] = useState("");
@@ -437,7 +451,7 @@ function AdminQuickAdd({
   const reset = () => {
     setCondQ(""); setCondId(null); setCondAliases(""); setCondCategory(""); setCondIcd("");
     setDrugQ(""); setDrugId(null); setDrugBrands(""); setDrugClass("");
-    setAdultDose(""); setPedDose(""); setRoute(""); setSite(""); setFreq(""); setDur("");
+    setAdultDose(""); setMaxDose(""); setPedDose(""); setRoute(""); setSite(""); setFreq(""); setDur("");
     setStrength(""); setFormulation(""); setLine("First line"); setNotes(""); setContra("");
   };
 
@@ -477,7 +491,7 @@ function AdminQuickAdd({
         method: "POST",
         body: JSON.stringify({
           condition_id: resolvedCondId, drug_id: resolvedDrugId,
-          adult_dose: adultDose, pediatric_dose: pedDose,
+          adult_dose: adultDose, max_dose: maxDose, pediatric_dose: pedDose,
           route, site, frequency: freq, duration: dur, strength, formulation,
           line_of_treatment: line, notes, contraindications: contra,
         }),
@@ -593,6 +607,7 @@ function AdminQuickAdd({
         <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Regimen Details</div>
         <div className="grid grid-cols-2 gap-3">
           <F label="Adult Dose"><input className="input-brutal" value={adultDose} onChange={e => setAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
+          <F label="Max Dose"><input className="input-brutal" value={maxDose} onChange={e => setMaxDose(e.target.value)} placeholder="2 g/day" /></F>
           <F label="Pediatric Dose"><input className="input-brutal" value={pedDose} onChange={e => setPedDose(e.target.value)} placeholder="10 mg/kg/day" /></F>
           <F label="Route"><select className="input-brutal" value={route} onChange={e => setRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
           <F label="Site (injections)"><select className="input-brutal" value={site} onChange={e => setSite(e.target.value)}><option value="">N/A</option>{INJECTION_SITES.map(s => <option key={s}>{s}</option>)}</select></F>
@@ -639,6 +654,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
   const [newDrugClass, setNewDrugClass] = useState("");
   const [showNewDrugDrop, setShowNewDrugDrop] = useState(false);
   const [newAdultDose, setNewAdultDose] = useState("");
+  const [newMaxDose, setNewMaxDose] = useState("");
   const [newPedDose, setNewPedDose] = useState("");
   const [newRoute, setNewRoute] = useState("");
   const [newSite, setNewSite] = useState("");
@@ -671,7 +687,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
 
   const resetNewRegimen = () => {
     setNewDrugQ(""); setNewDrugId(null); setNewDrugBrands(""); setNewDrugClass("");
-    setNewAdultDose(""); setNewPedDose(""); setNewRoute(""); setNewSite(""); setNewFreq(""); setNewDur("");
+    setNewAdultDose(""); setNewMaxDose(""); setNewPedDose(""); setNewRoute(""); setNewSite(""); setNewFreq(""); setNewDur("");
     setNewStrength(""); setNewForm(""); setNewLine("First line"); setNewNotes(""); setNewContra("");
   };
 
@@ -744,7 +760,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
         method: "POST",
         body: JSON.stringify({
           condition_id: conditionId, drug_id: resolvedDrugId,
-          adult_dose: newAdultDose, pediatric_dose: newPedDose,
+          adult_dose: newAdultDose, max_dose: newMaxDose, pediatric_dose: newPedDose,
           route: newRoute, site: newSite, frequency: newFreq, duration: newDur,
           strength: newStrength, formulation: newForm,
           line_of_treatment: newLine, notes: newNotes, contraindications: newContra,
@@ -854,7 +870,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                         <span className="text-[10px] text-muted-foreground">— editing regimen</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        {(["adult_dose", "pediatric_dose", "route", "site", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
+                        {(["adult_dose", "max_dose", "pediatric_dose", "route", "site", "frequency", "duration", "strength", "formulation", "line_of_treatment", "notes", "contraindications"] as const).map(field => (
                           <F key={field} label={field.replace(/_/g, " ")}>
                             <input className="input-brutal text-sm py-1"
                               value={(editFields as Record<string, string>)[field] ?? (r as unknown as Record<string, string>)[field] ?? ""}
@@ -930,6 +946,7 @@ function AdminManage({ data, onRefresh }: { data: CacheData | null; onRefresh: (
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <F label="Adult Dose"><input className="input-brutal text-sm" value={newAdultDose} onChange={e => setNewAdultDose(e.target.value)} placeholder="500 mg OD" /></F>
+                    <F label="Max Dose"><input className="input-brutal text-sm" value={newMaxDose} onChange={e => setNewMaxDose(e.target.value)} placeholder="2 g/day" /></F>
                     <F label="Pediatric Dose"><input className="input-brutal text-sm" value={newPedDose} onChange={e => setNewPedDose(e.target.value)} /></F>
                     <F label="Route"><select className="input-brutal text-sm" value={newRoute} onChange={e => setNewRoute(e.target.value)}><option value="">Select</option>{ROUTES.map(r => <option key={r}>{r}</option>)}</select></F>
                     <F label="Site (injections)"><select className="input-brutal text-sm" value={newSite} onChange={e => setNewSite(e.target.value)}><option value="">N/A</option>{INJECTION_SITES.map(s => <option key={s}>{s}</option>)}</select></F>
