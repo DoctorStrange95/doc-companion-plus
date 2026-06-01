@@ -16,6 +16,16 @@ function isFileUpload(val: unknown): val is FileUploadValue {
   return typeof val === "object" && val !== null && "data" in val && "name" in val;
 }
 
+function isGrowthResult(val: unknown): val is { waz: number | null; haz: number | null; whz: number | null; status: string } {
+  return typeof val === "object" && val !== null && "waz" in val && "haz" in val && "whz" in val;
+}
+
+function isAgeValue(val: unknown): val is { value: number | string; unit: "years" | "months" | "days" } {
+  return typeof val === "object" && val !== null && "unit" in val && "value" in val;
+}
+
+function fmtZ(z: number | null) { return z === null || isNaN(z) ? "—" : (z > 0 ? "+" : "") + z.toFixed(2); }
+
 function formatCellValue(val: unknown, field: FormField): string {
   if (val === undefined || val === null || val === "") return "—";
   if (typeof val === "boolean") return val ? "Yes" : "No";
@@ -25,6 +35,8 @@ function formatCellValue(val: unknown, field: FormField): string {
     if ("systolic" in o) return `${o.systolic}/${o.diastolic} mmHg`;
     if ("lat" in o) return `${(o.lat as number).toFixed(4)}, ${(o.lng as number).toFixed(4)}`;
     if (isFileUpload(val)) return val.name;
+    if (isGrowthResult(val)) return `WAZ ${fmtZ(val.waz)} | HAZ ${fmtZ(val.haz)} | WHZ ${fmtZ(val.whz)} | ${val.status ?? "—"}`;
+    if (isAgeValue(val)) return `${val.value} ${val.unit}`;
     return JSON.stringify(val);
   }
   if (field.type === "photo") return "📷 photo";
@@ -96,10 +108,51 @@ function getRespondentLabel(sub: Submission): string {
 
 // ─── CSV / JSON export ───────────────────────────────────────────────────────
 
+// Expand a field into one or more CSV column headers
+function csvHeaders(f: FormField): string[] {
+  if (f.type === "tool_embed" && f.toolId === "growth") {
+    const base = f.variableName ?? f.label;
+    return [`${base}_WAZ`, `${base}_HAZ`, `${base}_WHZ`, `${base}_Status`];
+  }
+  return [f.variableName ?? f.label];
+}
+
+// Expand a field value into one or more CSV cells
+function csvCells(f: FormField, val: unknown): string[] {
+  if (f.type === "tool_embed" && f.toolId === "growth") {
+    if (isGrowthResult(val)) {
+      return [
+        val.waz !== null ? fmtZ(val.waz) : "",
+        val.haz !== null ? fmtZ(val.haz) : "",
+        val.whz !== null ? fmtZ(val.whz) : "",
+        val.status ?? "",
+      ];
+    }
+    return ["", "", "", ""];
+  }
+  if (val === undefined || val === null) return [""];
+  if (typeof val === "boolean") return [val ? "Yes" : "No"];
+  if (Array.isArray(val)) return [val.join(" | ")];
+  if ((f.type === "yes_no" || f.type === "boolean") && typeof val === "string") {
+    return [val === "true" ? "Yes" : val === "false" ? "No" : val];
+  }
+  if (isAgeValue(val)) return [`${val.value} ${val.unit}`];
+  if (typeof val === "object") {
+    const o = val as Record<string, unknown>;
+    if ("systolic" in o) return [`${o.systolic}/${o.diastolic}`];
+    return [JSON.stringify(val)];
+  }
+  return [String(val)];
+}
+
 function exportCsv(submissions: Submission[], fields: FormField[], formName: string) {
-  const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "file_upload");
-  const headers = ["#", "Date", "Respondent Name", "Respondent Email", "Respondent ID",
-    ...dataFields.map((f) => f.variableName ?? f.label)];
+  const dataFields = fields.filter((f) =>
+    f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "file_upload"
+  );
+  const headers = [
+    "#", "Date", "Respondent Name", "Respondent Email", "Respondent ID",
+    ...dataFields.flatMap((f) => csvHeaders(f)),
+  ];
 
   const rows = submissions.map((sub, i) => [
     submissions.length - i,
@@ -107,23 +160,12 @@ function exportCsv(submissions: Submission[], fields: FormField[], formName: str
     sub.data["__respondent_name"] ?? "",
     sub.data["__respondent_email"] ?? "",
     sub.data["__respondent_id"] ?? "",
-    ...dataFields.map((f) => {
-      const v = sub.data[f.id];
-      if (v === undefined || v === null) return "";
-      if (typeof v === "boolean") return v ? "Yes" : "No";
-      if (Array.isArray(v)) return v.join(" | ");
-      if ((f.type === "yes_no" || f.type === "boolean") && typeof v === "string") {
-        return v === "true" ? "Yes" : v === "false" ? "No" : v;
-      }
-      if (typeof v === "object") return JSON.stringify(v);
-      return String(v);
-    }),
+    ...dataFields.flatMap((f) => csvCells(f, sub.data[f.id])),
   ]);
 
   const csvLines = [headers, ...rows].map((row) =>
     row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","),
   );
-  // UTF-8 BOM + Windows CRLF so Excel reads correctly
   const BOM = "﻿";
   const blob = new Blob([BOM + csvLines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);

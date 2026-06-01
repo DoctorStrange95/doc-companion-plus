@@ -583,6 +583,7 @@ interface ToolEmbedFieldProps {
   field: FormField;
   values: Record<string, unknown>;
   allFields: FormField[];
+  onChange: (val: unknown) => void;
   onWriteBack: (fieldId: string, val: unknown) => void;
 }
 
@@ -591,7 +592,7 @@ interface AgeValue {
   unit: "years" | "months" | "days";
 }
 
-function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFieldProps) {
+function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: ToolEmbedFieldProps) {
   const [open, setOpen] = useState(false);
   const toolId = field.toolId ?? "bmi";
 
@@ -627,49 +628,53 @@ function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFiel
   const srcAgeYears  = ageYearsFromField;
   const srcAgeMonths = ageMonthsFromField;
 
-  // Determine age-based routing when an age field is linked
-  const ageRouting: "bmi" | "growth" | "both" | null = (() => {
+  // Age-based routing: BMI only ≥18 yrs, Growth Chart only <5 yrs
+  // "both" (5–17 yrs) and "growth" both block BMI — BMI is post-18 only
+  const ageRouting: "bmi" | "growth" | "neither" | null = (() => {
     if (ageMonthsFromField === undefined) return null;
-    if (ageMonthsFromField < 60) return "growth";   // < 5 years → Growth Chart
-    if (ageYearsFromField !== undefined && ageYearsFromField >= 18) return "bmi"; // ≥ 18 years → BMI
-    return "both"; // 5–17 years: show neither (intermediate)
+    if (ageMonthsFromField < 60)  return "growth";   // < 5 years → Growth Chart
+    if ((ageYearsFromField ?? 0) >= 18) return "bmi"; // ≥ 18 years → BMI
+    return "neither"; // 5–17 years: neither tool applies
   })();
+
+  // Block rules — BMI requires explicit ≥18 years
+  const bmiBlocked    = ageRouting !== null && ageRouting !== "bmi";
+  const growthBlocked = ageRouting === "bmi";
 
   // Auto mode: source fields are linked
   const hasSourceFields = !!(field.weightFieldId || field.heightFieldId || field.ageFieldId || field.sexFieldId);
 
+  // Write result both to own field value AND to optional writeBackFieldId
   const handleResult = (val: unknown) => {
+    onChange(val); // always save to the tool field itself
     if (field.writeBackFieldId) onWriteBack(field.writeBackFieldId, val);
   };
 
   // AUTO MODE: inline result, no expand button needed
   if (hasSourceFields && toolId !== "drug_reference") {
-    // Age-based routing: block inappropriate tool
-    const bmiBlocked  = ageRouting === "growth"; // < 5 years → BMI blocked
-    const growthBlocked = ageRouting === "bmi";  // ≥ 18 years → Growth Chart blocked
-    const intermediate  = ageRouting === "both"; // 5–17 years
-
     if (toolId === "bmi" && bmiBlocked) {
+      const msg = ageRouting === "growth"
+        ? `BMI — not applicable (age < 5 years)`
+        : `BMI — not applicable (age 5–17 years; BMI is for ≥ 18 years)`;
       return (
         <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          <Scale className="h-3.5 w-3.5" />
-          BMI — not applicable (age &lt; 5 years, use Growth Chart)
+          <Scale className="h-3.5 w-3.5 shrink-0" />{msg}
         </div>
       );
     }
     if (toolId === "growth" && growthBlocked) {
       return (
         <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          <TrendingUp className="h-3.5 w-3.5" />
+          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
           Growth Chart — not applicable (age ≥ 18 years, use BMI)
         </div>
       );
     }
-    if (intermediate && toolId === "bmi") {
+    if (ageRouting === "neither" && toolId === "growth") {
       return (
-        <div className="flex items-center gap-2 border-2 border-amber-400 bg-amber-50 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-amber-700">
-          <Scale className="h-3.5 w-3.5" />
-          BMI — age 5–17 years (use with caution; WHO Growth Charts preferred)
+        <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+          Growth Chart — not applicable (age 5–17 years; WHO standard: 0–60 months)
         </div>
       );
     }
@@ -683,8 +688,8 @@ function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFiel
             initialHeight={srcHeight}
             initialSex={srcSex}
             currentAgeYears={srcAgeYears}
-            ageConditionMin={field.ageConditionMin ?? 18}
-            onResult={field.writeBackFieldId ? (bmi) => handleResult(bmi) : undefined}
+            ageConditionMin={18}
+            onResult={handleResult}
           />
         )}
         {toolId === "growth" && (
@@ -694,14 +699,14 @@ function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFiel
             initialHeight={srcHeight}
             initialAgeMonths={srcAgeMonths}
             initialSex={srcSex}
-            onResult={field.writeBackFieldId ? (r) => handleResult(r.waz ?? "") : undefined}
+            onResult={(r) => handleResult({ waz: r.waz, haz: r.haz, whz: r.whz, status: r.label })}
           />
         )}
       </div>
     );
   }
 
-  // MANUAL MODE: expandable panel
+  // MANUAL MODE: expandable panel (no source fields linked)
   const toolLabels: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
   const toolIcons: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
   const TIcon = toolIcons[toolId] ?? Scale;
@@ -722,13 +727,13 @@ function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFiel
         <div className="border-t-2 border-primary/20 p-4">
           {toolId === "bmi" && (
             <EmbeddedBMI
-              onResult={field.writeBackFieldId ? (bmi) => handleResult(bmi) : undefined}
-              ageConditionMin={field.ageConditionMin}
+              onResult={handleResult}
+              ageConditionMin={field.ageConditionMin ?? 18}
             />
           )}
           {toolId === "growth" && (
             <EmbeddedGrowthChart
-              onResult={field.writeBackFieldId ? (r) => handleResult(r.waz ?? "") : undefined}
+              onResult={(r) => handleResult({ waz: r.waz, haz: r.haz, whz: r.whz, status: r.label })}
             />
           )}
           {toolId === "drug_reference" && <EmbeddedDrugReference />}
@@ -771,6 +776,7 @@ function FieldRenderer({
         field={f}
         values={values}
         allFields={allFields}
+        onChange={(v) => onChange(v)}
         onWriteBack={(fieldId, val) => onWriteBack?.(fieldId, val)}
       />
     );
