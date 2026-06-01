@@ -33,7 +33,7 @@ import {
   Stethoscope, MapPin, Camera, Upload,
   SeparatorHorizontal, SquareSplitHorizontal,
   GripVertical, Trash2, Copy, GitBranch, Plus, Settings, ChevronRight, X,
-  Repeat, ChevronUp, ChevronDown, Scale, TrendingUp, Pill,
+  Repeat, ChevronUp, ChevronDown, Scale, TrendingUp, Pill, Timer,
 } from "lucide-react";
 
 const searchSchema = z.object({ edit: z.string().optional() });
@@ -104,6 +104,7 @@ const PALETTE: { group: string; items: PaletteItem[] }[] = [
   {
     group: "Clinical",
     items: [
+      { type: "age", label: "Age", icon: Timer },
       { type: "measurement", label: "Measurement", icon: Stethoscope },
       { type: "location", label: "Location / GPS", icon: MapPin },
       { type: "photo", label: "Photo / Image", icon: Camera },
@@ -170,6 +171,8 @@ function makeField(type: FieldType): FormField {
       return { ...base, label: "Section title", required: false };
     case "file_upload":
       return { ...base, acceptTypes: "*", maxSizeMB: 5 };
+    case "age":
+      return { ...base, label: "Age", ageUnit: "years" as const, required: false };
     case "tool_embed":
       return { ...base, label: "Clinical Tool", toolId: "bmi" as const, required: false };
     default:
@@ -378,6 +381,15 @@ function FieldPreview({ field }: { field: FormField }) {
       return <div className={`${cls} border-t-2 border-border pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>— Section —</div>;
     case "page_break":
       return <div className={`${cls} border-t-2 border-dashed border-border pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>— Page break —</div>;
+    case "age":
+      return (
+        <div className={`${cls} flex items-center gap-2 border-2 border-border px-3 py-2`}>
+          <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-[10px] font-bold text-muted-foreground">
+            0 {field.ageUnit ?? "years"} — auto-routes BMI / Growth Chart
+          </span>
+        </div>
+      );
     case "tool_embed": {
       const toolLabels: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
       const toolIcons: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
@@ -512,7 +524,7 @@ function FieldConfigPanel({
         </ConfigField>
 
         {/* Variable name */}
-        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && field.type !== "age" && (
           <ConfigField label="Variable name" hint="Used as CSV column header">
             <input
               value={field.variableName ?? ""}
@@ -524,7 +536,7 @@ function FieldConfigPanel({
         )}
 
         {/* Hint */}
-        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && field.type !== "age" && (
           <ConfigField label="Hint text" hint="Helper text shown below the question">
             <input
               value={field.hint ?? ""}
@@ -536,7 +548,7 @@ function FieldConfigPanel({
         )}
 
         {/* Required */}
-        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && field.type !== "age" && (
           <label className="flex items-center justify-between gap-3 text-[11px] font-bold uppercase tracking-widest">
             Required
             <input
@@ -552,12 +564,12 @@ function FieldConfigPanel({
         <TypeConfig field={field} onChange={onChange} allFields={allFields} />
 
         {/* Conditional logic */}
-        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && field.type !== "age" && (
           <ConditionalConfig field={field} allFields={allFields} onChange={onChange} />
         )}
 
         {/* Analytics */}
-        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && field.type !== "age" && (
           <ConfigField label="Analytics chart">
             <select
               value={field.analyticsChart ?? "auto"}
@@ -891,8 +903,34 @@ function TypeConfig({ field, onChange, allFields }: { field: FormField; onChange
         </div>
       );
 
+    case "age":
+      return (
+        <div className="space-y-3 border-2 border-border p-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Age field settings</div>
+          <ConfigField label="Default unit">
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["years", "months", "days"] as const).map((u) => (
+                <button key={u} type="button" onClick={() => onChange({ ageUnit: u })}
+                  className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider ${(field.ageUnit ?? "years") === u ? "bg-primary" : "bg-card hover:bg-primary/30"}`}>
+                  {u}
+                </button>
+              ))}
+            </div>
+          </ConfigField>
+          <div className="border border-border bg-card/50 p-2 space-y-1">
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Auto-routing rules</div>
+            <div className="text-[9px] text-muted-foreground leading-relaxed">
+              · <span className="font-bold">≥ 18 years</span> → BMI Calculator shown, Growth Chart blocked<br/>
+              · <span className="font-bold">5 – 17 years</span> → Neither (intermediate; doctor decides)<br/>
+              · <span className="font-bold">&lt; 5 years (60 months)</span> → Growth Chart shown, BMI blocked
+            </div>
+          </div>
+        </div>
+      );
+
     case "tool_embed": {
       const numFields = allFields.filter((f) => (f.type === "number" || f.type === "measurement") && f.id !== field.id);
+      const ageFields = allFields.filter((f) => (f.type === "age" || f.type === "number") && f.id !== field.id);
       const sexFields = allFields.filter((f) => (f.type === "select_one" || f.type === "select" || f.type === "radio" || f.type === "short_text") && f.id !== field.id);
       const toolId = field.toolId ?? "bmi";
       return (
@@ -933,14 +971,12 @@ function TypeConfig({ field, onChange, allFields }: { field: FormField; onChange
                 </select>
               </ConfigField>
 
-              {toolId === "growth" && (
-                <ConfigField label="Age field (months)">
-                  <select value={field.ageFieldId ?? ""} onChange={(e) => onChange({ ageFieldId: e.target.value || undefined })} className="input-brutal text-xs">
-                    <option value="">— not linked —</option>
-                    {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                  </select>
-                </ConfigField>
-              )}
+              <ConfigField label="Age field" hint="Use the dedicated Age field type for automatic unit handling">
+                <select value={field.ageFieldId ?? ""} onChange={(e) => onChange({ ageFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                  <option value="">— not linked —</option>
+                  {ageFields.map((f) => <option key={f.id} value={f.id}>{f.label}{f.type === "age" ? " (Age field ✓)" : ""}</option>)}
+                </select>
+              </ConfigField>
 
               <ConfigField label="Sex / Gender field">
                 <select value={field.sexFieldId ?? ""} onChange={(e) => onChange({ sexFieldId: e.target.value || undefined })} className="input-brutal text-xs">
@@ -965,10 +1001,10 @@ function TypeConfig({ field, onChange, allFields }: { field: FormField; onChange
                 <span className="text-[10px] text-muted-foreground">years</span>
               </div>
               {field.ageConditionMin !== undefined && (
-                <ConfigField label="Age field (years)">
+                <ConfigField label="Age field">
                   <select value={field.ageFieldId ?? ""} onChange={(e) => onChange({ ageFieldId: e.target.value || undefined })} className="input-brutal text-xs">
                     <option value="">— not linked —</option>
-                    {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    {ageFields.map((f) => <option key={f.id} value={f.id}>{f.label}{f.type === "age" ? " (Age field ✓)" : ""}</option>)}
                   </select>
                 </ConfigField>
               )}

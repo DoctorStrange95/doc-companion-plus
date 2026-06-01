@@ -46,7 +46,9 @@ export type FieldType =
   | "section_header"
   | "page_break"
   // Embedded clinical tools
-  | "tool_embed";
+  | "tool_embed"
+  // Clinical age field (years / months / days with auto-conversion)
+  | "age";
 
 export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains" | "is_answered";
 
@@ -204,8 +206,11 @@ export interface FormField {
   heightFieldId?: string;
   ageFieldId?: string;
   sexFieldId?: string;
-  // Age condition: only show BMI tool when age (from ageFieldId) >= this (years)
+  // Age condition: only show BMI tool when age >= this (years). Default: 18
   ageConditionMin?: number;
+  // Age field config
+  ageUnit?: "years" | "months" | "days";
+  ageShowMonthsBelow?: number; // show months sub-label when < X years
 }
 
 export type FormRole = "standalone" | "parent" | "child";

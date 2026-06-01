@@ -5,7 +5,7 @@ import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib
 import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { PatientPicker } from "@/components/PatientPicker";
-import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2, Search, ChevronDown, ChevronUp, Scale, TrendingUp, Pill } from "lucide-react";
+import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2, Search, ChevronDown, ChevronUp, Scale, TrendingUp, Pill, Timer } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { EmbeddedBMI } from "@/components/tools/EmbeddedBMI";
 import { EmbeddedGrowthChart } from "@/components/tools/EmbeddedGrowthChart";
@@ -582,19 +582,58 @@ function FillForm() {
 interface ToolEmbedFieldProps {
   field: FormField;
   values: Record<string, unknown>;
+  allFields: FormField[];
   onWriteBack: (fieldId: string, val: unknown) => void;
 }
 
-function ToolEmbedField({ field, values, onWriteBack }: ToolEmbedFieldProps) {
+interface AgeValue {
+  value: number | string;
+  unit: "years" | "months" | "days";
+}
+
+function ToolEmbedField({ field, values, allFields, onWriteBack }: ToolEmbedFieldProps) {
   const [open, setOpen] = useState(false);
   const toolId = field.toolId ?? "bmi";
 
   // Read source field values from current form values
   const srcWeight = field.weightFieldId ? Number(values[field.weightFieldId]) || undefined : undefined;
   const srcHeight = field.heightFieldId ? Number(values[field.heightFieldId]) || undefined : undefined;
-  const srcAge    = field.ageFieldId    ? Number(values[field.ageFieldId])    || undefined : undefined;
   const srcSexRaw = field.sexFieldId    ? String(values[field.sexFieldId] ?? "") : "";
   const srcSex    = srcSexRaw.toLowerCase().includes("f") ? "F" : srcSexRaw ? "M" : "";
+
+  // Age field: may be an `age` type field (has value + unit) or a plain number field
+  const ageRawVal = field.ageFieldId ? values[field.ageFieldId] : undefined;
+  const ageField  = field.ageFieldId ? allFields.find((f) => f.id === field.ageFieldId) : undefined;
+  let ageMonthsFromField: number | undefined;
+  let ageYearsFromField: number | undefined;
+  if (ageRawVal !== undefined && ageRawVal !== null && ageRawVal !== "") {
+    if (ageField?.type === "age" && typeof ageRawVal === "object") {
+      const av = ageRawVal as { value: number; unit: "years" | "months" | "days" };
+      const months = av.unit === "years" ? av.value * 12 : av.unit === "days" ? av.value / 30.44 : av.value;
+      ageMonthsFromField = Math.round(months * 10) / 10;
+      ageYearsFromField  = months / 12;
+    } else {
+      // Plain number field — assume unit from ageField.ageUnit or fallback to years
+      const raw = Number(ageRawVal);
+      if (Number.isFinite(raw)) {
+        const unit = ageField?.ageUnit ?? "years";
+        ageMonthsFromField = unit === "years" ? raw * 12 : unit === "days" ? raw / 30.44 : raw;
+        ageYearsFromField  = ageMonthsFromField / 12;
+      }
+    }
+  }
+
+  // For BMI: pass age in years; for growth: pass age in months
+  const srcAgeYears  = ageYearsFromField;
+  const srcAgeMonths = ageMonthsFromField;
+
+  // Determine age-based routing when an age field is linked
+  const ageRouting: "bmi" | "growth" | "both" | null = (() => {
+    if (ageMonthsFromField === undefined) return null;
+    if (ageMonthsFromField < 60) return "growth";   // < 5 years → Growth Chart
+    if (ageYearsFromField !== undefined && ageYearsFromField >= 18) return "bmi"; // ≥ 18 years → BMI
+    return "both"; // 5–17 years: show neither (intermediate)
+  })();
 
   // Auto mode: source fields are linked
   const hasSourceFields = !!(field.weightFieldId || field.heightFieldId || field.ageFieldId || field.sexFieldId);
@@ -605,6 +644,36 @@ function ToolEmbedField({ field, values, onWriteBack }: ToolEmbedFieldProps) {
 
   // AUTO MODE: inline result, no expand button needed
   if (hasSourceFields && toolId !== "drug_reference") {
+    // Age-based routing: block inappropriate tool
+    const bmiBlocked  = ageRouting === "growth"; // < 5 years → BMI blocked
+    const growthBlocked = ageRouting === "bmi";  // ≥ 18 years → Growth Chart blocked
+    const intermediate  = ageRouting === "both"; // 5–17 years
+
+    if (toolId === "bmi" && bmiBlocked) {
+      return (
+        <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          <Scale className="h-3.5 w-3.5" />
+          BMI — not applicable (age &lt; 5 years, use Growth Chart)
+        </div>
+      );
+    }
+    if (toolId === "growth" && growthBlocked) {
+      return (
+        <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          <TrendingUp className="h-3.5 w-3.5" />
+          Growth Chart — not applicable (age ≥ 18 years, use BMI)
+        </div>
+      );
+    }
+    if (intermediate && toolId === "bmi") {
+      return (
+        <div className="flex items-center gap-2 border-2 border-amber-400 bg-amber-50 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-amber-700">
+          <Scale className="h-3.5 w-3.5" />
+          BMI — age 5–17 years (use with caution; WHO Growth Charts preferred)
+        </div>
+      );
+    }
+
     return (
       <div data-testid={`fill-field-${field.id}`}>
         {toolId === "bmi" && (
@@ -613,8 +682,8 @@ function ToolEmbedField({ field, values, onWriteBack }: ToolEmbedFieldProps) {
             initialWeight={srcWeight}
             initialHeight={srcHeight}
             initialSex={srcSex}
-            currentAgeYears={srcAge}
-            ageConditionMin={field.ageConditionMin}
+            currentAgeYears={srcAgeYears}
+            ageConditionMin={field.ageConditionMin ?? 18}
             onResult={field.writeBackFieldId ? (bmi) => handleResult(bmi) : undefined}
           />
         )}
@@ -623,7 +692,7 @@ function ToolEmbedField({ field, values, onWriteBack }: ToolEmbedFieldProps) {
             autoMode
             initialWeight={srcWeight}
             initialHeight={srcHeight}
-            initialAgeMonths={srcAge}
+            initialAgeMonths={srcAgeMonths}
             initialSex={srcSex}
             onResult={field.writeBackFieldId ? (r) => handleResult(r.waz ?? "") : undefined}
           />
@@ -701,8 +770,22 @@ function FieldRenderer({
       <ToolEmbedField
         field={f}
         values={values}
+        allFields={allFields}
         onWriteBack={(fieldId, val) => onWriteBack?.(fieldId, val)}
       />
+    );
+  }
+
+  if (f.type === "age") {
+    return (
+      <div data-testid={`fill-field-${f.id}`}>
+        <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest">
+          {f.label}
+          {f.required && <span className="ml-0.5 text-destructive">*</span>}
+        </label>
+        {f.hint && <p className="mb-1.5 text-[11px] text-muted-foreground">{f.hint}</p>}
+        <AgeField field={f} value={value as AgeValue | undefined} onChange={onChange} />
+      </div>
     );
   }
 
@@ -1303,6 +1386,90 @@ function FileUploadField({
         </div>
       </div>
       {error && <p className="text-[11px] font-bold text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+function AgeField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  value: AgeValue | undefined;
+  onChange: (v: unknown) => void;
+}) {
+  const unit = value?.unit ?? field.ageUnit ?? "years";
+  const num  = value?.value ?? "";
+
+  const update = (newNum: string | number, newUnit: "years" | "months" | "days") => {
+    onChange({ value: newNum, unit: newUnit });
+  };
+
+  // Compute display hint: convert to other units for context
+  const numVal = Number(num);
+  let hint = "";
+  if (Number.isFinite(numVal) && numVal > 0) {
+    if (unit === "years") {
+      const months = Math.round(numVal * 12);
+      hint = `≈ ${months} months`;
+      if (numVal < 5)  hint += " — Growth Chart range";
+      else if (numVal < 18) hint += " — intermediate (5–17 yrs)";
+      else hint += " — BMI range (≥ 18 yrs)";
+    } else if (unit === "months") {
+      const years = (numVal / 12).toFixed(1);
+      hint = `≈ ${years} years`;
+      if (numVal < 60)  hint += " — Growth Chart range (< 5 yrs)";
+      else if (numVal < 216) hint += " — intermediate";
+      else hint += " — BMI range (≥ 18 yrs)";
+    } else if (unit === "days") {
+      const months = Math.round(numVal / 30.44);
+      const years  = (numVal / 365.25).toFixed(1);
+      hint = `≈ ${months} months / ${years} years`;
+      if (numVal < 1826) hint += " — Growth Chart range";
+      else hint += " — BMI range";
+    }
+  }
+
+  // Colour the hint based on routing
+  const hintIsGrowth = hint.includes("Growth Chart");
+  const hintIsBMI    = hint.includes("BMI range");
+  const hintIsInter  = hint.includes("intermediate");
+  const hintCls = hintIsGrowth ? "text-green-600 font-bold" : hintIsBMI ? "text-blue-600 font-bold" : hintIsInter ? "text-amber-600" : "text-muted-foreground";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          value={num as string}
+          onChange={(e) => update(e.target.value, unit)}
+          className="input-brutal flex-1 font-mono text-lg"
+          placeholder="0"
+        />
+        <div className="grid grid-cols-3 gap-1 shrink-0">
+          {(["years", "months", "days"] as const).map((u) => (
+            <button
+              key={u}
+              type="button"
+              onClick={() => update(num, u)}
+              className={`border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors ${unit === u ? "bg-primary" : "bg-card hover:bg-primary/30"}`}
+            >
+              {u === "years" ? "Yrs" : u === "months" ? "Mo" : "Days"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {hint && (
+        <div className={`flex items-center gap-1.5 text-[11px] ${hintCls}`}>
+          {hintIsGrowth && <TrendingUp className="h-3.5 w-3.5" />}
+          {hintIsBMI    && <Scale className="h-3.5 w-3.5" />}
+          {hintIsInter  && <span>⚠</span>}
+          {hint}
+        </div>
+      )}
     </div>
   );
 }
