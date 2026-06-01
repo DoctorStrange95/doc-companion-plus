@@ -1251,7 +1251,11 @@ export default function FormBuilderPage() {
   const allForms = useStore((s) => s.forms);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelMode, setPanelMode] = useState<"palette" | "config">("palette");
-  const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(1); // 0=Fields 1=Form 2=Settings
+  const [mobileTab, setMobileTab] = useState<0 | 1 | 2>(1); // desktop compat only
+  // Mobile UX state
+  const [showMobilePicker, setShowMobilePicker] = useState(false);
+  const [showMobileConfig, setShowMobileConfig] = useState(false);
+  const [insertAfterId, setInsertAfterId] = useState<string | null>(null); // null = append
   const canvasRef = useRef<HTMLDivElement>(null);
   const isEditing = !!editId;
 
@@ -1313,7 +1317,9 @@ export default function FormBuilderPage() {
     setFields((prev) => [...prev, f]);
     setSelectedId(f.id);
     setPanelMode("config");
-    setMobileTab(1); // switch to Form tab after adding a field
+    setMobileTab(1);
+    setShowMobilePicker(false);
+    setShowMobileConfig(true);
     setTimeout(() => {
       canvasRef.current?.scrollTo({ top: canvasRef.current.scrollHeight, behavior: "smooth" });
     }, 50);
@@ -1330,6 +1336,8 @@ export default function FormBuilderPage() {
     setSelectedId(f.id);
     setPanelMode("config");
     setMobileTab(1);
+    setShowMobilePicker(false);
+    setShowMobileConfig(true);
   }, []);
 
   const updateField = useCallback((id: string, patch: Partial<FormField>) => {
@@ -1475,7 +1483,7 @@ export default function FormBuilderPage() {
       field={selectedField}
       allFields={fields}
       onChange={(patch) => updateField(selectedField.id, patch)}
-      onClose={() => { setSelectedId(null); setPanelMode("palette"); setMobileTab(1); }}
+      onClose={() => { setSelectedId(null); setPanelMode("palette"); setShowMobileConfig(false); }}
       onPrev={navIdx > 0 ? () => setSelectedId(navigableFields[navIdx - 1].id) : undefined}
       onNext={navIdx < navigableFields.length - 1 ? () => setSelectedId(navigableFields[navIdx + 1].id) : undefined}
       fieldIndex={selectedIdx}
@@ -1484,113 +1492,83 @@ export default function FormBuilderPage() {
     />
   ) : (
     <div className="flex-1 p-4 text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-8">
-      Tap a field on the Form tab to configure it
+      Select a field to configure it
     </div>
   );
+
+  // ── Helper: open field picker (mobile) or focus palette (desktop) ────────────
+  const openPickerAfter = (afterId: string | null) => {
+    setInsertAfterId(afterId);
+    setShowMobilePicker(true);
+  };
+
+  // ── Picker action: called when user picks a field type ────────────────────────
+  const handlePickField = (type: FieldType, defaults?: Partial<FormField>) => {
+    if (insertAfterId !== null) {
+      addFieldAfter(insertAfterId, type, defaults);
+    } else {
+      addField(type, defaults);
+    }
+    setInsertAfterId(null);
+  };
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {gate}
-      {/* Top bar */}
-      <div className="flex items-center justify-between border-b-2 border-border bg-primary px-4 py-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => nav({ to: "/forms" })} className="border-2 border-border bg-card px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">
-            ← Back
+
+      {/* ── Top bar ── */}
+      <div className="flex items-center justify-between border-b-2 border-border bg-primary px-3 py-2.5 shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            onClick={() => nav({ to: "/forms" })}
+            className="shrink-0 border-2 border-border bg-card px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted flex items-center gap-1"
+          >
+            ← Forms
           </button>
-          <div className="hidden sm:flex flex-col leading-none">
-            <span className="font-display text-xl uppercase leading-none">
-              {isEditing ? (title || "Edit form") : (title || "New form")}
-            </span>
-            {saveStatus === "saving" && (
-              <span className="text-[9px] font-bold uppercase tracking-widest text-foreground/60 mt-0.5">
-                {isEditing ? "Syncing update to server…" : "Saving to server…"}
-              </span>
-            )}
-            {saveStatus === "updated" && (
-              <span className="text-[9px] font-bold uppercase tracking-widest text-green-700 dark:text-green-400 mt-0.5">
-                Updated — all changes synced
-              </span>
-            )}
-          </div>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Form name…"
+            className="min-w-0 flex-1 bg-transparent font-display text-lg uppercase outline-none placeholder:text-foreground/50 border-b-2 border-transparent focus:border-foreground/40 py-0.5"
+          />
         </div>
-        <button onClick={save} disabled={saveStatus !== "idle"} className="btn-brutal text-sm disabled:opacity-60">
-          {saveStatus === "saving"
-            ? (isEditing ? "Updating…" : "Saving…")
-            : saveStatus === "updated"
-            ? "Updated ✓"
-            : isEditing ? "Update" : "Save"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {saveStatus === "saving" && <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-widest text-foreground/60">Saving…</span>}
+          {saveStatus === "updated" && <span className="hidden sm:inline text-[9px] font-bold uppercase tracking-widest text-green-700">Saved ✓</span>}
+          <button onClick={save} disabled={saveStatus !== "idle"} className="btn-brutal text-xs px-4 py-2 disabled:opacity-60">
+            {saveStatus === "saving" ? "…" : saveStatus === "updated" ? "✓" : isEditing ? "Update" : "Save"}
+          </button>
+        </div>
       </div>
 
-      {/* Draft-restored banner */}
+      {/* Banners */}
       {showDraftBanner && (
         <div className="flex items-center justify-between gap-2 border-b-2 border-border bg-primary/20 px-4 py-2 shrink-0">
-          <span className="text-[11px] font-bold">
-            Unsaved draft restored — your previous work is back.
-          </span>
-          <button
-            onClick={clearDraft}
-            className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted"
-          >
-            Discard draft
-          </button>
+          <span className="text-[11px] font-bold">Draft restored.</span>
+          <button onClick={clearDraft} className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">Discard</button>
         </div>
       )}
-
-      {/* Server error banner */}
       {saveError && (
         <div className="flex items-center justify-between gap-2 border-b-2 border-border bg-destructive/10 px-4 py-2 shrink-0">
           <span className="text-[11px] font-bold text-destructive">{saveError}</span>
-          <button
-            onClick={() => nav({ to: "/forms" })}
-            className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted"
-          >
-            Go back
-          </button>
+          <button onClick={() => nav({ to: "/forms" })} className="shrink-0 border-2 border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">Back</button>
         </div>
       )}
 
-      {/* Mobile tab bar — visible only on small screens */}
-      <div className="flex border-b-2 border-border bg-card sm:hidden shrink-0">
-        {(["Fields", "Form", "Settings"] as const).map((label, i) => (
-          <button
-            key={label}
-            onClick={() => setMobileTab(i as 0 | 1 | 2)}
-            className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-wider border-b-2 transition-colors ${mobileTab === i ? "border-foreground bg-primary" : "border-transparent hover:bg-muted"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Body */}
+      {/* ── Body: desktop 3-panel, mobile single canvas ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT PANEL — desktop always visible, mobile hidden */}
-        <div className="w-72 shrink-0 border-r-2 border-border hidden sm:flex flex-col overflow-hidden bg-card">
+
+        {/* LEFT PANEL — desktop only */}
+        <div className="w-64 shrink-0 border-r-2 border-border hidden sm:flex flex-col overflow-hidden bg-card">
           {panelMode === "config" && selectedField ? ConfigPanel : PalettePanel}
         </div>
 
-        {/* Mobile: Fields tab */}
-        <div className={`sm:hidden flex-1 overflow-y-auto flex flex-col bg-card ${mobileTab === 0 ? "flex" : "hidden"}`}>
-          {PalettePanel}
-        </div>
+        {/* CANVAS — always visible */}
+        <div ref={canvasRef} className="flex-1 overflow-y-auto pb-32 sm:pb-8">
+          <div className="mx-auto max-w-2xl p-4 sm:p-6 space-y-4">
 
-        {/* Mobile: Settings tab */}
-        <div className={`sm:hidden flex-1 overflow-y-auto flex flex-col bg-card ${mobileTab === 2 ? "flex" : "hidden"}`}>
-          {ConfigPanel}
-        </div>
-
-        {/* CANVAS — desktop always visible, mobile only on Form tab */}
-        <div ref={canvasRef} className={`flex-1 overflow-y-auto ${mobileTab === 1 ? "block" : "hidden sm:block"}`}>
-          <div className="mx-auto max-w-2xl p-6 space-y-6">
-            {/* Form metadata */}
-            <div className="brutal p-5 space-y-4">
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Untitled form"
-                className="w-full border-b-2 border-border bg-transparent pb-2 font-display text-3xl uppercase outline-none placeholder:text-muted-foreground"
-              />
+            {/* Form metadata — compact on mobile */}
+            <div className="brutal p-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Category</div>
@@ -1601,8 +1579,7 @@ export default function FormBuilderPage() {
                 <div className="flex items-end pb-0.5">
                   <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest cursor-pointer">
                     <input type="checkbox" checked={longitudinal} onChange={(e) => setLongitudinal(e.target.checked)} className="h-4 w-4" />
-                    <Repeat className="h-4 w-4" />
-                    Longitudinal
+                    <Repeat className="h-3.5 w-3.5" /> Longitudinal
                   </label>
                 </div>
               </div>
@@ -1611,24 +1588,15 @@ export default function FormBuilderPage() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Description (optional)"
                 rows={2}
-                className="input-brutal resize-none w-full"
+                className="input-brutal resize-none w-full text-sm"
               />
-
-              {/* Form type / hierarchy */}
+              {/* Form type */}
               <div>
-                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Form type</div>
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Form type</div>
                 <div className="grid grid-cols-3 gap-1.5">
-                  {([
-                    { v: "standalone", label: "Standalone" },
-                    { v: "parent", label: "Enrollment" },
-                    { v: "child", label: "Follow-up" },
-                  ] as const).map(({ v, label }) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setFormRole(v)}
-                      className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider ${formRole === v ? "bg-primary" : "bg-card hover:bg-primary/30"}`}
-                    >
+                  {([{ v: "standalone", label: "Standalone" }, { v: "parent", label: "Enrollment" }, { v: "child", label: "Follow-up" }] as const).map(({ v, label }) => (
+                    <button key={v} type="button" onClick={() => setFormRole(v)}
+                      className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-wider ${formRole === v ? "bg-primary" : "bg-card hover:bg-primary/30"}`}>
                       {label}
                     </button>
                   ))}
@@ -1636,113 +1604,236 @@ export default function FormBuilderPage() {
                 {formRole === "parent" && (
                   <div className="mt-2">
                     <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Subject identifier field</div>
-                    <select
-                      value={subjectIdentifierFieldId}
-                      onChange={(e) => setSubjectIdentifierFieldId(e.target.value)}
-                      className="input-brutal w-full text-xs"
-                    >
+                    <select value={subjectIdentifierFieldId} onChange={(e) => setSubjectIdentifierFieldId(e.target.value)} className="input-brutal w-full text-xs">
                       <option value="">— pick a field —</option>
-                      {fields.filter((f) => ["short_text", "text", "number"].includes(f.type)).map((f) => (
-                        <option key={f.id} value={f.id}>{f.label}</option>
-                      ))}
+                      {fields.filter((f) => ["short_text", "text", "number"].includes(f.type)).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
                     </select>
-                    <p className="mt-1 text-[9px] text-muted-foreground">The field that uniquely identifies each enrolled subject (e.g. Patient ID, Name)</p>
                   </div>
                 )}
                 {formRole === "child" && (
                   <div className="mt-2 space-y-2">
-                    <div>
-                      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Linked to parent form</div>
-                      <select
-                        value={parentFormId}
-                        onChange={(e) => setParentFormId(e.target.value)}
-                        className="input-brutal w-full text-xs"
-                      >
-                        <option value="">— select parent form —</option>
-                        {allForms.filter((f) => f.formRole === "parent" && f.id !== (editId ?? "")).map((f) => (
-                          <option key={f.id} value={f.id}>{f.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Subject ID field in this form</div>
-                      <select
-                        value={parentLinkFieldId}
-                        onChange={(e) => setParentLinkFieldId(e.target.value)}
-                        className="input-brutal w-full text-xs"
-                      >
-                        <option value="">— pick a field —</option>
-                        {fields.filter((f) => ["short_text", "text", "number"].includes(f.type)).map((f) => (
-                          <option key={f.id} value={f.id}>{f.label}</option>
-                        ))}
-                      </select>
-                      <p className="mt-1 text-[9px] text-muted-foreground">Respondent will enter the parent subject ID here to link entries</p>
-                    </div>
+                    <select value={parentFormId} onChange={(e) => setParentFormId(e.target.value)} className="input-brutal w-full text-xs">
+                      <option value="">— select parent form —</option>
+                      {allForms.filter((f) => f.formRole === "parent" && f.id !== (editId ?? "")).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                    <select value={parentLinkFieldId} onChange={(e) => setParentLinkFieldId(e.target.value)} className="input-brutal w-full text-xs">
+                      <option value="">— subject ID field in this form —</option>
+                      {fields.filter((f) => ["short_text", "text", "number"].includes(f.type)).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                    </select>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Fields */}
-            <div className="space-y-2">
-              {fields.length === 0 ? (
-                <div
-                  onClick={() => addField("short_text")}
-                  className="brutal-flat p-10 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground cursor-pointer hover:bg-muted/40 border-2 border-dashed border-border"
-                >
-                  <Plus className="h-6 w-6 mx-auto mb-2 opacity-40" />
-                  Click a field type in the left panel to add it here
+            {/* ── Field list with insert rows ── */}
+            {fields.length === 0 ? (
+              /* Empty state — big tap targets on mobile */
+              <div className="space-y-3">
+                <div className="text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground py-2">
+                  Add your first field
                 </div>
-              ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {[
+                    { type: "short_text" as FieldType, label: "Short text", icon: Type },
+                    { type: "number" as FieldType, label: "Number", icon: Hash },
+                    { type: "select_one" as FieldType, label: "Select one", icon: ListChecks },
+                    { type: "date" as FieldType, label: "Date", icon: Calendar },
+                    { type: "yes_no" as FieldType, label: "Yes / No", icon: ToggleLeft },
+                    { type: "measurement" as FieldType, label: "Measurement", icon: Stethoscope },
+                  ].map(({ type, label, icon: Icon }) => (
+                    <button key={type} onClick={() => addField(type)}
+                      className="brutal-flat flex flex-col items-center gap-2 py-5 text-[11px] font-bold uppercase tracking-wider hover:bg-primary/30 active:bg-primary border-2 border-dashed border-border">
+                      <Icon className="h-6 w-6 opacity-60" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => openPickerAfter(null)}
+                  className="w-full border-2 border-border py-3 text-[10px] font-bold uppercase tracking-widest hover:bg-muted flex items-center justify-center gap-2">
+                  <Plus className="h-4 w-4" /> More field types
+                </button>
+              </div>
+            ) : (
+              <div>
+                {/* First insert row — insert before the first field */}
+                <InsertRow onAdd={(type, defaults) => {
+                  const f = { ...makeField(type), ...defaults };
+                  setFields((prev) => [f, ...prev]);
+                  setSelectedId(f.id);
+                  setPanelMode("config");
+                  setShowMobilePicker(false);
+                  setShowMobileConfig(true);
+                }} onOpenPicker={() => { setInsertAfterId("__before_first__"); setShowMobilePicker(true); }} />
+
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                   <SortableContext items={fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
-                    {fields.map((f) => (
-                      <SortableFieldCard
-                        key={f.id}
-                        field={f}
-                        selected={selectedId === f.id}
-                        onSelect={() => { setSelectedId(f.id); setPanelMode("config"); setMobileTab(2); }}
-                        onDuplicate={() => duplicateField(f.id)}
-                        onDelete={() => deleteField(f.id)}
-                        longitudinal={longitudinal}
-                        onLabelChange={(label) => setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, label } : ff))}
-                        onSetFixed={() => {
-                          setFixedFieldIds(prev => prev.includes(f.id) ? prev : [...prev, f.id]);
-                          setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'fixed' as const } : ff));
-                        }}
-                        onSetTracked={() => {
-                          setFixedFieldIds(prev => prev.filter(id => id !== f.id));
-                          setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'tracked' as const } : ff));
-                        }}
-                      />
+                    {fields.map((f, idx) => (
+                      <div key={f.id}>
+                        <SortableFieldCard
+                          field={f}
+                          selected={selectedId === f.id}
+                          onSelect={() => {
+                            setSelectedId(f.id);
+                            setPanelMode("config");
+                            setShowMobileConfig(true);
+                          }}
+                          onDuplicate={() => duplicateField(f.id)}
+                          onDelete={() => deleteField(f.id)}
+                          longitudinal={longitudinal}
+                          onLabelChange={(label) => setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, label } : ff))}
+                          onSetFixed={() => {
+                            setFixedFieldIds(prev => prev.includes(f.id) ? prev : [...prev, f.id]);
+                            setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'fixed' as const } : ff));
+                          }}
+                          onSetTracked={() => {
+                            setFixedFieldIds(prev => prev.filter(id => id !== f.id));
+                            setFields(prev => prev.map(ff => ff.id === f.id ? { ...ff, longitudinalRole: 'tracked' as const } : ff));
+                          }}
+                        />
+                        {/* Insert row after each field */}
+                        <InsertRow
+                          onAdd={(type, defaults) => addFieldAfter(f.id, type, defaults)}
+                          onOpenPicker={() => openPickerAfter(f.id)}
+                        />
+                      </div>
                     ))}
                   </SortableContext>
                 </DndContext>
-              )}
-            </div>
-
-            {/* Add field shortcut */}
-            {fields.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-2 pb-6">
-                {[
-                  { type: "short_text" as FieldType, label: "+ Short text" },
-                  { type: "number" as FieldType, label: "+ Number" },
-                  { type: "select_one" as FieldType, label: "+ Select one" },
-                  { type: "measurement" as FieldType, label: "+ Measurement" },
-                ].map(({ type, label }) => (
-                  <button key={type} onClick={() => addField(type)} className="border-2 border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30">
-                    {label}
-                  </button>
-                ))}
               </div>
             )}
           </div>
         </div>
+
+        {/* RIGHT PANEL — desktop config, only when field selected */}
+        <div className={`w-72 shrink-0 border-l-2 border-border hidden sm:flex flex-col overflow-hidden bg-card transition-all ${selectedField ? "sm:flex" : "sm:hidden"}`}>
+          {selectedField && ConfigPanel}
+        </div>
       </div>
+
+      {/* ── Mobile: Floating Action Button ── */}
+      <button
+        onClick={() => openPickerAfter(null)}
+        className="sm:hidden fixed bottom-6 right-5 z-40 flex h-14 w-14 items-center justify-center border-4 border-border bg-primary shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1 transition-all"
+        aria-label="Add field"
+      >
+        <Plus className="h-7 w-7" strokeWidth={3} />
+      </button>
+
+      {/* ── Mobile: Field Picker Bottom Sheet ── */}
+      {showMobilePicker && (
+        <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowMobilePicker(false)} />
+          <div className="relative bg-background border-t-4 border-border max-h-[75vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b-2 border-border px-4 py-3 sticky top-0 bg-background z-10">
+              <span className="font-display text-base uppercase">Add field</span>
+              <button onClick={() => setShowMobilePicker(false)} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-4 space-y-4 pb-8">
+              {PALETTE.map((group) => (
+                <div key={group.group}>
+                  <div className="mb-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{group.group}</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {group.items.map(({ type, label, icon: Icon, defaults }) => (
+                      <button
+                        key={`${type}_${label}`}
+                        onClick={() => handlePickField(type, defaults)}
+                        className="flex flex-col items-center gap-2 border-2 border-border bg-card py-4 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 active:bg-primary"
+                      >
+                        <Icon className="h-5 w-5" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile: Field Config Bottom Drawer ── */}
+      {showMobileConfig && selectedField && (
+        <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileConfig(false)} />
+          <div className="relative bg-background border-t-4 border-border max-h-[80vh] overflow-y-auto">
+            <FieldConfigPanel
+              field={selectedField}
+              allFields={fields}
+              onChange={(patch) => updateField(selectedField.id, patch)}
+              onClose={() => { setShowMobileConfig(false); setSelectedId(null); setPanelMode("palette"); }}
+              onPrev={navIdx > 0 ? () => setSelectedId(navigableFields[navIdx - 1].id) : undefined}
+              onNext={navIdx < navigableFields.length - 1 ? () => setSelectedId(navigableFields[navIdx + 1].id) : undefined}
+              fieldIndex={selectedIdx}
+              totalFields={fields.length}
+              onAddAfter={(type) => {
+                addFieldAfter(selectedField.id, type);
+                setShowMobileConfig(true);
+              }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Insert row — the "+" button between fields ─────────────────────────────────
+function InsertRow({
+  onAdd,
+  onOpenPicker,
+}: {
+  onAdd: (type: FieldType, defaults?: Partial<FormField>) => void;
+  onOpenPicker: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const QUICK = [
+    { type: "short_text" as FieldType, label: "Text", icon: Type },
+    { type: "number" as FieldType, label: "Number", icon: Hash },
+    { type: "select_one" as FieldType, label: "Select", icon: ListChecks },
+    { type: "yes_no" as FieldType, label: "Yes/No", icon: ToggleLeft },
+    { type: "measurement" as FieldType, label: "Measure", icon: Stethoscope },
+  ];
+
+  if (!open) {
+    return (
+      <div className="group flex items-center gap-2 py-1 cursor-pointer" onClick={() => setOpen(true)}>
+        <div className="h-px flex-1 bg-border/50 group-hover:bg-border transition-colors" />
+        <button
+          type="button"
+          className="flex h-6 w-6 items-center justify-center border-2 border-border bg-background text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-primary hover:text-foreground hover:opacity-100 transition-all"
+          aria-label="Insert field here"
+        >
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+        <div className="h-px flex-1 bg-border/50 group-hover:bg-border transition-colors" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-2 border-primary/40 bg-primary/5 p-2 space-y-2 my-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-primary">Insert field here</span>
+        <button type="button" onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+      </div>
+      <div className="grid grid-cols-5 gap-1">
+        {QUICK.map(({ type, label, icon: Icon }) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => { onAdd(type); setOpen(false); }}
+            className="flex flex-col items-center gap-1 border border-border bg-background py-2 text-[9px] font-bold uppercase tracking-wider hover:bg-primary/30 active:bg-primary"
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => { setOpen(false); onOpenPicker(); }}
+        className="w-full border border-border bg-card py-1.5 text-[9px] font-bold uppercase tracking-widest hover:bg-muted flex items-center justify-center gap-1">
+        <Plus className="h-3 w-3" /> More types
+      </button>
     </div>
   );
 }
