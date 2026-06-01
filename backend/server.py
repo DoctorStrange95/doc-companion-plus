@@ -1438,15 +1438,32 @@ async def create_share(
     if target_email == user.email:
         raise HTTPException(400, "Cannot share with yourself")
 
-    # Verify ownership of the resource
+    # Verify ownership or can_edit permission on the resource
     if body.resource_type == "patient":
         res = await db.execute(select(Patient).where(Patient.id == body.resource_id))
         owner_check = res.scalar_one_or_none()
+        is_owner = owner_check and str(owner_check.owner_id) == str(user.id)
+        if not is_owner:
+            raise HTTPException(403, "Only the owner can share patients")
     else:
         res = await db.execute(select(FormDef).where(FormDef.id == body.resource_id))
         owner_check = res.scalar_one_or_none()
-    if not owner_check or str(owner_check.owner_id) != str(user.id):
-        raise HTTPException(403, "Only the owner can share")
+        is_owner = owner_check and str(owner_check.owner_id) == str(user.id)
+        # Allow users with can_edit to sub-share the form with their own collaborators
+        if not is_owner:
+            sh_res = await db.execute(
+                select(Share).where(
+                    and_(
+                        Share.resource_type == "form",
+                        Share.resource_id == body.resource_id,
+                        Share.shared_with == str(user.id),
+                        Share.can_edit == True,  # noqa: E712
+                    )
+                )
+            )
+            has_edit = sh_res.scalar_one_or_none()
+            if not has_edit:
+                raise HTTPException(403, "Only the owner or editors can share")
 
     # Find target user
     res = await db.execute(select(User).where(User.email == target_email))
@@ -2160,3 +2177,195 @@ async def admin_list_users(
         )
         for row in rows
     ]
+
+
+# ── Admin: form deployment ────────────────────────────────────────────────────
+
+class AdminFormOut(BaseModel):
+    id: str
+    name: str
+    category: str
+    owner_email: str
+    owner_name: str
+    status: str
+    response_count: int
+    created_at: str
+
+
+class AdminDeployIn(BaseModel):
+    form_id: str
+    email: str
+    can_fill: bool = True
+    can_view: bool = False
+    can_edit: bool = False
+
+
+class AdminAssigneeOut(BaseModel):
+    share_id: str
+    email: str
+    name: str
+    can_fill: bool
+    can_view: bool
+    can_edit: bool
+    response_count: int
+
+
+@app.get("/api/admin/forms", response_model=list[AdminFormOut])
+async def admin_list_forms(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    rows = (await db.execute(text("""
+        SELECT
+            f.id,
+            f.name,
+            COALESCE(f.category, '') AS category,
+            COALESCE(f.status, 'active') AS status,
+            u.email AS owner_email,
+            COALESCE(u.name, '') AS owner_name,
+            f.created_at,
+            COUNT(DISTINCT s.id) AS response_count
+        FROM forms f
+        LEFT JOIN users u ON u.id::text = f.owner_id::text
+        LEFT JOIN submissions s ON s.form_id = f.id
+        GROUP BY f.id, f.name, f.category, f.status, u.email, u.name, f.created_at
+        ORDER BY f.created_at DESC
+    """))).mappings().all()
+
+    return [
+        AdminFormOut(
+            id=row["id"],
+            name=row["name"],
+            category=row["category"] or "",
+            owner_email=row["owner_email"] or "",
+            owner_name=row["owner_name"] or "",
+            status=row["status"] or "active",
+            response_count=row["response_count"] or 0,
+            created_at=row["created_at"].isoformat() if row["created_at"] else "",
+        )
+        for row in rows
+    ]
+
+
+@app.get("/api/admin/forms/{form_id}/assignees", response_model=list[AdminAssigneeOut])
+async def admin_list_assignees(
+    form_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    rows = (await db.execute(text("""
+        SELECT
+            sh.id AS share_id,
+            u.email,
+            COALESCE(u.name, '') AS name,
+            sh.can_fill,
+            sh.can_view,
+            sh.can_edit,
+            COUNT(DISTINCT s.id) AS response_count
+        FROM shares sh
+        JOIN users u ON u.id::text = sh.shared_with::text
+        LEFT JOIN submissions s ON s.form_id = sh.resource_id AND s.owner_id::text = u.id::text
+        WHERE sh.resource_type = 'form' AND sh.resource_id = :form_id
+        GROUP BY sh.id, u.email, u.name, sh.can_fill, sh.can_view, sh.can_edit
+        ORDER BY u.email
+    """), {"form_id": form_id})).mappings().all()
+
+    return [
+        AdminAssigneeOut(
+            share_id=str(row["share_id"]),
+            email=row["email"],
+            name=row["name"] or "",
+            can_fill=bool(row["can_fill"]),
+            can_view=bool(row["can_view"]),
+            can_edit=bool(row["can_edit"]),
+            response_count=row["response_count"] or 0,
+        )
+        for row in rows
+    ]
+
+
+@app.post("/api/admin/deploy", response_model=AdminAssigneeOut)
+async def admin_deploy_form(
+    body: AdminDeployIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    # Verify form exists
+    form_res = await db.execute(select(FormDef).where(FormDef.id == body.form_id))
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    # Find target user
+    target_res = await db.execute(select(User).where(User.email == body.email.lower()))
+    target = target_res.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail=f"No user registered with {body.email}")
+
+    # Upsert share (admin bypasses owner check)
+    sh_res = await db.execute(
+        select(Share).where(
+            and_(
+                Share.resource_type == "form",
+                Share.resource_id == body.form_id,
+                Share.shared_with == target.id,
+            )
+        )
+    )
+    sh = sh_res.scalar_one_or_none()
+    if sh:
+        sh.can_fill = body.can_fill
+        sh.can_view = body.can_view
+        sh.can_edit = body.can_edit
+    else:
+        sh = Share(
+            resource_type="form",
+            resource_id=body.form_id,
+            owner_id=str(form.owner_id) if form.owner_id else str(current_user.id),
+            shared_with=str(target.id),
+            can_fill=body.can_fill,
+            can_view=body.can_view,
+            can_edit=body.can_edit,
+        )
+        db.add(sh)
+
+    await db.commit()
+    await db.refresh(sh)
+
+    # Count existing responses
+    sub_count_res = await db.execute(
+        text("SELECT COUNT(*) FROM submissions WHERE form_id=:fid AND owner_id=:uid"),
+        {"fid": body.form_id, "uid": str(target.id)},
+    )
+    response_count = sub_count_res.scalar() or 0
+
+    return AdminAssigneeOut(
+        share_id=str(sh.id),
+        email=target.email,
+        name=target.name or "",
+        can_fill=sh.can_fill,
+        can_view=sh.can_view,
+        can_edit=sh.can_edit,
+        response_count=response_count,
+    )
+
+
+@app.delete("/api/admin/shares/{share_id}", status_code=204)
+async def admin_revoke_share(
+    share_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    await db.execute(text("DELETE FROM shares WHERE id=:sid"), {"sid": share_id})
+    await db.commit()

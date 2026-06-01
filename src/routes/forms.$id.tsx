@@ -419,47 +419,47 @@ function FormDetail() {
             >
               <Edit2 className="h-4 w-4" /> Fill form
             </Link>
-            {form.shared ? (
-              <>
-                <Link
-                  to="/forms/$id/responses"
-                  params={{ id: form.id }}
-                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-                >
-                  <List className="h-4 w-4" /> Responses
-                </Link>
-                {form.canEdit && (
-                  <Link
-                    to="/forms/new"
-                    search={{ edit: form.id }}
-                    className="brutal col-span-2 flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-                  >
-                    <Edit2 className="h-4 w-4" /> Edit form
-                  </Link>
-                )}
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setShowShare(true)}
-                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-                >
-                  <Share2 className="h-4 w-4" /> Share
-                </button>
-                <Link
-                  to="/forms/$id/responses"
-                  params={{ id: form.id }}
-                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-                >
-                  <List className="h-4 w-4" /> Responses
-                </Link>
-                <button
-                  onClick={handleDuplicate}
-                  className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
-                >
-                  <Copy className="h-4 w-4" /> Duplicate
-                </button>
-              </>
+            {/* Share — owners always, shared+canEdit users can sub-share to their team */}
+            {(!form.shared || form.canEdit) && (
+              <button
+                onClick={() => setShowShare(true)}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              >
+                <Share2 className="h-4 w-4" />
+                {form.shared ? "Manage team" : "Share"}
+              </button>
+            )}
+
+            {/* Responses — owners + view-permission users */}
+            {(!form.shared || form.canView || form.canEdit) && (
+              <Link
+                to="/forms/$id/responses"
+                params={{ id: form.id }}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              >
+                <List className="h-4 w-4" /> Responses
+              </Link>
+            )}
+
+            {/* Edit + Duplicate — owner only */}
+            {!form.shared && (
+              <button
+                onClick={handleDuplicate}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              >
+                <Copy className="h-4 w-4" /> Duplicate
+              </button>
+            )}
+
+            {/* Edit form — owners + canEdit */}
+            {(!form.shared || form.canEdit) && (
+              <Link
+                to="/forms/new"
+                search={{ edit: form.id }}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              >
+                <Edit2 className="h-4 w-4" /> Edit form
+              </Link>
             )}
             <Link
               to="/analytics/$id"
@@ -654,8 +654,8 @@ function FormDetail() {
         </div>
       </PageShell>
 
-      {/* Share modal — owner only */}
-      {showShare && !form.shared && (
+      {/* Share modal — owner or can_edit user (mini-admin of their team) */}
+      {showShare && (!form.shared || form.canEdit) && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowShare(false)}>
           <div className="w-full max-w-md border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Header */}

@@ -451,7 +451,56 @@ interface AdminUser {
   submission_count: number;
 }
 
+interface AdminForm {
+  id: string;
+  name: string;
+  category: string;
+  owner_email: string;
+  owner_name: string;
+  status: string;
+  response_count: number;
+  created_at: string;
+}
+
+interface AdminAssignee {
+  share_id: string;
+  email: string;
+  name: string;
+  can_fill: boolean;
+  can_view: boolean;
+  can_edit: boolean;
+  response_count: number;
+}
+
+type AdminTab = "users" | "forms";
+
 function AdminPanel() {
+  const [tab, setTab] = useState<AdminTab>("users");
+
+  return (
+    <section className="brutal mt-4 border-secondary">
+      {/* Tab bar */}
+      <div className="flex border-b-2 border-border">
+        {(["users", "forms"] as AdminTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest border-r last:border-r-0 border-border ${
+              tab === t ? "bg-secondary text-secondary-foreground" : "bg-card hover:bg-muted"
+            }`}
+          >
+            {t === "users" ? "👥 Users" : "📋 Form Deployment"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "users" && <AdminUsersTab />}
+      {tab === "forms" && <AdminFormsTab />}
+    </section>
+  );
+}
+
+function AdminUsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -462,12 +511,9 @@ function AdminPanel() {
     setError("");
     const tok = getToken();
     try {
-      const res = await fetch(`${API_BASE}/api/admin/users`, {
-        headers: { Authorization: `Bearer ${tok}` },
-      });
+      const res = await fetch(`${API_BASE}/api/admin/users`, { headers: { Authorization: `Bearer ${tok}` } });
       if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json() as AdminUser[];
-      setUsers(data);
+      setUsers(await res.json() as AdminUser[]);
       setLoaded(true);
     } catch (e) {
       setError(`Failed to load users: ${e instanceof Error ? e.message : "unknown"}`);
@@ -479,82 +525,306 @@ function AdminPanel() {
   useEffect(() => { void fetchUsers(); }, []);
 
   return (
-    <section className="brutal mt-4 p-4 border-secondary">
-      <div className="flex items-center justify-between mb-3">
-        <SectionTitle kicker="Admin">Registered users</SectionTitle>
-        <button
-          onClick={() => void fetchUsers()}
-          disabled={loading}
-          className="flex items-center gap-1.5 border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <Users className="inline h-3.5 w-3.5 mr-1" />{loaded ? `${users.length} registered` : "Loading…"}
+        </span>
+        <button onClick={() => void fetchUsers()} disabled={loading}
+          className="flex items-center gap-1.5 border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted disabled:opacity-50">
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
         </button>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 px-3 py-2 mb-3">
+        <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 px-3 py-2">
           <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
           <p className="text-[11px] font-bold text-destructive">{error}</p>
         </div>
       )}
-
-      {loading && !loaded && (
-        <div className="flex justify-center py-6">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      )}
+      {loading && !loaded && <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
 
       {loaded && (
-        <>
-          <div className="mb-2 flex items-center gap-2">
-            <Users className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              {users.length} registered user{users.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {users.map((u) => (
-              <div key={u.id} className="border border-border bg-card px-3 py-2.5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold truncate">{u.name || u.email}</span>
-                      {u.role === "admin" && (
-                        <span className="border border-secondary bg-secondary/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">
-                          admin
-                        </span>
-                      )}
-                      {!u.email_verified && (
-                        <span className="border border-amber-500 bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-amber-700">
-                          unverified
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">{u.email}</div>
-                    {u.best_suited_role && (
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">
-                        {u.best_suited_role}
-                      </div>
-                    )}
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {users.map((u) => (
+            <div key={u.id} className="border border-border bg-card px-3 py-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold truncate">{u.name || u.email}</span>
+                    {u.role === "admin" && <span className="border border-secondary bg-secondary/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">admin</span>}
+                    {!u.email_verified && <span className="border border-amber-500 bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-amber-700">unverified</span>}
                   </div>
-                  <div className="shrink-0 text-right">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      {u.form_count} form{u.form_count !== 1 ? "s" : ""}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {u.submission_count} response{u.submission_count !== 1 ? "s" : ""}
-                    </div>
-                    <div className="text-[9px] text-muted-foreground mt-0.5">
-                      Joined {new Date(u.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                    </div>
+                  <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">{u.email}</div>
+                  {u.best_suited_role && <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{u.best_suited_role}</div>}
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{u.form_count} form{u.form_count !== 1 ? "s" : ""}</div>
+                  <div className="text-[10px] text-muted-foreground">{u.submission_count} response{u.submission_count !== 1 ? "s" : ""}</div>
+                  <div className="text-[9px] text-muted-foreground mt-0.5">
+                    Joined {new Date(u.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       )}
-    </section>
+    </div>
+  );
+}
+
+function AdminFormsTab() {
+  const [forms, setForms] = useState<AdminForm[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const fetchForms = async () => {
+    setLoading(true);
+    setError("");
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/forms`, { headers: { Authorization: `Bearer ${tok}` } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setForms(await res.json() as AdminForm[]);
+      setLoaded(true);
+    } catch (e) {
+      setError(`Failed: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void fetchForms(); }, []);
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+          Deploy a form → users get it in their Forms list. They fill their own copy. You see all responses.
+        </p>
+        <button onClick={() => void fetchForms()} disabled={loading}
+          className="shrink-0 flex items-center gap-1.5 border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted disabled:opacity-50">
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 px-3 py-2">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
+          <p className="text-[11px] font-bold text-destructive">{error}</p>
+        </div>
+      )}
+      {loading && !loaded && <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+
+      {loaded && (
+        <div className="space-y-2">
+          {forms.map((f) => (
+            <div key={f.id} className="border-2 border-border">
+              {/* Form header row */}
+              <button
+                type="button"
+                onClick={() => setExpandedId(expandedId === f.id ? null : f.id)}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted text-left"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-bold truncate">{f.name}</span>
+                    <span className={`px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest border ${
+                      f.status === "active" ? "border-primary bg-primary/10 text-primary" :
+                      f.status === "closed" ? "border-destructive text-destructive" : "border-border text-muted-foreground"
+                    }`}>{f.status}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {f.category} · Owner: {f.owner_name || f.owner_email} · {f.response_count} responses
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-primary">
+                  {expandedId === f.id ? "▲ Close" : "Deploy ▼"}
+                </span>
+              </button>
+
+              {/* Expanded deploy panel */}
+              {expandedId === f.id && (
+                <div className="border-t-2 border-border bg-card">
+                  <AdminDeployPanel formId={f.id} formName={f.name} />
+                </div>
+              )}
+            </div>
+          ))}
+          {forms.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-4">No forms found.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminDeployPanel({ formId, formName }: { formId: string; formName: string }) {
+  const [assignees, setAssignees] = useState<AdminAssignee[]>([]);
+  const [loadingAssignees, setLoadingAssignees] = useState(false);
+  const [email, setEmail] = useState("");
+  const [perms, setPerms] = useState({ fill: true, view: false, edit: false });
+  const [deploying, setDeploying] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const loadAssignees = async () => {
+    setLoadingAssignees(true);
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/forms/${formId}/assignees`, { headers: { Authorization: `Bearer ${tok}` } });
+      if (res.ok) setAssignees(await res.json() as AdminAssignee[]);
+    } finally {
+      setLoadingAssignees(false);
+    }
+  };
+
+  useEffect(() => { void loadAssignees(); }, [formId]);
+
+  const handleDeploy = async () => {
+    if (!email.includes("@")) { setMsg({ text: "Enter a valid email.", ok: false }); return; }
+    setDeploying(true);
+    setMsg(null);
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/deploy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ form_id: formId, email, can_fill: perms.fill, can_view: perms.view, can_edit: perms.edit }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: "Failed" })) as { detail?: string };
+        setMsg({ text: body.detail ?? "Deploy failed.", ok: false });
+      } else {
+        const newAssignee = await res.json() as AdminAssignee;
+        setAssignees((prev) => {
+          const exists = prev.findIndex((a) => a.share_id === newAssignee.share_id);
+          return exists >= 0 ? prev.map((a, i) => i === exists ? newAssignee : a) : [...prev, newAssignee];
+        });
+        setEmail("");
+        setMsg({ text: `Form deployed to ${newAssignee.email}`, ok: true });
+      }
+    } catch {
+      setMsg({ text: "Network error — try again.", ok: false });
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleRevoke = async (shareId: string, userEmail: string) => {
+    const tok = getToken();
+    const res = await fetch(`${API_BASE}/api/admin/shares/${shareId}`, { method: "DELETE", headers: { Authorization: `Bearer ${tok}` } });
+    if (res.ok || res.status === 204) {
+      setAssignees((prev) => prev.filter((a) => a.share_id !== shareId));
+      setMsg({ text: `Revoked from ${userEmail}`, ok: true });
+    }
+  };
+
+  const permLabels: Record<string, string> = {
+    fill: "Can fill (data collector)",
+    view: "Can view all responses",
+    edit: "Can edit form + sub-share to team (mini-admin)",
+  };
+
+  return (
+    <div className="p-3 space-y-4">
+      {/* Permission presets */}
+      <div className="space-y-2">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Role</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { label: "Collector", fill: true, view: false, edit: false },
+            { label: "Viewer", fill: true, view: true, edit: false },
+            { label: "Mini-admin", fill: true, view: true, edit: true },
+          ].map((preset) => {
+            const active = perms.fill === preset.fill && perms.view === preset.view && perms.edit === preset.edit;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setPerms({ fill: preset.fill, view: preset.view, edit: preset.edit })}
+                className={`border-2 border-border py-2 text-[10px] font-bold uppercase tracking-widest transition-colors ${active ? "bg-primary" : "bg-card hover:bg-primary/30"}`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="space-y-1">
+          {(["fill", "view", "edit"] as const).map((p) => (
+            <label key={p} className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={perms[p]} onChange={(e) => setPerms((prev) => ({ ...prev, [p]: e.target.checked }))} className="h-3.5 w-3.5 accent-primary" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">{permLabels[p]}</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-[9px] text-muted-foreground italic">
+          {perms.edit ? "Mini-admin: can use 'Manage team' to add their own collaborators." :
+           perms.view ? "Can see all responses for this form." :
+           "Fill only: sees only their own responses."}
+        </p>
+      </div>
+
+      {/* Email + deploy */}
+      <div className="flex gap-2">
+        <input
+          type="email"
+          placeholder="user@example.com"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setMsg(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") void handleDeploy(); }}
+          className="input-brutal flex-1 text-sm"
+        />
+        <button onClick={() => void handleDeploy()} disabled={deploying}
+          className="btn-brutal shrink-0 text-xs disabled:opacity-50">
+          {deploying ? <Loader2 className="h-4 w-4 animate-spin" /> : "Deploy"}
+        </button>
+      </div>
+
+      {msg && <p className={`text-[11px] font-bold ${msg.ok ? "text-primary" : "text-destructive"}`}>{msg.text}</p>}
+
+      {/* Current assignees */}
+      {loadingAssignees && <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+      {assignees.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Currently deployed to</div>
+          {assignees.map((a) => (
+            <div key={a.share_id} className="flex items-center gap-2 border border-border bg-background px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold truncate">{a.name || a.email}</div>
+                <div className="text-[10px] text-muted-foreground font-mono truncate">{a.email}</div>
+                <div className="flex gap-1 mt-0.5 flex-wrap">
+                  {a.can_fill && <span className="border border-border px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest">Fill</span>}
+                  {a.can_view && <span className="border border-border px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest">View</span>}
+                  {a.can_edit && <span className="border border-secondary bg-secondary/10 px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest">Mini-admin</span>}
+                  <span className="text-[9px] text-muted-foreground self-center">{a.response_count} response{a.response_count !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => void handleRevoke(a.share_id, a.email)}
+                className="shrink-0 border-2 border-destructive px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-destructive hover:bg-destructive/10"
+              >
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loadingAssignees && assignees.length === 0 && (
+        <p className="text-[10px] text-muted-foreground">Not deployed to anyone yet. Add an email above.</p>
+      )}
+
+      {/* Link to master sheet */}
+      <a
+        href={`/forms/${formId}/responses`}
+        className="flex items-center justify-center gap-2 border-2 border-border py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-primary/20"
+      >
+        View master sheet (all responses) →
+      </a>
+      <p className="text-[9px] text-muted-foreground text-center">
+        "{formName}" — you see every response from every user as the owner.
+      </p>
+    </div>
   );
 }
