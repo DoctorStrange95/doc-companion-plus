@@ -581,24 +581,67 @@ function FillForm() {
 
 interface ToolEmbedFieldProps {
   field: FormField;
+  values: Record<string, unknown>;
   onWriteBack: (fieldId: string, val: unknown) => void;
 }
 
-function ToolEmbedField({ field, onWriteBack }: ToolEmbedFieldProps) {
+function ToolEmbedField({ field, values, onWriteBack }: ToolEmbedFieldProps) {
   const [open, setOpen] = useState(false);
+  const toolId = field.toolId ?? "bmi";
+
+  // Read source field values from current form values
+  const srcWeight = field.weightFieldId ? Number(values[field.weightFieldId]) || undefined : undefined;
+  const srcHeight = field.heightFieldId ? Number(values[field.heightFieldId]) || undefined : undefined;
+  const srcAge    = field.ageFieldId    ? Number(values[field.ageFieldId])    || undefined : undefined;
+  const srcSexRaw = field.sexFieldId    ? String(values[field.sexFieldId] ?? "") : "";
+  const srcSex    = srcSexRaw.toLowerCase().includes("f") ? "F" : srcSexRaw ? "M" : "";
+
+  // Auto mode: source fields are linked
+  const hasSourceFields = !!(field.weightFieldId || field.heightFieldId || field.ageFieldId || field.sexFieldId);
+
+  const handleResult = (val: unknown) => {
+    if (field.writeBackFieldId) onWriteBack(field.writeBackFieldId, val);
+  };
+
+  // AUTO MODE: inline result, no expand button needed
+  if (hasSourceFields && toolId !== "drug_reference") {
+    return (
+      <div data-testid={`fill-field-${field.id}`}>
+        {toolId === "bmi" && (
+          <EmbeddedBMI
+            autoMode
+            initialWeight={srcWeight}
+            initialHeight={srcHeight}
+            initialSex={srcSex}
+            currentAgeYears={srcAge}
+            ageConditionMin={field.ageConditionMin}
+            onResult={field.writeBackFieldId ? (bmi) => handleResult(bmi) : undefined}
+          />
+        )}
+        {toolId === "growth" && (
+          <EmbeddedGrowthChart
+            autoMode
+            initialWeight={srcWeight}
+            initialHeight={srcHeight}
+            initialAgeMonths={srcAge}
+            initialSex={srcSex}
+            onResult={field.writeBackFieldId ? (r) => handleResult(r.waz ?? "") : undefined}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // MANUAL MODE: expandable panel
   const toolLabels: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
   const toolIcons: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
-  const toolId = field.toolId ?? "bmi";
   const TIcon = toolIcons[toolId] ?? Scale;
   const label = field.label || toolLabels[toolId] || "Clinical Tool";
 
   return (
-    <div className="border-2 border-primary/40 bg-primary/5">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-      >
+    <div className="border-2 border-primary/40 bg-primary/5" data-testid={`fill-field-${field.id}`}>
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
         <div className="flex items-center gap-2">
           <TIcon className="h-4 w-4 text-primary" />
           <span className="text-[11px] font-bold uppercase tracking-widest text-primary">{label}</span>
@@ -610,16 +653,13 @@ function ToolEmbedField({ field, onWriteBack }: ToolEmbedFieldProps) {
         <div className="border-t-2 border-primary/20 p-4">
           {toolId === "bmi" && (
             <EmbeddedBMI
-              onResult={field.writeBackFieldId ? (bmi) => onWriteBack(field.writeBackFieldId!, bmi) : undefined}
+              onResult={field.writeBackFieldId ? (bmi) => handleResult(bmi) : undefined}
+              ageConditionMin={field.ageConditionMin}
             />
           )}
           {toolId === "growth" && (
             <EmbeddedGrowthChart
-              onResult={field.writeBackFieldId
-                ? (r) => {
-                    onWriteBack(field.writeBackFieldId!, r.waz ?? "");
-                  }
-                : undefined}
+              onResult={field.writeBackFieldId ? (r) => handleResult(r.waz ?? "") : undefined}
             />
           )}
           {toolId === "drug_reference" && <EmbeddedDrugReference />}
@@ -660,6 +700,7 @@ function FieldRenderer({
     return (
       <ToolEmbedField
         field={f}
+        values={values}
         onWriteBack={(fieldId, val) => onWriteBack?.(fieldId, val)}
       />
     );

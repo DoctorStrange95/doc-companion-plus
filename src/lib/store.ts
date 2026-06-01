@@ -199,6 +199,13 @@ export interface FormField {
   // Embedded clinical tool
   toolId?: "bmi" | "growth" | "drug_reference";
   writeBackFieldId?: string;
+  // Auto-feed: map existing form fields into the tool inputs
+  weightFieldId?: string;
+  heightFieldId?: string;
+  ageFieldId?: string;
+  sexFieldId?: string;
+  // Age condition: only show BMI tool when age (from ageFieldId) >= this (years)
+  ageConditionMin?: number;
 }
 
 export type FormRole = "standalone" | "parent" | "child";

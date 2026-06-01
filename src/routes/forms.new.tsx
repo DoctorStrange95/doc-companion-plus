@@ -891,48 +891,109 @@ function TypeConfig({ field, onChange, allFields }: { field: FormField; onChange
         </div>
       );
 
-    case "tool_embed":
+    case "tool_embed": {
+      const numFields = allFields.filter((f) => (f.type === "number" || f.type === "measurement") && f.id !== field.id);
+      const sexFields = allFields.filter((f) => (f.type === "select_one" || f.type === "select" || f.type === "radio" || f.type === "short_text") && f.id !== field.id);
+      const toolId = field.toolId ?? "bmi";
       return (
         <div className="space-y-3 border-2 border-primary/30 bg-primary/5 p-3">
           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Embedded clinical tool</div>
           <ConfigField label="Tool">
             <select
-              value={field.toolId ?? "bmi"}
+              value={toolId}
               onChange={(e) => {
-                const toolId = e.target.value as "bmi" | "growth" | "drug_reference";
+                const t = e.target.value as "bmi" | "growth" | "drug_reference";
                 const labels = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
-                onChange({ toolId, label: labels[toolId] });
+                onChange({ toolId: t, label: labels[t] });
               }}
               className="input-brutal text-xs"
             >
-              <option value="bmi">BMI Calculator</option>
-              <option value="growth">Growth Chart (WHO z-scores)</option>
-              <option value="drug_reference">Drug Reference</option>
+              <option value="bmi">BMI Calculator (adults)</option>
+              <option value="growth">Growth Chart — WHO 0–60 months</option>
+              <option value="drug_reference">Drug Reference (lookup only)</option>
             </select>
           </ConfigField>
-          {(field.toolId === "bmi" || field.toolId === "growth") && (
-            <ConfigField label="Write result to field" hint="Auto-fills a number field with the computed result">
-              <select
-                value={field.writeBackFieldId ?? ""}
-                onChange={(e) => onChange({ writeBackFieldId: e.target.value || undefined })}
-                className="input-brutal text-xs"
-              >
+
+          {toolId !== "drug_reference" && (
+            <div className="space-y-2 border border-border p-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Auto-feed from form fields</div>
+              <p className="text-[9px] text-muted-foreground italic">Tool will pre-fill its inputs from the values already entered in these fields.</p>
+
+              <ConfigField label="Weight field">
+                <select value={field.weightFieldId ?? ""} onChange={(e) => onChange({ weightFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                  <option value="">— not linked —</option>
+                  {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+              </ConfigField>
+
+              <ConfigField label="Height field">
+                <select value={field.heightFieldId ?? ""} onChange={(e) => onChange({ heightFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                  <option value="">— not linked —</option>
+                  {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+              </ConfigField>
+
+              {toolId === "growth" && (
+                <ConfigField label="Age field (months)">
+                  <select value={field.ageFieldId ?? ""} onChange={(e) => onChange({ ageFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                    <option value="">— not linked —</option>
+                    {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                </ConfigField>
+              )}
+
+              <ConfigField label="Sex / Gender field">
+                <select value={field.sexFieldId ?? ""} onChange={(e) => onChange({ sexFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                  <option value="">— not linked —</option>
+                  {sexFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+              </ConfigField>
+            </div>
+          )}
+
+          {toolId === "bmi" && (
+            <ConfigField label="Only show BMI when age ≥ (years)" hint="Leave blank to always show. Link an age field below to enable this.">
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  min={0}
+                  value={field.ageConditionMin ?? ""}
+                  onChange={(e) => onChange({ ageConditionMin: e.target.value ? Number(e.target.value) : undefined })}
+                  className="input-brutal text-xs w-24"
+                  placeholder="e.g. 18"
+                />
+                <span className="text-[10px] text-muted-foreground">years</span>
+              </div>
+              {field.ageConditionMin !== undefined && (
+                <ConfigField label="Age field (years)">
+                  <select value={field.ageFieldId ?? ""} onChange={(e) => onChange({ ageFieldId: e.target.value || undefined })} className="input-brutal text-xs">
+                    <option value="">— not linked —</option>
+                    {numFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                </ConfigField>
+              )}
+            </ConfigField>
+          )}
+
+          {(toolId === "bmi" || toolId === "growth") && (
+            <ConfigField label="Write result to field" hint="Auto-fills a number field when user taps 'Use result'">
+              <select value={field.writeBackFieldId ?? ""} onChange={(e) => onChange({ writeBackFieldId: e.target.value || undefined })} className="input-brutal text-xs">
                 <option value="">— none —</option>
-                {allFields
-                  .filter((f) => (f.type === "number" || f.type === "measurement" || f.type === "short_text") && f.id !== field.id)
-                  .map((f) => (
-                    <option key={f.id} value={f.id}>{f.label}</option>
-                  ))}
+                {allFields.filter((f) => (f.type === "number" || f.type === "measurement" || f.type === "short_text") && f.id !== field.id).map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
               </select>
             </ConfigField>
           )}
+
           <p className="text-[9px] italic text-muted-foreground">
-            {field.toolId === "drug_reference"
-              ? "Drug Reference is a read-only lookup — no value is saved to the form."
-              : "The tool appears as an expandable panel while filling the form."}
+            {toolId === "drug_reference" ? "Read-only lookup — no value saved to the form." :
+             toolId === "growth" ? "WHO Growth Standards 0–60 months. Blocked automatically for older patients." :
+             "BMI for adults. Links to form fields to avoid re-entering measurements."}
           </p>
         </div>
       );
+    }
 
     default:
       return null;
@@ -1558,9 +1619,9 @@ export default function FormBuilderPage() {
       {/* ── Body: desktop 3-panel, mobile single canvas ── */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* LEFT PANEL — desktop only */}
+        {/* LEFT PANEL — desktop: palette always */}
         <div className="w-64 shrink-0 border-r-2 border-border hidden sm:flex flex-col overflow-hidden bg-card">
-          {panelMode === "config" && selectedField ? ConfigPanel : PalettePanel}
+          {PalettePanel}
         </div>
 
         {/* CANVAS — always visible */}
