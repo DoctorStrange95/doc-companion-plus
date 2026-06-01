@@ -2204,6 +2204,11 @@ async def my_access_status(
     if sh_res.scalar_one_or_none():
         return {"status": "allowed"}
 
+    # Check allowed_filler_emails whitelist
+    allowed_emails = getattr(form, "allowed_filler_emails", None) or []
+    if any(e.lower() == current_user.email.lower() for e in allowed_emails):
+        return {"status": "allowed"}
+
     # Check access request
     req_res = await db.execute(
         text("SELECT id, status FROM form_access_requests WHERE form_id=:fid AND requester_id=:uid LIMIT 1"),
@@ -2319,7 +2324,18 @@ async def approve_access_request(
     form = form_res.scalar_one_or_none()
     if not form:
         raise HTTPException(404, "Form not found")
-    if str(form.owner_id) != str(current_user.id) and current_user.role != "admin":
+    is_owner = str(form.owner_id) == str(current_user.id)
+    is_super_admin = current_user.role == "admin"
+    # Also allow users with can_edit share (mini-admins of the form)
+    can_edit_share = None
+    if not is_owner and not is_super_admin:
+        can_edit_share = (await db.execute(
+            select(Share).where(
+                and_(Share.resource_type == "form", Share.resource_id == fid,
+                     Share.shared_with == str(current_user.id), Share.can_edit == True)  # noqa: E712
+            )
+        )).scalar_one_or_none()
+    if not (is_owner or is_super_admin or can_edit_share):
         raise HTTPException(403, "Not authorized")
 
     req_res = await db.execute(
@@ -2378,8 +2394,17 @@ async def deny_access_request(
     form = form_res.scalar_one_or_none()
     if not form:
         raise HTTPException(404, "Form not found")
-    if str(form.owner_id) != str(current_user.id) and current_user.role != "admin":
-        raise HTTPException(403, "Not authorized")
+    is_owner = str(form.owner_id) == str(current_user.id)
+    is_super_admin = current_user.role == "admin"
+    if not (is_owner or is_super_admin):
+        can_edit_share = (await db.execute(
+            select(Share).where(
+                and_(Share.resource_type == "form", Share.resource_id == fid,
+                     Share.shared_with == str(current_user.id), Share.can_edit == True)  # noqa: E712
+            )
+        )).scalar_one_or_none()
+        if not can_edit_share:
+            raise HTTPException(403, "Not authorized")
 
     await db.execute(text("""
         UPDATE form_access_requests SET status='denied', reviewed_at=now(), reviewer_id=:rid
