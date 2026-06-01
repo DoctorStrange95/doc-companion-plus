@@ -257,11 +257,17 @@ function FormDetail() {
 
   const formId = form?.id;
 
-  // Auto-open share modal when navigating here after auto-duplicate
+  const [showDuplicateBanner, setShowDuplicateBanner] = useState(false);
+
+  // Auto-open share modal + show banner when navigating here after auto-duplicate
   useEffect(() => {
     if (sessionStorage.getItem("autoOpenShare") === id) {
       sessionStorage.removeItem("autoOpenShare");
       setShowShare(true);
+    }
+    if (sessionStorage.getItem("autoDuplicateBanner") === "1") {
+      sessionStorage.removeItem("autoDuplicateBanner");
+      setShowDuplicateBanner(true);
     }
   }, [id]);
 
@@ -315,11 +321,17 @@ function FormDetail() {
           await sync.pushForm(form);
         } catch {
           // Form is owned by a different account on this server (e.g. a seeded template
-          // that another account pushed first). Auto-duplicate with a fresh ID so the
-          // user gets their own copy and can generate a link from there.
+          // that another account pushed first). Auto-duplicate with a fresh ID.
           setTokenWorking(null);
           const copy = store.duplicateForm(form.id);
+          // Keep original name and status — "Copy of" is confusing and the copy
+          // becomes the user's own form so it should behave like the original.
+          store.updateForm(copy.id, {
+            name: form.name,
+            status: form.status ?? "active",
+          });
           sessionStorage.setItem("autoOpenShare", copy.id);
+          sessionStorage.setItem("autoDuplicateBanner", "1");
           nav({ to: "/forms/$id", params: { id: copy.id } });
           return;
         }
@@ -457,16 +469,11 @@ function FormDetail() {
     if (!pendingStatus || pendingStatus === currentStatus) return;
     setStatusSaving(true);
     setStatusError(null);
+    // updateForm queues the change and calls drain() internally — no need to
+    // call sync.pushForm separately (double-push caused state confusion).
     store.updateForm(form!.id, { status: pendingStatus });
-    const updated = store.get().forms.find((f) => f.id === form!.id);
-    if (updated) {
-      void sync.pushForm(updated)
-        .then(() => { setPendingStatus(null); })
-        .catch(() => { setStatusError("Could not reach server. Status saved locally and will sync automatically."); })
-        .finally(() => setStatusSaving(false));
-    } else {
-      setStatusSaving(false);
-    }
+    setPendingStatus(null);
+    setStatusSaving(false);
   };
 
   const handleDuplicate = () => {
@@ -513,6 +520,21 @@ function FormDetail() {
 
       <PageShell>
         <div className="space-y-4">
+          {/* Auto-duplicate notice */}
+          {showDuplicateBanner && (
+            <div className="flex items-start gap-3 border-2 border-primary bg-primary/10 p-3">
+              <div className="flex-1 space-y-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-widest">Your personal copy</p>
+                <p className="text-[11px] text-muted-foreground">
+                  The original form was a shared template. We've created a personal copy for you — this is your own form and you can share it freely.
+                </p>
+              </div>
+              <button onClick={() => setShowDuplicateBanner(false)} className="shrink-0 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {/* Meta card */}
           <div className="brutal p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
