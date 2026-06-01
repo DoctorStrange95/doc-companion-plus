@@ -628,18 +628,15 @@ function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: Too
   const srcAgeYears  = ageYearsFromField;
   const srcAgeMonths = ageMonthsFromField;
 
-  // Age-based routing: BMI only ≥18 yrs, Growth Chart only <5 yrs
-  // "both" (5–17 yrs) and "growth" both block BMI — BMI is post-18 only
-  const ageRouting: "bmi" | "growth" | "neither" | null = (() => {
+  // Age routing: Growth Chart for 0–60 months, BMI (WHO 2007 or adult) for ≥61 months
+  const ageRouting: "growth" | "bmi" | null = (() => {
     if (ageMonthsFromField === undefined) return null;
-    if (ageMonthsFromField < 60)  return "growth";   // < 5 years → Growth Chart
-    if ((ageYearsFromField ?? 0) >= 18) return "bmi"; // ≥ 18 years → BMI
-    return "neither"; // 5–17 years: neither tool applies
+    return ageMonthsFromField < 61 ? "growth" : "bmi";
   })();
 
-  // Block rules — BMI requires explicit ≥18 years
-  const bmiBlocked    = ageRouting !== null && ageRouting !== "bmi";
-  const growthBlocked = ageRouting === "bmi";
+  // Block rules
+  const bmiBlocked    = ageRouting === "growth"; // < 5 years → no BMI (use Growth Chart)
+  const growthBlocked = ageRouting === "bmi";    // ≥ 5 years → Growth Chart data only for 0-5
 
   // Auto mode: source fields are linked
   const hasSourceFields = !!(field.weightFieldId || field.heightFieldId || field.ageFieldId || field.sexFieldId);
@@ -653,12 +650,10 @@ function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: Too
   // AUTO MODE: inline result, no expand button needed
   if (hasSourceFields && toolId !== "drug_reference") {
     if (toolId === "bmi" && bmiBlocked) {
-      const msg = ageRouting === "growth"
-        ? `BMI — not applicable (age < 5 years)`
-        : `BMI — not applicable (age 5–17 years; BMI is for ≥ 18 years)`;
       return (
         <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          <Scale className="h-3.5 w-3.5 shrink-0" />{msg}
+          <Scale className="h-3.5 w-3.5 shrink-0" />
+          BMI — use Growth Chart for age &lt; 5 years
         </div>
       );
     }
@@ -666,15 +661,7 @@ function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: Too
       return (
         <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-          Growth Chart — not applicable (age ≥ 18 years, use BMI)
-        </div>
-      );
-    }
-    if (ageRouting === "neither" && toolId === "growth") {
-      return (
-        <div className="flex items-center gap-2 border-2 border-border bg-muted/30 px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          <TrendingUp className="h-3.5 w-3.5 shrink-0" />
-          Growth Chart — not applicable (age 5–17 years; WHO standard: 0–60 months)
+          Growth Chart — WHO 0–60 months only. Use BMI-for-age for ≥ 5 years.
         </div>
       );
     }
@@ -687,8 +674,7 @@ function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: Too
             initialWeight={srcWeight}
             initialHeight={srcHeight}
             initialSex={srcSex}
-            currentAgeYears={srcAgeYears}
-            ageConditionMin={18}
+            initialAgeMonths={srcAgeMonths}
             onResult={handleResult}
           />
         )}
@@ -728,7 +714,7 @@ function ToolEmbedField({ field, values, allFields, onChange, onWriteBack }: Too
           {toolId === "bmi" && (
             <EmbeddedBMI
               onResult={handleResult}
-              ageConditionMin={field.ageConditionMin ?? 18}
+              initialAgeMonths={srcAgeMonths}
             />
           )}
           {toolId === "growth" && (
