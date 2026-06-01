@@ -7,6 +7,7 @@ import {
   Edit2, Copy, Trash2, ExternalLink, BarChart2,
   Share2, X, CheckCircle2, AlertTriangle,
   User, Globe, List, ArrowRight, Link2, Link2Off, Loader2, Lock, Plus, Printer,
+  Clock, UserCheck, UserX, RefreshCw,
 } from "lucide-react";
 
 interface FormShareEntry {
@@ -15,6 +16,175 @@ interface FormShareEntry {
   canFill: boolean;
   canView: boolean;
   canEdit: boolean;
+}
+
+interface AccessRequest {
+  id: string;
+  requester_email: string;
+  requester_name: string;
+  status: "pending" | "approved" | "denied";
+  created_at: string;
+}
+
+function PendingRequestsPanel({ formId }: { formId: string }) {
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [approving, setApproving] = useState<string | null>(null);
+  const [perms, setPerms] = useState<Record<string, { fill: boolean; view: boolean; edit: boolean }>>({});
+  const [msg, setMsg] = useState<Record<string, string>>({});
+
+  const load = async () => {
+    setLoading(true);
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/forms/${formId}/access-requests`, {
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      if (res.ok) {
+        const data = await res.json() as AccessRequest[];
+        setRequests(data);
+        const p: Record<string, { fill: boolean; view: boolean; edit: boolean }> = {};
+        data.forEach((r) => { p[r.id] = { fill: true, view: false, edit: false }; });
+        setPerms(p);
+      }
+    } finally {
+      setLoading(false);
+      setLoaded(true);
+    }
+  };
+
+  useEffect(() => { void load(); }, [formId]);
+
+  const handleApprove = async (req: AccessRequest) => {
+    setApproving(req.id);
+    const p = perms[req.id] ?? { fill: true, view: false, edit: false };
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/forms/${formId}/access-requests/${req.id}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ can_fill: p.fill, can_view: p.view, can_edit: p.edit }),
+      });
+      if (res.ok) {
+        setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: "approved" } : r));
+        setMsg((prev) => ({ ...prev, [req.id]: `Approved — ${req.requester_email} can now access this form.` }));
+      }
+    } catch { /* ignore */ } finally { setApproving(null); }
+  };
+
+  const handleDeny = async (req: AccessRequest) => {
+    setApproving(req.id);
+    const tok = getToken();
+    try {
+      await fetch(`${API_BASE}/api/forms/${formId}/access-requests/${req.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      setRequests((prev) => prev.map((r) => r.id === req.id ? { ...r, status: "denied" } : r));
+      setMsg((prev) => ({ ...prev, [req.id]: "Request denied." }));
+    } catch { /* ignore */ } finally { setApproving(null); }
+  };
+
+  const pending = requests.filter((r) => r.status === "pending");
+  const reviewed = requests.filter((r) => r.status !== "pending");
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">3</span>
+          Access requests
+          {pending.length > 0 && (
+            <span className="border-2 border-primary bg-primary px-1.5 py-0.5 text-[9px] font-black">{pending.length}</span>
+          )}
+        </div>
+        <button onClick={() => void load()} disabled={loading} className="border border-border p-1 hover:bg-muted disabled:opacity-50">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      {loading && !loaded && <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+
+      {loaded && pending.length === 0 && reviewed.length === 0 && (
+        <p className="text-[10px] text-muted-foreground">No access requests yet. When users click your fill link, they'll see a "Request access" button.</p>
+      )}
+
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Pending ({pending.length})</div>
+          {pending.map((req) => (
+            <div key={req.id} className="border-2 border-primary/40 bg-primary/5 p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-bold">{req.requester_name || req.requester_email}</div>
+                  <div className="text-[10px] font-mono text-muted-foreground">{req.requester_email}</div>
+                  <div className="text-[9px] text-muted-foreground">
+                    Requested {new Date(req.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </div>
+                </div>
+                <Clock className="h-4 w-4 shrink-0 text-primary mt-0.5" />
+              </div>
+
+              {/* Role preset */}
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { label: "Collector", fill: true, view: false, edit: false },
+                  { label: "Viewer", fill: true, view: true, edit: false },
+                  { label: "Mini-admin", fill: true, view: true, edit: true },
+                ].map((preset) => {
+                  const p = perms[req.id] ?? { fill: true, view: false, edit: false };
+                  const active = p.fill === preset.fill && p.view === preset.view && p.edit === preset.edit;
+                  return (
+                    <button key={preset.label} type="button"
+                      onClick={() => setPerms((prev) => ({ ...prev, [req.id]: { fill: preset.fill, view: preset.view, edit: preset.edit } }))}
+                      className={`border border-border py-1.5 text-[9px] font-bold uppercase tracking-widest transition-colors ${active ? "bg-primary" : "bg-card hover:bg-primary/20"}`}>
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => void handleApprove(req)}
+                  disabled={approving === req.id}
+                  className="flex-1 flex items-center justify-center gap-1.5 border-2 border-primary bg-primary px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest disabled:opacity-50 hover:bg-primary/80"
+                >
+                  {approving === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                  Approve
+                </button>
+                <button
+                  onClick={() => void handleDeny(req)}
+                  disabled={approving === req.id}
+                  className="flex items-center gap-1.5 border-2 border-destructive px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                >
+                  <UserX className="h-3.5 w-3.5" /> Deny
+                </button>
+              </div>
+              {msg[req.id] && <p className="text-[10px] font-bold text-primary">{msg[req.id]}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reviewed.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Reviewed ({reviewed.length})</div>
+          {reviewed.map((req) => (
+            <div key={req.id} className="flex items-center gap-2 border border-border px-3 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-bold truncate">{req.requester_email}</div>
+              </div>
+              <span className={`shrink-0 border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest ${req.status === "approved" ? "border-primary text-primary" : "border-destructive text-destructive"}`}>
+                {req.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const Route = createFileRoute("/forms/$id")({ component: FormsIdLayout });
@@ -909,10 +1079,17 @@ function FormDetail() {
                 </div>
               </div>
 
-              {/* ── Section 3: Transfer ownership ── */}
+              {/* ── Section 3: Pending access requests ── */}
+              {!(form.isPublic ?? true) && (
+                <div className="border-t-2 border-border pt-5">
+                  <PendingRequestsPanel formId={form.id} />
+                </div>
+              )}
+
+              {/* ── Section 4: Transfer ownership ── */}
               <div className="border-t-2 border-border pt-5 space-y-2">
                 <div className="text-[11px] font-bold uppercase tracking-widest flex items-center gap-2">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">3</span>
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border-2 border-border text-[10px] font-black">4</span>
                   Transfer ownership
                 </div>
                 {transferStep === 0 ? (

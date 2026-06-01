@@ -3,13 +3,14 @@
  * No authentication required. Never queries the clinical Patient database.
  * Respondents are identified only by a self-chosen name/email/code (optional).
  */
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { z } from "zod";
 import { evaluateConditions, type FormField, useStore, store } from "@/lib/store";
 import type { LongitudinalSubmission } from "@/types/longitudinal";
-import { API_BASE } from "@/lib/api";
-import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2, Upload, FileText, Trash2 } from "lucide-react";
+import { API_BASE, getToken } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { AlertTriangle, MapPin, Loader2, X, Image, CheckCircle2, Upload, FileText, Trash2, LogIn, Clock, ShieldCheck, ShieldX } from "lucide-react";
 
 const searchSchema = z.object({ preview: z.boolean().optional() });
 
@@ -154,6 +155,7 @@ function EmailConsentStep({
 function PublicFiller() {
   const { token } = Route.useParams();
   const { preview } = Route.useSearch();
+  const { user } = useAuth();
 
   const [form, setForm] = useState<PublicFormDef | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,6 +174,11 @@ function PublicFiller() {
   const [geoLoading, setGeoLoading] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
+
+  // Access request state (for private forms)
+  const [accessStatus, setAccessStatus] = useState<"checking" | "allowed" | "owner" | "none" | "pending" | "denied">("checking");
+  const [requestingAccess, setRequestingAccess] = useState(false);
+  const [accessMsg, setAccessMsg] = useState("");
 
   // null = not yet determined; "" = public (no gate); string = verified email
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
@@ -296,21 +303,38 @@ function PublicFiller() {
     return () => { cancelled = true; };
   }, [token]);
 
-  // Once form loads: public forms proceed immediately; private forms show optional email consent.
+  // Once form loads: check access for private forms
   useEffect(() => {
     if (!form) return;
     if (form.is_public) {
       setVerifiedEmail("");
-    } else {
-      // Check session cache — if user already consented this session, skip the step
-      const cached = sessionStorage.getItem(`form_consent_${token}`);
-      if (cached !== null) {
-        setVerifiedEmail(cached);
-        if (cached) setRespondentEmail(cached);
-      }
-      // else: leave verifiedEmail as null → show consent step
+      setAccessStatus("allowed");
+      return;
     }
-  }, [form, token]);
+    // Private form: must be logged in
+    if (!user) {
+      setAccessStatus("none"); // will show login screen
+      return;
+    }
+    // Logged in: check access status from server
+    const tok = getToken();
+    if (!tok) { setAccessStatus("none"); return; }
+    setAccessStatus("checking");
+    fetch(`${API_BASE}/api/forms/public/${token}/my-access`, {
+      headers: { Authorization: `Bearer ${tok}` },
+    })
+      .then((r) => r.ok ? r.json() : { status: "none" })
+      .then((data: { status: string }) => {
+        const s = data.status as typeof accessStatus;
+        setAccessStatus(s);
+        if (s === "allowed" || s === "owner") {
+          setVerifiedEmail(user.email);
+          setRespondentEmail(user.email);
+          if (user.name) setRespondentName(user.name);
+        }
+      })
+      .catch(() => setAccessStatus("none"));
+  }, [form, token, user]);
 
   const handleEmailConsent = (email: string) => {
     sessionStorage.setItem(`form_consent_${token}`, email);
@@ -633,9 +657,155 @@ function PublicFiller() {
     );
   }
 
-  // Private form: show optional email consent step once per session
-  if (!form.is_public && verifiedEmail === null) {
-    return <EmailConsentStep form={form} onContinue={handleEmailConsent} />;
+  // Private form access control
+  if (!form.is_public) {
+    // Not logged in → show login prompt
+    if (!user) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+          <div className="w-full max-w-sm brutal p-8 space-y-5 text-center">
+            <div className="border-4 border-border bg-primary p-4 mx-auto w-16 h-16 flex items-center justify-center">
+              <LogIn className="h-8 w-8" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl uppercase tracking-widest">{form.name}</h1>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{form.category}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This form is restricted. Sign in or create an account to request access.
+            </p>
+            <div className="space-y-2">
+              <Link
+                to="/login"
+                search={{ returnTo: window.location.pathname + window.location.search }}
+                className="btn-brutal flex w-full items-center justify-center gap-2"
+              >
+                <LogIn className="h-4 w-4" /> Sign in
+              </Link>
+              <Link
+                to="/login"
+                search={{ mode: "register", returnTo: window.location.pathname + window.location.search }}
+                className="btn-brutal flex w-full items-center justify-center gap-2 bg-card"
+              >
+                Create free account
+              </Link>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Checking access...
+    if (accessStatus === "checking") {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+
+    // Request pending
+    if (accessStatus === "pending") {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+          <div className="w-full max-w-sm brutal p-8 space-y-4 text-center">
+            <div className="border-4 border-border bg-primary p-4 mx-auto w-16 h-16 flex items-center justify-center">
+              <Clock className="h-8 w-8" />
+            </div>
+            <h1 className="font-display text-2xl uppercase tracking-widest">Request Sent</h1>
+            <p className="text-sm text-muted-foreground">
+              Your request to fill <strong>{form.name}</strong> is pending approval by the form owner.
+              You'll get access once they approve — check back soon.
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Signed in as {user.email}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Access denied
+    if (accessStatus === "denied") {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+          <div className="w-full max-w-sm brutal p-8 space-y-4 text-center">
+            <div className="border-4 border-destructive bg-destructive/10 p-4 mx-auto w-16 h-16 flex items-center justify-center">
+              <ShieldX className="h-8 w-8 text-destructive" />
+            </div>
+            <h1 className="font-display text-2xl uppercase tracking-widest">Access Denied</h1>
+            <p className="text-sm text-muted-foreground">
+              Your request to access <strong>{form.name}</strong> was not approved.
+              Contact the form owner if you believe this is a mistake.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // No request yet → show request access screen
+    if (accessStatus === "none") {
+      const handleRequestAccess = async () => {
+        setRequestingAccess(true);
+        setAccessMsg("");
+        const tok = getToken();
+        try {
+          const res = await fetch(`${API_BASE}/api/forms/public/${token}/request-access`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${tok}` },
+          });
+          if (res.ok) {
+            const data = await res.json() as { status: string };
+            if (data.status === "allowed") {
+              setAccessStatus("allowed");
+              setVerifiedEmail(user.email);
+              setRespondentEmail(user.email);
+              if (user.name) setRespondentName(user.name);
+            } else {
+              setAccessStatus("pending");
+            }
+          } else {
+            setAccessMsg("Could not send request — try again.");
+          }
+        } catch {
+          setAccessMsg("Network error — try again.");
+        } finally {
+          setRequestingAccess(false);
+        }
+      };
+
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+          <div className="w-full max-w-sm brutal p-8 space-y-5 text-center">
+            <div className="border-4 border-border bg-primary p-4 mx-auto w-16 h-16 flex items-center justify-center">
+              <ShieldCheck className="h-8 w-8" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl uppercase tracking-widest">{form.name}</h1>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{form.category}</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This form requires approval to access. Click below to send a request to the form owner.
+            </p>
+            <div className="border border-border bg-muted/40 px-4 py-2 text-[11px] text-muted-foreground">
+              Signed in as <strong>{user.email}</strong>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRequestAccess()}
+              disabled={requestingAccess}
+              className="btn-brutal w-full flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {requestingAccess ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+              Request access
+            </button>
+            {accessMsg && <p className="text-[11px] font-bold text-destructive">{accessMsg}</p>}
+          </div>
+        </div>
+      );
+    }
+
+    // Allowed or owner — fall through to form below
   }
 
   return (

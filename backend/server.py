@@ -230,6 +230,10 @@ async def lifespan(app: FastAPI):
         await auto_seed_drug_reference(engine)
     except Exception as e:
         print(f"[drug_reference_seed] warning: {e}")
+    try:
+        await ensure_access_requests_table()
+    except Exception as e:
+        print(f"[access_requests_table] warning: {e}")
     yield
 
 
@@ -2117,6 +2121,271 @@ async def submit_public_form(
 @app.get("/api/health")
 async def health():
     return {"ok": True}
+
+
+# ============================================================================
+# Form Access Requests (request-to-fill workflow for private forms)
+# ============================================================================
+
+async def ensure_access_requests_table():
+    async with engine.begin() as conn:
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS form_access_requests (
+                id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                form_id TEXT NOT NULL,
+                requester_id TEXT NOT NULL,
+                requester_email TEXT NOT NULL,
+                requester_name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                can_fill BOOLEAN NOT NULL DEFAULT TRUE,
+                can_view BOOLEAN NOT NULL DEFAULT FALSE,
+                can_edit BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                reviewed_at TIMESTAMPTZ,
+                reviewer_id TEXT,
+                UNIQUE(form_id, requester_id)
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_far_form_id ON form_access_requests(form_id)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_far_requester ON form_access_requests(requester_id)"
+        ))
+
+
+class AccessRequestOut(BaseModel):
+    id: str
+    form_id: str
+    requester_email: str
+    requester_name: str
+    status: str
+    can_fill: bool
+    can_view: bool
+    can_edit: bool
+    created_at: str
+
+
+class AccessReqApproveIn(BaseModel):
+    can_fill: bool = True
+    can_view: bool = False
+    can_edit: bool = False
+
+
+@app.get("/api/forms/public/{token}/my-access")
+async def my_access_status(
+    token: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns the access status for the authenticated user on a private form."""
+    form_res = await db.execute(
+        select(FormDef).where(FormDef.share_token == token)
+    )
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+
+    # Owner always has access
+    if str(form.owner_id) == str(current_user.id):
+        return {"status": "owner"}
+
+    # Check existing share (approved)
+    sh_res = await db.execute(
+        select(Share).where(
+            and_(
+                Share.resource_type == "form",
+                Share.resource_id == str(form.id),
+                Share.shared_with == str(current_user.id),
+                Share.can_fill == True,  # noqa: E712
+            )
+        )
+    )
+    if sh_res.scalar_one_or_none():
+        return {"status": "allowed"}
+
+    # Check access request
+    req_res = await db.execute(
+        text("SELECT id, status FROM form_access_requests WHERE form_id=:fid AND requester_id=:uid LIMIT 1"),
+        {"fid": str(form.id), "uid": str(current_user.id)},
+    )
+    req = req_res.mappings().first()
+    if req:
+        return {"status": req["status"], "request_id": req["id"]}
+
+    return {"status": "none"}
+
+
+@app.post("/api/forms/public/{token}/request-access")
+async def request_access(
+    token: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """User requests access to a private form via its fill link."""
+    form_res = await db.execute(select(FormDef).where(FormDef.share_token == token))
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+
+    # Check if already approved
+    sh_res = await db.execute(
+        select(Share).where(
+            and_(
+                Share.resource_type == "form",
+                Share.resource_id == str(form.id),
+                Share.shared_with == str(current_user.id),
+            )
+        )
+    )
+    if sh_res.scalar_one_or_none():
+        return {"status": "allowed", "message": "You already have access to this form."}
+
+    # Upsert access request
+    existing = (await db.execute(
+        text("SELECT id, status FROM form_access_requests WHERE form_id=:fid AND requester_id=:uid LIMIT 1"),
+        {"fid": str(form.id), "uid": str(current_user.id)},
+    )).mappings().first()
+
+    if existing:
+        return {"id": existing["id"], "status": existing["status"]}
+
+    req_id = str(uuid.uuid4())
+    await db.execute(text("""
+        INSERT INTO form_access_requests (id, form_id, requester_id, requester_email, requester_name)
+        VALUES (:id, :fid, :uid, :email, :name)
+    """), {
+        "id": req_id,
+        "fid": str(form.id),
+        "uid": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name or "",
+    })
+    await db.commit()
+    return {"id": req_id, "status": "pending"}
+
+
+@app.get("/api/forms/{fid}/access-requests", response_model=list[AccessRequestOut])
+async def list_access_requests(
+    fid: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Owner lists all access requests for their form."""
+    form_res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if str(form.owner_id) != str(current_user.id) and current_user.role != "admin":
+        # Check can_edit share
+        sh_res = await db.execute(
+            select(Share).where(
+                and_(Share.resource_type == "form", Share.resource_id == fid,
+                     Share.shared_with == str(current_user.id), Share.can_edit == True)  # noqa: E712
+            )
+        )
+        if not sh_res.scalar_one_or_none():
+            raise HTTPException(403, "Not authorized")
+
+    rows = (await db.execute(text("""
+        SELECT id, form_id, requester_id, requester_email, requester_name,
+               status, can_fill, can_view, can_edit, created_at
+        FROM form_access_requests
+        WHERE form_id = :fid
+        ORDER BY created_at DESC
+    """), {"fid": fid})).mappings().all()
+
+    return [
+        AccessRequestOut(
+            id=row["id"], form_id=row["form_id"],
+            requester_email=row["requester_email"], requester_name=row["requester_name"] or "",
+            status=row["status"], can_fill=bool(row["can_fill"]),
+            can_view=bool(row["can_view"]), can_edit=bool(row["can_edit"]),
+            created_at=row["created_at"].isoformat() if row["created_at"] else "",
+        )
+        for row in rows
+    ]
+
+
+@app.post("/api/forms/{fid}/access-requests/{req_id}/approve", response_model=AccessRequestOut)
+async def approve_access_request(
+    fid: str,
+    req_id: str,
+    body: AccessReqApproveIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    form_res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if str(form.owner_id) != str(current_user.id) and current_user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+
+    req_res = await db.execute(
+        text("SELECT * FROM form_access_requests WHERE id=:rid AND form_id=:fid LIMIT 1"),
+        {"rid": req_id, "fid": fid},
+    )
+    req = req_res.mappings().first()
+    if not req:
+        raise HTTPException(404, "Request not found")
+
+    # Update request status
+    await db.execute(text("""
+        UPDATE form_access_requests
+        SET status='approved', can_fill=:cf, can_view=:cv, can_edit=:ce,
+            reviewed_at=now(), reviewer_id=:rid2
+        WHERE id=:rid
+    """), {"cf": body.can_fill, "cv": body.can_view, "ce": body.can_edit,
+           "rid2": str(current_user.id), "rid": req_id})
+
+    # Create a share so user gets the form in their list
+    existing_share = (await db.execute(
+        select(Share).where(
+            and_(Share.resource_type == "form", Share.resource_id == fid,
+                 Share.shared_with == req["requester_id"])
+        )
+    )).scalar_one_or_none()
+
+    if existing_share:
+        existing_share.can_fill = body.can_fill
+        existing_share.can_view = body.can_view
+        existing_share.can_edit = body.can_edit
+    else:
+        db.add(Share(
+            resource_type="form", resource_id=fid,
+            owner_id=str(form.owner_id), shared_with=req["requester_id"],
+            can_fill=body.can_fill, can_view=body.can_view, can_edit=body.can_edit,
+        ))
+    await db.commit()
+
+    return AccessRequestOut(
+        id=req_id, form_id=fid,
+        requester_email=req["requester_email"], requester_name=req["requester_name"] or "",
+        status="approved", can_fill=body.can_fill, can_view=body.can_view, can_edit=body.can_edit,
+        created_at=req["created_at"].isoformat() if req["created_at"] else "",
+    )
+
+
+@app.delete("/api/forms/{fid}/access-requests/{req_id}", status_code=204)
+async def deny_access_request(
+    fid: str,
+    req_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    form_res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = form_res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    if str(form.owner_id) != str(current_user.id) and current_user.role != "admin":
+        raise HTTPException(403, "Not authorized")
+
+    await db.execute(text("""
+        UPDATE form_access_requests SET status='denied', reviewed_at=now(), reviewer_id=:rid
+        WHERE id=:req_id AND form_id=:fid
+    """), {"rid": str(current_user.id), "req_id": req_id, "fid": fid})
+    await db.commit()
 
 
 # ============================================================================
