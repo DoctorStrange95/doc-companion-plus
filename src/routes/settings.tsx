@@ -1,13 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
 import { AuthRequired } from "@/components/AuthGate";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
+import { API_BASE, getToken } from "@/lib/api";
 import {
   Download, Wifi, WifiOff, LogOut, RefreshCw, AlertTriangle,
   Edit2, Check, X, Trash2, Zap, Crown, Building2, Sparkles, MailCheck, ShieldCheck,
+  Users, Loader2, ShieldAlert,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({ component: Settings });
@@ -376,6 +378,9 @@ function Settings() {
           </button>
         </section>
 
+        {/* ── Admin panel ── */}
+        {user.role === "admin" && <AdminPanel />}
+
         {/* ── Danger zone ── */}
         <section className="brutal mt-4 border-destructive p-4">
           <SectionTitle kicker="Danger zone">Account actions</SectionTitle>
@@ -431,5 +436,125 @@ function Settings() {
         </p>
       </PageShell>
     </>
+  );
+}
+
+interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  best_suited_role: string;
+  email_verified: boolean;
+  created_at: string;
+  form_count: number;
+  submission_count: number;
+}
+
+function AdminPanel() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  const fetchUsers = async () => {
+    setLoading(true);
+    setError("");
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/users`, {
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json() as AdminUser[];
+      setUsers(data);
+      setLoaded(true);
+    } catch (e) {
+      setError(`Failed to load users: ${e instanceof Error ? e.message : "unknown"}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void fetchUsers(); }, []);
+
+  return (
+    <section className="brutal mt-4 p-4 border-secondary">
+      <div className="flex items-center justify-between mb-3">
+        <SectionTitle kicker="Admin">Registered users</SectionTitle>
+        <button
+          onClick={() => void fetchUsers()}
+          disabled={loading}
+          className="flex items-center gap-1.5 border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 px-3 py-2 mb-3">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" />
+          <p className="text-[11px] font-bold text-destructive">{error}</p>
+        </div>
+      )}
+
+      {loading && !loaded && (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {loaded && (
+        <>
+          <div className="mb-2 flex items-center gap-2">
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              {users.length} registered user{users.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {users.map((u) => (
+              <div key={u.id} className="border border-border bg-card px-3 py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold truncate">{u.name || u.email}</span>
+                      {u.role === "admin" && (
+                        <span className="border border-secondary bg-secondary/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest">
+                          admin
+                        </span>
+                      )}
+                      {!u.email_verified && (
+                        <span className="border border-amber-500 bg-amber-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-amber-700">
+                          unverified
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-mono mt-0.5 truncate">{u.email}</div>
+                    {u.best_suited_role && (
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">
+                        {u.best_suited_role}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      {u.form_count} form{u.form_count !== 1 ? "s" : ""}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {u.submission_count} response{u.submission_count !== 1 ? "s" : ""}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground mt-0.5">
+                      Joined {new Date(u.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

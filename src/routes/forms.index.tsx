@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw, AlertTriangle } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
@@ -29,6 +30,7 @@ function FormsList() {
   const allLongitudinalSubmissions = useStore((s) => s.longitudinalSubmissions);
   const lastSync = useStore((s) => s.lastSync);
   const planAlert = useStore((s) => s.planAlert);
+  if (!user) return <AuthRequired action="access forms" />;
   const submissions = user ? allSubmissions : [];
   const longitudinalSubmissions = user ? allLongitudinalSubmissions : [];
   const [searchQuery, setSearchQuery] = useState("");

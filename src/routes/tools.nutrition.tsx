@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/tools/nutrition")({ component: NutritionTool });
 
@@ -25,6 +27,8 @@ const RDA: Record<Stage, { label: string; energy: number; protein: number; calci
 };
 
 function NutritionTool() {
+  const { user } = useAuth();
+  if (!user) return <AuthRequired action="use clinical tools" />;
   const [stage, setStage] = useState<Stage>("woman-sed");
   const [intake, setIntake] = useState({ energy: 0, protein: 0, calcium: 0, iron: 0, vitA: 0 });
 

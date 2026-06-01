@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Calculator, Scale, TrendingUp, Apple, BookOpen, FilePlus2, Pill } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/tools/")({ component: ToolsIndex });
 
@@ -57,6 +59,9 @@ const tools = [
 ] as const;
 
 function ToolsIndex() {
+  const { user } = useAuth();
+  if (!user) return <AuthRequired action="access clinical tools" />;
+
   return (
     <>
       <PageHeader title="Clinical Tools" subtitle="Calculators · references" variant="yellow" />

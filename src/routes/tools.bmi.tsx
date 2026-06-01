@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/tools/bmi")({ component: BMITool });
 
@@ -19,6 +21,9 @@ function classifyAdult(bmi: number, asian: boolean) {
 }
 
 function BMITool() {
+  const { user } = useAuth();
+  if (!user) return <AuthRequired action="use clinical tools" />;
+
   const [weight, setWeight] = useState(60);
   const [height, setHeight] = useState(165);
   const [asian, setAsian] = useState(true);

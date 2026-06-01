@@ -2100,3 +2100,63 @@ async def submit_public_form(
 @app.get("/api/health")
 async def health():
     return {"ok": True}
+
+
+# ============================================================================
+# Admin
+# ============================================================================
+
+class AdminUserOut(BaseModel):
+    id: str
+    email: str
+    name: str
+    role: str
+    best_suited_role: str
+    email_verified: bool
+    created_at: str
+    form_count: int
+    submission_count: int
+
+
+@app.get("/api/admin/users", response_model=list[AdminUserOut])
+async def admin_list_users(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    result = await db.execute(
+        text("""
+            SELECT
+                u.id::text,
+                u.email,
+                COALESCE(u.name, '') AS name,
+                COALESCE(u.role, 'worker') AS role,
+                COALESCE(u.best_suited_role, '') AS best_suited_role,
+                COALESCE(u.email_verified, true) AS email_verified,
+                u.created_at,
+                COUNT(DISTINCT f.id) AS form_count,
+                COUNT(DISTINCT s.id) AS submission_count
+            FROM users u
+            LEFT JOIN forms f ON f.owner_id = u.id
+            LEFT JOIN submissions s ON s.owner_id = u.id
+            GROUP BY u.id, u.email, u.name, u.role, u.best_suited_role, u.email_verified, u.created_at
+            ORDER BY u.created_at DESC
+        """)
+    )
+    rows = result.mappings().all()
+    return [
+        AdminUserOut(
+            id=str(row["id"]),
+            email=row["email"],
+            name=row["name"] or "",
+            role=row["role"] or "worker",
+            best_suited_role=row["best_suited_role"] or "",
+            email_verified=bool(row["email_verified"]),
+            created_at=row["created_at"].isoformat() if row["created_at"] else "",
+            form_count=row["form_count"] or 0,
+            submission_count=row["submission_count"] or 0,
+        )
+        for row in rows
+    ]

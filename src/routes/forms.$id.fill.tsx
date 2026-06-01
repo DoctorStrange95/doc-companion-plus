@@ -5,8 +5,11 @@ import { useStore, store, sync, type FormField, evaluateConditions } from "@/lib
 import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { PatientPicker } from "@/components/PatientPicker";
-import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2, Search } from "lucide-react";
+import { AlertTriangle, MapPin, Loader2, X, Image, Upload, FileText, Trash2, Search, ChevronDown, ChevronUp, Scale, TrendingUp, Pill } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { EmbeddedBMI } from "@/components/tools/EmbeddedBMI";
+import { EmbeddedGrowthChart } from "@/components/tools/EmbeddedGrowthChart";
+import { EmbeddedDrugReference } from "@/components/tools/EmbeddedDrugReference";
 
 const search = z.object({ patient: z.string().optional() });
 
@@ -311,7 +314,7 @@ function FillForm() {
 
   const validatePage = (): string | null => {
     for (const f of visibleFields) {
-      if (f.type === "section_header" || f.type === "calculated") continue;
+      if (f.type === "section_header" || f.type === "calculated" || f.type === "tool_embed") continue;
       const v = values[f.id];
       const empty =
         v === undefined || v === "" || v === null ||
@@ -527,6 +530,7 @@ function FillForm() {
                       return n;
                     })
                   }
+                  onWriteBack={(fieldId, val) => set(fieldId, val)}
                 />
               );
             })}
@@ -575,6 +579,56 @@ function FillForm() {
   );
 }
 
+interface ToolEmbedFieldProps {
+  field: FormField;
+  onWriteBack: (fieldId: string, val: unknown) => void;
+}
+
+function ToolEmbedField({ field, onWriteBack }: ToolEmbedFieldProps) {
+  const [open, setOpen] = useState(false);
+  const toolLabels: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
+  const toolIcons: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
+  const toolId = field.toolId ?? "bmi";
+  const TIcon = toolIcons[toolId] ?? Scale;
+  const label = field.label || toolLabels[toolId] || "Clinical Tool";
+
+  return (
+    <div className="border-2 border-primary/40 bg-primary/5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <TIcon className="h-4 w-4 text-primary" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-primary">{label}</span>
+        </div>
+        {open ? <ChevronUp className="h-4 w-4 text-primary" /> : <ChevronDown className="h-4 w-4 text-primary" />}
+      </button>
+
+      {open && (
+        <div className="border-t-2 border-primary/20 p-4">
+          {toolId === "bmi" && (
+            <EmbeddedBMI
+              onResult={field.writeBackFieldId ? (bmi) => onWriteBack(field.writeBackFieldId!, bmi) : undefined}
+            />
+          )}
+          {toolId === "growth" && (
+            <EmbeddedGrowthChart
+              onResult={field.writeBackFieldId
+                ? (r) => {
+                    onWriteBack(field.writeBackFieldId!, r.waz ?? "");
+                  }
+                : undefined}
+            />
+          )}
+          {toolId === "drug_reference" && <EmbeddedDrugReference />}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface FieldRendererProps {
   field: FormField;
   value: unknown;
@@ -585,6 +639,7 @@ interface FieldRendererProps {
   onChange: (v: unknown) => void;
   onGeo: () => void;
   onGeoClear: () => void;
+  onWriteBack?: (fieldId: string, val: unknown) => void;
 }
 
 function FieldRenderer({
@@ -597,8 +652,18 @@ function FieldRenderer({
   onChange,
   onGeo,
   onGeoClear,
+  onWriteBack,
 }: FieldRendererProps) {
   const opts = getFieldOptions(f);
+
+  if (f.type === "tool_embed") {
+    return (
+      <ToolEmbedField
+        field={f}
+        onWriteBack={(fieldId, val) => onWriteBack?.(fieldId, val)}
+      />
+    );
+  }
 
   if (f.type === "section_header") {
     return (

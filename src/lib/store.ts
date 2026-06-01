@@ -44,7 +44,9 @@ export type FieldType =
   | "file_upload"
   // Layout
   | "section_header"
-  | "page_break";
+  | "page_break"
+  // Embedded clinical tools
+  | "tool_embed";
 
 export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains" | "is_answered";
 
@@ -194,6 +196,9 @@ export interface FormField {
   maxSizeMB?: number;   // max file size in MB (default 5)
   // Longitudinal tracking role
   longitudinalRole?: 'fixed' | 'tracked';
+  // Embedded clinical tool
+  toolId?: "bmi" | "growth" | "drug_reference";
+  writeBackFieldId?: string;
 }
 
 export type FormRole = "standalone" | "parent" | "child";

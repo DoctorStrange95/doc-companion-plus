@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Search } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/tools/imnci")({ component: IMNCITool });
 
@@ -74,6 +76,8 @@ const conditions: Condition[] = [
 ];
 
 function IMNCITool() {
+  const { user } = useAuth();
+  if (!user) return <AuthRequired action="use clinical tools" />;
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(conditions[0].id);
   const filtered = conditions.filter(

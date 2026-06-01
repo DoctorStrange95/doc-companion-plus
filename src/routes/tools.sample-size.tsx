@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader, PageShell, SectionTitle } from "@/components/PageShell";
+import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/tools/sample-size")({ component: SampleSize });
 
@@ -30,6 +32,9 @@ const Z = (p: number) => {
 };
 
 function SampleSize() {
+  const { user } = useAuth();
+  if (!user) return <AuthRequired action="use clinical tools" />;
+
   const [mode, setMode] = useState<Mode>("single-prop");
   const [alpha, setAlpha] = useState(0.05);
   const [power, setPower] = useState(0.8);

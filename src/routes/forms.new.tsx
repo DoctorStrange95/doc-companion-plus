@@ -33,7 +33,7 @@ import {
   Stethoscope, MapPin, Camera, Upload,
   SeparatorHorizontal, SquareSplitHorizontal,
   GripVertical, Trash2, Copy, GitBranch, Plus, Settings, ChevronRight, X,
-  Repeat, ChevronUp, ChevronDown,
+  Repeat, ChevronUp, ChevronDown, Scale, TrendingUp, Pill,
 } from "lucide-react";
 
 const searchSchema = z.object({ edit: z.string().optional() });
@@ -69,6 +69,7 @@ interface PaletteItem {
   type: FieldType;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  defaults?: Partial<import("@/lib/store").FormField>;
 }
 
 const PALETTE: { group: string; items: PaletteItem[] }[] = [
@@ -116,11 +117,24 @@ const PALETTE: { group: string; items: PaletteItem[] }[] = [
       { type: "page_break", label: "Page break", icon: SquareSplitHorizontal },
     ],
   },
+  {
+    group: "Tools",
+    items: [
+      { type: "tool_embed", label: "BMI Calculator", icon: Scale, defaults: { toolId: "bmi", label: "BMI Calculator" } },
+      { type: "tool_embed", label: "Growth Chart", icon: TrendingUp, defaults: { toolId: "growth", label: "Growth Chart" } },
+      { type: "tool_embed", label: "Drug Reference", icon: Pill, defaults: { toolId: "drug_reference", label: "Drug Reference" } },
+    ],
+  },
 ];
 
 const PALETTE_FLAT = PALETTE.flatMap((g) => g.items);
 
-function getPaletteItem(type: FieldType) {
+function getPaletteItem(type: FieldType, toolId?: string) {
+  if (type === "tool_embed" && toolId) {
+    const labelMap: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
+    const iconMap: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
+    return { type: "tool_embed" as FieldType, label: labelMap[toolId] ?? "Clinical Tool", icon: iconMap[toolId] ?? Scale };
+  }
   return PALETTE_FLAT.find((p) => p.type === type);
 }
 
@@ -156,6 +170,8 @@ function makeField(type: FieldType): FormField {
       return { ...base, label: "Section title", required: false };
     case "file_upload":
       return { ...base, acceptTypes: "*", maxSizeMB: 5 };
+    case "tool_embed":
+      return { ...base, label: "Clinical Tool", toolId: "bmi" as const, required: false };
     default:
       return base;
   }
@@ -193,7 +209,7 @@ function SortableFieldCard({
     opacity: isDragging ? 0.4 : 1,
   };
 
-  const palette = getPaletteItem(field.type);
+  const palette = getPaletteItem(field.type, field.toolId);
   const Icon = palette?.icon ?? Type;
 
   return (
@@ -362,6 +378,19 @@ function FieldPreview({ field }: { field: FormField }) {
       return <div className={`${cls} border-t-2 border-border pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>— Section —</div>;
     case "page_break":
       return <div className={`${cls} border-t-2 border-dashed border-border pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground`}>— Page break —</div>;
+    case "tool_embed": {
+      const toolLabels: Record<string, string> = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
+      const toolIcons: Record<string, React.ComponentType<{ className?: string }>> = { bmi: Scale, growth: TrendingUp, drug_reference: Pill };
+      const TIcon = toolIcons[field.toolId ?? "bmi"] ?? Scale;
+      return (
+        <div className={`${cls} flex items-center gap-2 border-2 border-dashed border-primary/50 bg-primary/5 px-3 py-2`}>
+          <TIcon className="h-3.5 w-3.5 text-primary" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-primary">
+            {toolLabels[field.toolId ?? "bmi"] ?? "Clinical Tool"} — embedded
+          </span>
+        </div>
+      );
+    }
     default:
       return null;
   }
@@ -401,7 +430,7 @@ function FieldConfigPanel({
   totalFields?: number;
   onAddAfter?: (type: FieldType) => void;
 }) {
-  const palette = getPaletteItem(field.type);
+  const palette = getPaletteItem(field.type, field.toolId);
   const Icon = palette?.icon ?? Type;
 
   function handleTypeChange(newType: FieldType) {
@@ -483,7 +512,7 @@ function FieldConfigPanel({
         </ConfigField>
 
         {/* Variable name */}
-        {field.type !== "section_header" && field.type !== "page_break" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
           <ConfigField label="Variable name" hint="Used as CSV column header">
             <input
               value={field.variableName ?? ""}
@@ -495,7 +524,7 @@ function FieldConfigPanel({
         )}
 
         {/* Hint */}
-        {field.type !== "section_header" && field.type !== "page_break" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
           <ConfigField label="Hint text" hint="Helper text shown below the question">
             <input
               value={field.hint ?? ""}
@@ -507,7 +536,7 @@ function FieldConfigPanel({
         )}
 
         {/* Required */}
-        {field.type !== "section_header" && field.type !== "page_break" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
           <label className="flex items-center justify-between gap-3 text-[11px] font-bold uppercase tracking-widest">
             Required
             <input
@@ -520,15 +549,15 @@ function FieldConfigPanel({
         )}
 
         {/* Type-specific config */}
-        <TypeConfig field={field} onChange={onChange} />
+        <TypeConfig field={field} onChange={onChange} allFields={allFields} />
 
         {/* Conditional logic */}
-        {field.type !== "section_header" && field.type !== "page_break" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
           <ConditionalConfig field={field} allFields={allFields} onChange={onChange} />
         )}
 
         {/* Analytics */}
-        {field.type !== "section_header" && field.type !== "page_break" && (
+        {field.type !== "section_header" && field.type !== "page_break" && field.type !== "tool_embed" && (
           <ConfigField label="Analytics chart">
             <select
               value={field.analyticsChart ?? "auto"}
@@ -594,7 +623,7 @@ function FieldConfigPanel({
   );
 }
 
-function TypeConfig({ field, onChange }: { field: FormField; onChange: (p: Partial<FormField>) => void }) {
+function TypeConfig({ field, onChange, allFields }: { field: FormField; onChange: (p: Partial<FormField>) => void; allFields: FormField[] }) {
   switch (field.type) {
     case "number":
       return (
@@ -859,6 +888,49 @@ function TypeConfig({ field, onChange }: { field: FormField; onChange: (p: Parti
               </select>
             </ConfigField>
           )}
+        </div>
+      );
+
+    case "tool_embed":
+      return (
+        <div className="space-y-3 border-2 border-primary/30 bg-primary/5 p-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Embedded clinical tool</div>
+          <ConfigField label="Tool">
+            <select
+              value={field.toolId ?? "bmi"}
+              onChange={(e) => {
+                const toolId = e.target.value as "bmi" | "growth" | "drug_reference";
+                const labels = { bmi: "BMI Calculator", growth: "Growth Chart", drug_reference: "Drug Reference" };
+                onChange({ toolId, label: labels[toolId] });
+              }}
+              className="input-brutal text-xs"
+            >
+              <option value="bmi">BMI Calculator</option>
+              <option value="growth">Growth Chart (WHO z-scores)</option>
+              <option value="drug_reference">Drug Reference</option>
+            </select>
+          </ConfigField>
+          {(field.toolId === "bmi" || field.toolId === "growth") && (
+            <ConfigField label="Write result to field" hint="Auto-fills a number field with the computed result">
+              <select
+                value={field.writeBackFieldId ?? ""}
+                onChange={(e) => onChange({ writeBackFieldId: e.target.value || undefined })}
+                className="input-brutal text-xs"
+              >
+                <option value="">— none —</option>
+                {allFields
+                  .filter((f) => (f.type === "number" || f.type === "measurement" || f.type === "short_text") && f.id !== field.id)
+                  .map((f) => (
+                    <option key={f.id} value={f.id}>{f.label}</option>
+                  ))}
+              </select>
+            </ConfigField>
+          )}
+          <p className="text-[9px] italic text-muted-foreground">
+            {field.toolId === "drug_reference"
+              ? "Drug Reference is a read-only lookup — no value is saved to the form."
+              : "The tool appears as an expandable panel while filling the form."}
+          </p>
         </div>
       );
 
@@ -1236,8 +1308,8 @@ export default function FormBuilderPage() {
 
   const selectedField = fields.find((f) => f.id === selectedId) ?? null;
 
-  const addField = useCallback((type: FieldType) => {
-    const f = makeField(type);
+  const addField = useCallback((type: FieldType, defaults?: Partial<FormField>) => {
+    const f = { ...makeField(type), ...defaults };
     setFields((prev) => [...prev, f]);
     setSelectedId(f.id);
     setPanelMode("config");
@@ -1247,8 +1319,8 @@ export default function FormBuilderPage() {
     }, 50);
   }, []);
 
-  const addFieldAfter = useCallback((afterId: string, type: FieldType) => {
-    const f = makeField(type);
+  const addFieldAfter = useCallback((afterId: string, type: FieldType, defaults?: Partial<FormField>) => {
+    const f = { ...makeField(type), ...defaults };
     setFields((prev) => {
       const idx = prev.findIndex((ff) => ff.id === afterId);
       const next = [...prev];
@@ -1378,10 +1450,10 @@ export default function FormBuilderPage() {
         <div key={group.group}>
           <div className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">{group.group}</div>
           <div className="grid grid-cols-2 gap-1.5">
-            {group.items.map(({ type, label, icon: Icon }) => (
+            {group.items.map(({ type, label, icon: Icon, defaults }) => (
               <button
-                key={type}
-                onClick={() => addField(type)}
+                key={`${type}_${label}`}
+                onClick={() => addField(type, defaults)}
                 className="flex flex-col items-center gap-1.5 border-2 border-border bg-background p-2.5 text-[10px] font-bold uppercase tracking-wider hover:bg-primary/30 active:bg-primary transition-colors"
               >
                 <Icon className="h-4 w-4" />

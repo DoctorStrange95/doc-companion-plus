@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { useAuth } from "@/lib/auth";
+import { AuthRequired } from "@/components/AuthGate";
 import { api, API_BASE, ApiError, getToken } from "@/lib/api";
 import {
   Search, ChevronDown, ChevronUp, Pill, Pencil, Trash2,
@@ -1270,6 +1271,7 @@ function Skeleton() {
 
 function DrugReferencePage() {
   const { user } = useAuth();
+  if (!user) return <AuthRequired action="use the drug reference" />;
   const isAdmin = user?.role === "admin";
 
   const [tab, setTab] = useState<"lookup" | "admin">("lookup");
