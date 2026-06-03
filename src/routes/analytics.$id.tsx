@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useStore, type FormDef } from "@/lib/store";
+import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
@@ -12,7 +13,7 @@ import {
   computeRatingStats, buildTimeSeries, selectChartType,
   type NumericStats, type FrequencyRow,
 } from "@/lib/analytics";
-import { Download, List, ChevronDown, ChevronUp, ChevronRight, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2 } from "lucide-react";
+import { Download, List, ChevronDown, ChevronUp, ChevronRight, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2, User } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/analytics/$id")({ component: FormAnalytics });
@@ -72,6 +73,12 @@ function FormAnalytics() {
   const { id } = Route.useParams();
   const allForms = useStore((s) => s.forms);
   const form = allForms.find((f) => f.id === id);
+  const longSubs = useStore((s) => s.longitudinalSubmissions.filter((s) => s.formId === id));
+
+  // Route longitudinal forms to dedicated view
+  if (form?.longitudinal) {
+    return <LongitudinalAnalytics form={form} subjects={longSubs} />;
+  }
   const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const formColor = getFormColor(id);
@@ -240,6 +247,226 @@ function FormAnalytics() {
               })}
             </div>
           </div>
+        )}
+      </PageShell>
+    </>
+  );
+}
+
+// ── Longitudinal analytics ────────────────────────────────────────────────────
+
+function LongitudinalAnalytics({ form, subjects }: { form: FormDef; subjects: LongitudinalSubmission[] }) {
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const formColor = getFormColor(form.id);
+
+  const fixedIds = new Set(form.fixedFieldIds ?? []);
+  const fixedFields = form.fields.filter((f) => fixedIds.has(f.id) && f.type !== "section_header");
+  const trackedFields = form.fields.filter((f) => !fixedIds.has(f.id) && f.type !== "section_header" && f.type !== "page_break");
+
+  // Find the "name" field — first short_text or text in fixed fields, or fallback to subjectKey
+  const nameField = fixedFields.find((f) => f.type === "short_text" || f.type === "text") ?? fixedFields[0];
+
+  const getSubjectName = (s: LongitudinalSubmission) =>
+    nameField ? String(s.fixedData[nameField.id] ?? s.subjectKey) : s.subjectKey;
+
+  const totalVisits = subjects.reduce((n, s) => n + s.visits.length, 0);
+  const lastVisit = subjects.flatMap((s) => s.visits).map((v) => new Date(v.timestamp).getTime()).sort((a, b) => b - a)[0];
+
+  const selected = selectedSubject ? subjects.find((s) => s.id === selectedSubject) : null;
+
+  return (
+    <>
+      <PageHeader
+        title={form.name}
+        subtitle={`${subjects.length} participants · ${totalVisits} visits`}
+        back="/analytics"
+        variant="dark"
+        action={
+          <Link to="/forms/$id/responses" params={{ id: form.id }} className="border-2 border-border bg-card p-2 hover:bg-muted" title="Raw data">
+            <List className="h-4 w-4" />
+          </Link>
+        }
+      />
+      <PageShell>
+        {/* Summary row */}
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          <div className="brutal p-3" style={{ borderLeftColor: formColor, borderLeftWidth: 4 }}>
+            <div className="font-display text-3xl">{subjects.length}</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Participants</div>
+          </div>
+          <div className="brutal p-3" style={{ borderLeftColor: formColor, borderLeftWidth: 4 }}>
+            <div className="font-display text-3xl">{totalVisits}</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Total visits</div>
+            <div className="text-[9px] text-muted-foreground">{subjects.length ? (totalVisits / subjects.length).toFixed(1) : 0} avg/person</div>
+          </div>
+          <div className="brutal p-3" style={{ borderLeftColor: formColor, borderLeftWidth: 4 }}>
+            <div className="font-display text-lg leading-tight">{lastVisit ? new Date(lastVisit).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—"}</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Last visit</div>
+          </div>
+        </div>
+
+        {subjects.length === 0 ? (
+          <div className="brutal-flat p-12 text-center">
+            <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground opacity-40" />
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No participants yet</p>
+          </div>
+        ) : (
+          <>
+            {/* Participant list */}
+            <div className="brutal mb-4">
+              <div className="flex items-center justify-between border-b-2 border-border px-3 py-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest">Participants</span>
+                {selected && (
+                  <button onClick={() => setSelectedSubject(null)} className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground">
+                    ← All participants
+                  </button>
+                )}
+              </div>
+              {subjects.map((s) => {
+                const name = getSubjectName(s);
+                const last = s.visits[s.visits.length - 1];
+                const first = s.visits[0];
+                const isSelected = selectedSubject === s.id;
+                return (
+                  <div key={s.id}>
+                    <button
+                      onClick={() => setSelectedSubject(isSelected ? null : s.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 border-b border-border text-left hover:bg-muted/50 transition-colors ${isSelected ? "bg-primary/10" : ""}`}
+                    >
+                      <div className="h-8 w-8 shrink-0 border-2 border-border flex items-center justify-center text-[10px] font-bold"
+                        style={{ background: formColor }}>
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-sm truncate">{name}</div>
+                        <div className="text-[9px] text-muted-foreground">
+                          {s.visits.length} visit{s.visits.length !== 1 ? "s" : ""}
+                          {first ? ` · first: ${new Date(first.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}` : ""}
+                          {last && s.visits.length > 1 ? ` · last: ${new Date(last.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-bold tabular-nums">{s.visits.length}</span>
+                        <ChevronDown className={`h-3 w-3 transition-transform ${isSelected ? "rotate-180" : ""}`} />
+                      </div>
+                    </button>
+
+                    {/* Expanded: individual participant timeline */}
+                    {isSelected && (
+                      <div className="bg-muted/20 border-b-2 border-border p-3 space-y-4">
+                        {/* Fixed data */}
+                        {fixedFields.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {fixedFields.map((f) => (
+                              <div key={f.id} className="border border-border bg-card px-2 py-1">
+                                <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground">{f.label}</div>
+                                <div className="text-xs font-bold">{String(s.fixedData[f.id] ?? "—")}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Visit table */}
+                        <div>
+                          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Visit history</div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] border-collapse">
+                              <thead>
+                                <tr className="border-b-2 border-border">
+                                  <th className="text-left py-1 pr-3 font-bold uppercase tracking-wider text-[9px] whitespace-nowrap">Visit</th>
+                                  <th className="text-left py-1 pr-3 font-bold uppercase tracking-wider text-[9px] whitespace-nowrap">Date</th>
+                                  {trackedFields.map((f) => (
+                                    <th key={f.id} className="text-left py-1 pr-3 font-bold uppercase tracking-wider text-[9px] whitespace-nowrap">
+                                      {f.label}{f.unit ? ` (${f.unit})` : ""}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.visits.map((v, i) => (
+                                  <tr key={v.visitId} className="border-b border-border hover:bg-muted/30">
+                                    <td className="py-1.5 pr-3 font-bold text-muted-foreground">{i + 1}</td>
+                                    <td className="py-1.5 pr-3 whitespace-nowrap">{new Date(v.timestamp).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}</td>
+                                    {trackedFields.map((f) => {
+                                      const val = v.data[f.id];
+                                      const prev = i > 0 ? s.visits[i - 1].data[f.id] : null;
+                                      const num = Number(val);
+                                      const prevNum = Number(prev);
+                                      const changed = prev !== null && Number.isFinite(num) && Number.isFinite(prevNum) && num !== prevNum;
+                                      return (
+                                        <td key={f.id} className="py-1.5 pr-3 font-semibold">
+                                          <span>{val === undefined || val === null || val === "" ? "—" : String(val)}</span>
+                                          {changed && (
+                                            <span className={`ml-1 text-[9px] font-bold ${num > prevNum ? "text-red-500" : "text-green-600"}`}>
+                                              {num > prevNum ? `↑${(num - prevNum).toFixed(1)}` : `↓${(prevNum - num).toFixed(1)}`}
+                                            </span>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Trend charts for numeric tracked fields */}
+                        {trackedFields.filter((f) => f.type === "number" || f.type === "measurement" || f.type === "slider").map((f) => {
+                          const pts = s.visits
+                            .map((v, i) => ({ x: `V${i + 1}`, y: Number(v.data[f.id]) }))
+                            .filter((p) => Number.isFinite(p.y));
+                          if (pts.length < 2) return null;
+                          return (
+                            <div key={f.id}>
+                              <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">
+                                {f.label}{f.unit ? ` (${f.unit})` : ""} — trend
+                              </div>
+                              <div className="h-28">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={pts} margin={{ top: 4, right: 8, left: -28, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                    <XAxis dataKey="x" fontSize={9} tick={{ fill: "var(--muted-foreground)" }} />
+                                    <YAxis fontSize={9} tick={{ fill: "var(--muted-foreground)" }} />
+                                    <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }} />
+                                    <Line type="monotone" dataKey="y" stroke={formColor} strokeWidth={2.5}
+                                      dot={{ fill: formColor, r: 4, stroke: "var(--border)", strokeWidth: 2 }}
+                                      name={f.label} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Aggregate stats across all participants' visits */}
+            {trackedFields.length > 0 && (
+              <div className="space-y-3">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Aggregate — all {totalVisits} visits
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {trackedFields.map((f) => {
+                    const allVals = subjects.flatMap((s) => s.visits.map((v) => v.data[f.id]));
+                    const nonEmpty = allVals.filter((v) => v !== undefined && v !== null && v !== "");
+                    if (nonEmpty.length === 0) return null;
+                    const opts = f.optionObjects?.length ? f.optionObjects : (f.options ?? []).map((o) => ({ label: o, value: o }));
+                    return (
+                      <FieldBlock key={f.id} field={f} submissions={subjects.flatMap((s) =>
+                        s.visits.map((v) => ({ formId: form.id, data: v.data, createdAt: new Date(v.timestamp).getTime() } as Submission))
+                      )} isLongitudinal={false} color={formColor} />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </PageShell>
     </>
