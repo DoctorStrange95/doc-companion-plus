@@ -2486,6 +2486,68 @@ async def admin_set_role(
     return {"id": uid, "role": role}
 
 
+# ── PWA: per-form manifest + icon ────────────────────────────────────────────
+
+_FORM_COLORS = ["#FFE17C","#7CFFB0","#FF7C7C","#7CB6FF","#C77CFF","#FFB07C","#7CF3FF","#FF7CB8"]
+
+def _form_color(form_id: str) -> str:
+    h = 0
+    for ch in form_id:
+        h = ((h * 31) + ord(ch)) & 0xFFFFFFFF
+    return _FORM_COLORS[h % len(_FORM_COLORS)]
+
+
+@app.get("/api/forms/{fid}/manifest.json")
+async def form_manifest(fid: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = res.scalar_one_or_none()
+    if not form:
+        raise HTTPException(404, "Form not found")
+    color = _form_color(fid)
+    short = form.name[:14] if len(form.name) > 14 else form.name
+    return JSONResponse({
+        "name": form.name,
+        "short_name": short,
+        "description": form.description or form.name,
+        "start_url": f"/forms/{fid}",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": color,
+        "theme_color": "#171E19",
+        "icons": [
+            {"src": f"/api/forms/{fid}/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+            {"src": f"/api/forms/{fid}/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable"},
+        ],
+        "shortcuts": [
+            {"name": "Fill form", "short_name": "Fill", "url": f"/forms/{fid}?action=fill", "icons": [{"src": f"/api/forms/{fid}/icon.svg", "sizes": "any"}]},
+            {"name": "View responses", "short_name": "Responses", "url": f"/forms/{fid}/responses", "icons": [{"src": f"/api/forms/{fid}/icon.svg", "sizes": "any"}]},
+            {"name": "Analytics", "short_name": "Analytics", "url": f"/analytics/{fid}", "icons": [{"src": f"/api/forms/{fid}/icon.svg", "sizes": "any"}]},
+        ],
+    }, headers={"Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*"})
+
+
+@app.get("/api/forms/{fid}/icon.svg")
+async def form_icon(fid: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(FormDef).where(FormDef.id == fid))
+    form = res.scalar_one_or_none()
+    name = form.name if form else "Form"
+    words = [w for w in name.split() if w]
+    initials = (words[0][0] + (words[1][0] if len(words) > 1 else "")).upper()
+    color = _form_color(fid)
+    # Darken the background slightly for text contrast
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" fill="{color}" rx="28"/>
+  <rect x="8" y="8" width="176" height="176" fill="none" stroke="#000" stroke-width="4" rx="22" opacity="0.15"/>
+  <text x="96" y="96" font-family="'Arial Black',Arial,sans-serif" font-size="72" font-weight="900"
+        fill="#171E19" text-anchor="middle" dominant-baseline="central" letter-spacing="-2">{initials}</text>
+  <text x="96" y="152" font-family="Arial,sans-serif" font-size="14" font-weight="700"
+        fill="#171E19" text-anchor="middle" opacity="0.7">{name[:16].upper()}</text>
+</svg>"""
+    return Response(svg, media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400", "Access-Control-Allow-Origin": "*"})
+
+
 # ── Admin: form deployment ────────────────────────────────────────────────────
 
 class AdminFormOut(BaseModel):

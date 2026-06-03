@@ -9,6 +9,12 @@ import "./styles.css";
 const _backendBase = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "");
 fetch(`${_backendBase}/api/health`).catch(() => {});
 
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
 const router = getRouter();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

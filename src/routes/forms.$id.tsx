@@ -7,7 +7,7 @@ import {
   Edit2, Copy, Trash2, ExternalLink, BarChart2,
   Share2, X, CheckCircle2, AlertTriangle,
   User, Globe, List, ArrowRight, Link2, Link2Off, Loader2, Lock, Plus, Printer,
-  Clock, UserCheck, UserX, RefreshCw,
+  Clock, UserCheck, UserX, RefreshCw, Smartphone,
 } from "lucide-react";
 
 interface FormShareEntry {
@@ -231,6 +231,9 @@ function FormDetail() {
   const allLongitudinalSubs = useStore(s => s.longitudinalSubmissions);
   const longitudinalSubs = useMemo(() => allLongitudinalSubs.filter(sub => sub.formId === id), [allLongitudinalSubs, id]);
   const [activeTab, setActiveTab] = useState<'overview' | 'longitudinal'>('overview');
+  const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
+  const [installed, setInstalled] = useState(false);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
 
   const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState<"fill" | "analytics" | null>(null);
@@ -302,6 +305,34 @@ function FormDetail() {
       .finally(() => { if (!cancelled) setSharesLoading(false); });
     return () => { cancelled = true; };
   }, [showShare, formId]);
+
+  // PWA: swap manifest to form-specific + capture install prompt
+  useEffect(() => {
+    if (!formId) return;
+    const manifestUrl = `${API_BASE}/api/forms/${formId}/manifest.json`;
+    const el = document.getElementById("app-manifest") as HTMLLinkElement | null;
+    const prev = el?.href ?? "";
+    if (el) el.href = manifestUrl;
+
+    const handler = (e: Event) => { e.preventDefault(); setInstallPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", () => setInstalled(true));
+
+    return () => {
+      if (el) el.href = "/manifest.json";
+      window.removeEventListener("beforeinstallprompt", handler);
+    };
+  }, [formId]);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = installPrompt as any;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") setInstalled(true);
+    setInstallPrompt(null);
+  };
 
   const handleGenerateToken = async (type: "fill" | "analytics") => {
     if (!form) return;
@@ -726,10 +757,32 @@ function FormDetail() {
             <Link
               to="/analytics/$id"
               params={{ id: form.id }}
-              className="brutal col-span-2 flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+              className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
             >
               <BarChart2 className="h-4 w-4" /> Analytics
             </Link>
+
+            {/* Install as desktop/home screen app */}
+            {installed ? (
+              <div className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider bg-primary/20 opacity-60 cursor-default">
+                <Smartphone className="h-4 w-4" /> Installed ✓
+              </div>
+            ) : installPrompt ? (
+              <button
+                onClick={() => void handleInstall()}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30 bg-primary/10"
+              >
+                <Smartphone className="h-4 w-4" /> Install app
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowInstallHelp(true)}
+                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                title="Save as desktop icon"
+              >
+                <Smartphone className="h-4 w-4" /> Add to home
+              </button>
+            )}
           </div>
 
           {/* Longitudinal tab bar */}
@@ -917,6 +970,36 @@ function FormDetail() {
       </PageShell>
 
       {/* Share modal — owner or can_edit user (mini-admin of their team) */}
+      {/* Install help modal — shown when browser doesn't support auto-prompt (iOS/Firefox) */}
+      {showInstallHelp && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowInstallHelp(false)}>
+          <div className="w-full max-w-sm border-4 border-border bg-background p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div className="font-display text-base uppercase">Add to home screen</div>
+              <button onClick={() => setShowInstallHelp(false)} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="border-2 border-border p-3 flex items-center gap-3">
+              <img src={`${API_BASE}/api/forms/${form.id}/icon.svg`} className="h-12 w-12 border border-border" alt="icon" />
+              <div>
+                <div className="font-bold text-sm">{form.name}</div>
+                <div className="text-[10px] text-muted-foreground">research.vyasaa.com</div>
+              </div>
+            </div>
+            <div className="space-y-2 text-[11px]">
+              <p className="font-bold uppercase tracking-wider">On Android (Chrome):</p>
+              <p className="text-muted-foreground">Tap ⋮ menu → <strong>Add to Home screen</strong> → Add</p>
+              <p className="font-bold uppercase tracking-wider mt-3">On iPhone (Safari):</p>
+              <p className="text-muted-foreground">Tap <strong>Share</strong> → <strong>Add to Home Screen</strong> → Add</p>
+              <p className="font-bold uppercase tracking-wider mt-3">On Desktop (Chrome):</p>
+              <p className="text-muted-foreground">Click the <strong>install icon</strong> (⊕) in the address bar</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground border-t border-border pt-3">
+              The icon opens directly to this form — fill, responses, analytics in one tap.
+            </p>
+          </div>
+        </div>
+      )}
+
       {showShare && (!form.shared || form.canEdit) && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={() => setShowShare(false)}>
           <div className="w-full max-w-md border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
