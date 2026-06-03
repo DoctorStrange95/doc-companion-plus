@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useStore } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from "recharts";
@@ -6,7 +6,13 @@ import { useMemo } from "react";
 import { ArrowRight, ClipboardList, TrendingUp } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
-export const Route = createFileRoute("/analytics")({ component: Analytics });
+export const Route = createFileRoute("/analytics")({
+  component: function AnalyticsLayout() {
+    const router = useRouterState();
+    const isIndex = router.location.pathname === "/analytics" || router.location.pathname === "/analytics/";
+    return isIndex ? <Analytics /> : <Outlet />;
+  },
+});
 
 function Analytics() {
   const forms = useStore((s) => s.forms);
