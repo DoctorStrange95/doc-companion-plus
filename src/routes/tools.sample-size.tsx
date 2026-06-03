@@ -52,35 +52,59 @@ function SampleSize() {
   const [sigma2, setSigma2] = useState(10);
   const [mDelta2, setMDelta2] = useState(3);
 
+  // Finite population correction
+  const [useFinite, setUseFinite] = useState(false);
+  const [popN, setPopN] = useState(1000);
+
+  // Non-response adjustment
+  const [useResponse, setUseResponse] = useState(false);
+  const [responseRate, setResponseRate] = useState(80);
+
   const result = useMemo(() => {
     const za = Z(1 - alpha / 2);
     const zb = Z(power);
+    let nRaw: number;
+    let formula: string;
+    let inputs: string;
+
     if (mode === "single-prop") {
-      const n = (za * za * p * (1 - p)) / (d * d);
-      return { n: Math.ceil(n), formula: "n = Z²·p(1−p) / d²", inputs: `p=${p}, d=${d}, α=${alpha}` };
-    }
-    if (mode === "two-prop") {
+      nRaw = (za * za * p * (1 - p)) / (d * d);
+      formula = "n = Z²·p(1−p) / d²";
+      inputs = `p=${p}, d=${d}, α=${alpha}`;
+    } else if (mode === "two-prop") {
       const pbar = (p1 + p2) / 2;
       const num = za * Math.sqrt(2 * pbar * (1 - pbar)) + zb * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2));
-      const n = (num * num) / Math.pow(p1 - p2, 2);
-      return {
-        n: Math.ceil(n),
-        formula: "n = [Z_{α/2}√(2p̄q̄) + Z_β√(p₁q₁+p₂q₂)]² / (p₁−p₂)²",
-        inputs: `p₁=${p1}, p₂=${p2}, α=${alpha}, power=${power} (per group)`,
-      };
+      nRaw = (num * num) / Math.pow(p1 - p2, 2);
+      formula = "n = [Z_{α/2}√(2p̄q̄) + Z_β√(p₁q₁+p₂q₂)]² / (p₁−p₂)²";
+      inputs = `p₁=${p1}, p₂=${p2}, α=${alpha}, power=${power} (per group)`;
+    } else if (mode === "single-mean") {
+      nRaw = Math.pow((za * sigma) / mDelta, 2);
+      formula = "n = (Z·σ / d)²";
+      inputs = `σ=${sigma}, d=${mDelta}, α=${alpha}`;
+    } else {
+      nRaw = (2 * Math.pow(za + zb, 2) * sigma2 * sigma2) / (mDelta2 * mDelta2);
+      formula = "n = 2(Z_{α/2}+Z_β)²σ² / Δ²";
+      inputs = `σ=${sigma2}, Δ=${mDelta2}, α=${alpha}, power=${power} (per group)`;
     }
-    if (mode === "single-mean") {
-      const n = Math.pow((za * sigma) / mDelta, 2);
-      return { n: Math.ceil(n), formula: "n = (Z·σ / d)²", inputs: `σ=${sigma}, d=${mDelta}, α=${alpha}` };
+
+    // Finite population correction: n_fpc = (n·N) / (n + N − 1)
+    let nFpc = nRaw;
+    if (useFinite && popN > 0 && nRaw < popN) {
+      nFpc = (nRaw * popN) / (nRaw + popN - 1);
     }
-    // two-mean
-    const n = (2 * Math.pow(za + zb, 2) * sigma2 * sigma2) / (mDelta2 * mDelta2);
+
+    // Non-response adjustment: n_final = n_fpc / response_rate
+    const rr = Math.max(0.01, Math.min(1, responseRate / 100));
+    const nFinal = useResponse ? nFpc / rr : nFpc;
+
     return {
-      n: Math.ceil(n),
-      formula: "n = 2(Z_{α/2}+Z_β)²σ² / Δ²",
-      inputs: `σ=${sigma2}, Δ=${mDelta2}, α=${alpha}, power=${power} (per group)`,
+      nBase: Math.ceil(nRaw),
+      nFpc: useFinite ? Math.ceil(nFpc) : null,
+      nFinal: Math.ceil(nFinal),
+      formula,
+      inputs,
     };
-  }, [mode, alpha, power, p, d, p1, p2, sigma, mDelta, sigma2, mDelta2]);
+  }, [mode, alpha, power, p, d, p1, p2, sigma, mDelta, sigma2, mDelta2, useFinite, popN, useResponse, responseRate]);
 
   const modes: { key: Mode; label: string }[] = [
     { key: "single-prop", label: "Single proportion" },
@@ -147,19 +171,59 @@ function SampleSize() {
           )}
         </div>
 
-        <div className="brutal-lg bg-primary p-5">
-          <div className="text-[10px] font-bold uppercase tracking-widest">Required sample</div>
-          <div className="mt-1 font-display text-7xl uppercase leading-none">n = {result.n}</div>
-          <div className="mt-3 font-mono text-[11px]">{result.formula}</div>
-          <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider">{result.inputs}</div>
-          {(mode === "two-prop" || mode === "two-mean") && (
-            <div className="mt-2 text-[11px] font-semibold uppercase tracking-wider">Total = {result.n * 2}</div>
+        {/* Finite population correction */}
+        <div className="brutal mb-4 space-y-3 p-4">
+          <SectionTitle kicker="Optional">Adjustments</SectionTitle>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={useFinite} onChange={(e) => setUseFinite(e.target.checked)} className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Finite population correction</span>
+          </label>
+          {useFinite && (
+            <Row label="Known population size N">
+              <NumInput value={popN} onChange={setPopN} step={100} min={1} />
+            </Row>
+          )}
+          {useFinite && (
+            <p className="text-[10px] text-muted-foreground font-mono">n_adj = (n·N) / (n + N − 1)</p>
+          )}
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={useResponse} onChange={(e) => setUseResponse(e.target.checked)} className="h-4 w-4" />
+            <span className="text-xs font-bold uppercase tracking-wider">Adjust for non-response</span>
+          </label>
+          {useResponse && (
+            <Row label="Expected response rate %">
+              <NumInput value={responseRate} onChange={setResponseRate} step={5} min={1} max={100} />
+            </Row>
+          )}
+          {useResponse && (
+            <p className="text-[10px] text-muted-foreground font-mono">n_final = n / (response rate / 100)</p>
           )}
         </div>
 
-        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Round up to nearest integer. Add 10–20% for non-response.
-        </p>
+        <div className="brutal-lg bg-primary p-5 space-y-2">
+          <div className="text-[10px] font-bold uppercase tracking-widest">Required sample</div>
+          <div className="font-display text-7xl uppercase leading-none">n = {result.nFinal}</div>
+          {(result.nFpc !== null || useResponse) && (
+            <div className="border-t border-black/20 pt-2 space-y-1">
+              <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Calculation breakdown</div>
+              <div className="text-[11px] font-mono">Base n = {result.nBase}</div>
+              {result.nFpc !== null && (
+                <div className="text-[11px] font-mono">After FPC = {result.nFpc}</div>
+              )}
+              {useResponse && (
+                <div className="text-[11px] font-mono">After non-response ({responseRate}%) = {result.nFinal}</div>
+              )}
+            </div>
+          )}
+          <div className="border-t border-black/20 pt-2">
+            <div className="font-mono text-[11px]">{result.formula}</div>
+            <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider">{result.inputs}</div>
+            {(mode === "two-prop" || mode === "two-mean") && (
+              <div className="mt-1 text-[11px] font-semibold uppercase tracking-wider">Total both groups = {result.nFinal * 2}</div>
+            )}
+          </div>
+        </div>
       </PageShell>
     </>
   );
