@@ -539,18 +539,9 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
     await ensure_user_profile_columns_in_session(db)
     email = body.email.lower()
 
-    # Check if the email was pre-verified via OTP flow
-    pre_verified = False
-    if body.proof_token:
-        proof_row = (await db.execute(
-            text("SELECT id FROM email_otps WHERE email=:e AND otp=:tok AND used=FALSE AND expires_at > now() LIMIT 1"),
-            {"e": f"proof:{email}", "tok": body.proof_token},
-        )).mappings().first()
-        if proof_row:
-            await db.execute(text("UPDATE email_otps SET used=TRUE WHERE id=:id"), {"id": str(proof_row["id"])})
-            pre_verified = True
-
-    verify_token = secrets.token_urlsafe(32) if not pre_verified else None
+    # Email verification disabled — all users verified on signup
+    pre_verified = True
+    verify_token = None
     try:
         res = await db.execute(select(User).where(User.email == email))
         if res.scalar_one_or_none():
@@ -597,25 +588,6 @@ async def register(body: RegisterIn, response: Response, db: AsyncSession = Depe
         "access_token", token, httponly=True, secure=False, samesite="lax",
         max_age=60 * 60 * 24 * 7, path="/",
     )
-    # Send verification email only if the email was NOT already verified via OTP
-    if pre_verified or not verify_token:
-        return TokenOut(access_token=token, user=to_user_out(user))
-    verify_link = f"{FRONTEND_URL}/verify-email?token={verify_token}"
-    verify_html = _email_wrap(f"""
-      <h2 style="font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin-top:0">Verify your email</h2>
-      <p>Hi {body.name.strip() or 'there'},</p>
-      <p>Welcome to Vyasa Research! Click below to verify your email address.</p>
-      <p style="margin:28px 0">
-        <a href="{verify_link}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;font-size:13px">
-          Verify email
-        </a>
-      </p>
-      <p style="color:#666;font-size:12px">If you didn't sign up for Vyasa Research, you can ignore this email.</p>
-    """)
-    try:
-        await send_email(email, "Verify your Vyasa Research email", verify_html)
-    except Exception as e:
-        print(f"[register] verification email error: {e}")
     return TokenOut(access_token=token, user=to_user_out(user))
 
 

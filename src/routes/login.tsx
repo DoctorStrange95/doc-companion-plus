@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { ApiError, api, setToken } from "@/lib/api";
-import { Stethoscope, ArrowRight, UserPlus, LogIn, Mail } from "lucide-react";
+import { Stethoscope, ArrowRight, UserPlus, LogIn } from "lucide-react";
 
 const searchSchema = z.object({
   returnTo: z.string().optional(),
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/login")({
   validateSearch: (s) => searchSchema.parse(s),
 });
 
-type Mode = "login" | "register_email" | "register_otp" | "register" | "forgot";
+type Mode = "login" | "register" | "forgot";
 const BEST_SUITED_ROLES = [
   "Nurse",
   "Doctor",
@@ -28,10 +28,8 @@ function LoginPage() {
   const { login, register } = useAuth();
   const { returnTo, mode: initialMode } = Route.useSearch();
   const nav = useNavigate();
-  const [mode, setMode] = useState<Mode>(initialMode === "register" ? "register_email" : "login");
+  const [mode, setMode] = useState<Mode>(initialMode === "register" ? "register" : "login");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [proofToken, setProofToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
@@ -41,7 +39,6 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
-  const otpRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hash) {
@@ -54,45 +51,6 @@ function LoginPage() {
       }
     }
   }, []);
-
-  const sendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) { setError("Enter your email address."); return; }
-    setBusy(true);
-    try {
-      await api("/api/auth/send-register-otp", {
-        method: "POST",
-        body: JSON.stringify({ email: trimmedEmail }),
-      });
-      setMode("register_otp");
-      setTimeout(() => otpRef.current?.focus(), 100);
-    } catch (e) {
-      setError(e instanceof ApiError ? String(e.detail) : (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const verifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (otp.trim().length !== 6) { setError("Enter the 6-digit code from your email."); return; }
-    setBusy(true);
-    try {
-      const res = await api<{ proof_token: string }>("/api/auth/verify-register-otp", {
-        method: "POST",
-        body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otp.trim() }),
-      });
-      setProofToken(res.proof_token);
-      setMode("register");
-    } catch (e) {
-      setError(e instanceof ApiError ? String(e.detail) : (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const submitForgot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,7 +87,6 @@ function LoginPage() {
           name.trim(),
           phone.trim(),
           bestSuitedRole.trim(),
-          proofToken || undefined,
         );
       }
       nav({ to: returnTo ?? "/", replace: true });
@@ -166,84 +123,11 @@ function LoginPage() {
               </div>
               <div className="font-display text-2xl uppercase leading-none">
                 {mode === "login" ? "Sign in"
-                  : mode === "register_email" ? "Create account"
-                  : mode === "register_otp" ? "Verify email"
-                  : mode === "register" ? "Complete sign-up"
+                  : mode === "register" ? "Create account"
                   : "Reset password"}
               </div>
             </div>
           </div>
-
-          {/* Step 1: enter email, send OTP */}
-          {mode === "register_email" && (
-            <form onSubmit={sendOtp} className="brutal space-y-3 p-5">
-              <Field label="Email">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoFocus
-                  className="input-brutal"
-                  autoComplete="email"
-                  placeholder="your@email.com"
-                />
-              </Field>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                We'll send a 6-digit code to verify this address.
-              </p>
-              {error && (
-                <p className="border-2 border-destructive bg-destructive/10 p-2 text-xs font-bold uppercase tracking-wider text-destructive">
-                  {error}
-                </p>
-              )}
-              <button type="submit" disabled={busy} className="btn-brutal flex w-full items-center justify-center gap-2 disabled:opacity-50">
-                <Mail className="h-4 w-4" />
-                {busy ? "Sending…" : "Send verification code"}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </form>
-          )}
-
-          {/* Step 2: enter OTP */}
-          {mode === "register_otp" && (
-            <form onSubmit={verifyOtp} className="brutal space-y-3 p-5">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                Code sent to <span className="text-foreground">{email}</span>
-              </p>
-              <Field label="6-digit code">
-                <input
-                  ref={otpRef}
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                  required
-                  className="input-brutal text-center text-2xl font-bold tracking-[0.3em]"
-                  placeholder="000000"
-                  autoComplete="one-time-code"
-                />
-              </Field>
-              {error && (
-                <p className="border-2 border-destructive bg-destructive/10 p-2 text-xs font-bold uppercase tracking-wider text-destructive">
-                  {error}
-                </p>
-              )}
-              <button type="submit" disabled={busy} className="btn-brutal flex w-full items-center justify-center gap-2 disabled:opacity-50">
-                {busy ? "Verifying…" : "Verify & continue"}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode("register_email"); setOtp(""); setError(""); }}
-                className="w-full text-center text-[10px] font-bold uppercase tracking-widest text-muted-foreground underline"
-              >
-                Wrong email? Go back
-              </button>
-            </form>
-          )}
 
           {mode === "forgot" && (
             <div className="brutal space-y-3 p-5">
@@ -285,7 +169,7 @@ function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form" style={{ display: (mode === "forgot" || mode === "register_email" || mode === "register_otp") ? "none" : undefined }}>
+          <form onSubmit={submit} className="brutal space-y-3 p-5" data-testid="auth-form" style={{ display: mode === "forgot" ? "none" : undefined }}>
             {mode === "register" && (
               <>
                 <Field label="Name">
@@ -299,10 +183,17 @@ function LoginPage() {
                     required
                   />
                 </Field>
-                <div>
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-widest">Email <span className="text-green-700 text-[9px]">✓ Verified</span></span>
-                  <div className="input-brutal bg-muted/30 text-muted-foreground select-none cursor-not-allowed">{email}</div>
-                </div>
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="input-brutal"
+                    autoComplete="email"
+                    required
+                  />
+                </Field>
                 <Field label="Phone Number *">
                   <input
                     type="tel"
@@ -425,13 +316,12 @@ function LoginPage() {
           <button
             type="button"
             data-testid="auth-mode-toggle"
-            style={{ display: mode === "register_otp" ? "none" : undefined }}
             onClick={() => {
               setError("");
               setForgotSent(false);
               if (mode === "login" || mode === "forgot") {
-                setMode("register_email");
-                setEmail(""); setOtp(""); setProofToken(""); setName(""); setPhone(""); setBestSuitedRole(""); setConfirmPassword("");
+                setMode("register");
+                setEmail(""); setName(""); setPhone(""); setBestSuitedRole(""); setConfirmPassword("");
               } else {
                 setMode("login");
               }
