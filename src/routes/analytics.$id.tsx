@@ -3,7 +3,7 @@ import { useStore } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, LineChart, Line,
+  PieChart, Pie, Cell, Legend, LineChart, Line, ReferenceLine,
 } from "recharts";
 import { useMemo, useState } from "react";
 import type { FormField, Submission } from "@/lib/store";
@@ -12,25 +12,40 @@ import {
   computeRatingStats, buildTimeSeries, selectChartType,
   type NumericStats, type FrequencyRow,
 } from "@/lib/analytics";
-import { Download, List } from "lucide-react";
+import { Download, List, ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2 } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/analytics/$id")({ component: FormAnalytics });
 
-const COLORS = ["#FFE17C", "#7CFFB0", "#FF7C7C", "#7CB6FF", "#C77CFF", "#171E19"];
+const COLORS = ["#FFE17C", "#7CFFB0", "#FF7C7C", "#7CB6FF", "#C77CFF", "#FFA07C", "#171E19"];
 
-type DateRange = "all" | "7d" | "30d";
+type DateRange = "7d" | "30d" | "90d" | "all";
 
 function filterByDate(subs: Submission[], range: DateRange): Submission[] {
   if (range === "all") return subs;
   const now = Date.now();
-  const cutoff = range === "7d" ? now - 7 * 86400000 : now - 30 * 86400000;
-  return subs.filter((s) => s.createdAt >= cutoff);
+  const ms = { "7d": 7, "30d": 30, "90d": 90 }[range] * 86400000;
+  return subs.filter((s) => s.createdAt >= now - ms);
+}
+
+function prevPeriodCount(subs: Submission[], range: DateRange): number {
+  if (range === "all") return 0;
+  const now = Date.now();
+  const ms = { "7d": 7, "30d": 30, "90d": 90 }[range] * 86400000;
+  return subs.filter((s) => s.createdAt >= now - 2 * ms && s.createdAt < now - ms).length;
+}
+
+function timeSince(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
 }
 
 function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission[]) {
   const dataFields = form.fields.filter((f) => f.type !== "section_header" && f.type !== "page_break");
-  const headers = ["#", "Date", "Time", "Respondent Email", ...dataFields.map((f) => f.variableName ?? f.label)];
+  const headers = ["#", "Date", "Time", "Respondent", ...dataFields.map((f) => f.variableName ?? f.label)];
   const rows = subs.map((s, i) => {
     const dt = new Date(s.createdAt);
     const date = dt.toLocaleDateString("en-GB");
@@ -47,19 +62,17 @@ function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission
   });
   const csv = [headers.join(","), ...rows].join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = `${form.name.replace(/[^a-z0-9]/gi, "_")}_analytics.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.download = `${form.name.replace(/[^a-z0-9]/gi, "_")}_data.csv`;
   a.click();
-  URL.revokeObjectURL(url);
 }
 
 function FormAnalytics() {
   const { id } = Route.useParams();
   const form = useStore((s) => s.forms.find((f) => f.id === id));
   const rawSubs = useStore((s) => s.submissions);
-  const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [dateRange, setDateRange] = useState<DateRange>("30d");
   const formColor = getFormColor(id);
 
   const allSubs = useMemo(
@@ -67,41 +80,53 @@ function FormAnalytics() {
     [rawSubs, id],
   );
   const submissions = useMemo(() => filterByDate(allSubs, dateRange), [allSubs, dateRange]);
+  const prevCount = useMemo(() => prevPeriodCount(allSubs, dateRange), [allSubs, dateRange]);
+
+  const dataFields = useMemo(
+    () => form?.fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "location") ?? [],
+    [form],
+  );
+
+  // Completion rate: avg % of data fields answered per submission
+  const completionRate = useMemo(() => {
+    if (!submissions.length || !dataFields.length) return 0;
+    const total = submissions.reduce((acc, s) => {
+      const filled = dataFields.filter((f) => {
+        const v = s.data[f.id];
+        return v !== undefined && v !== null && v !== "";
+      }).length;
+      return acc + filled / dataFields.length;
+    }, 0);
+    return Math.round((total / submissions.length) * 100);
+  }, [submissions, dataFields]);
 
   if (!form) {
     return (
       <>
         <PageHeader title="Analytics" back="/analytics" />
-        <PageShell>
-          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Form not found</p>
-        </PageShell>
+        <PageShell><p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Form not found</p></PageShell>
       </>
     );
   }
+
+  const lastSub = allSubs[allSubs.length - 1];
+  const trend = submissions.length - prevCount;
+  const trendLabel = dateRange === "all" ? null : trend > 0 ? `+${trend} vs prev period` : trend < 0 ? `${trend} vs prev period` : "same as prev period";
 
   return (
     <>
       <PageHeader
         title={form.name}
-        subtitle={`${submissions.length} response${submissions.length !== 1 ? "s" : ""} · ${form.category}`}
-        back="/analytics"
+        subtitle={form.category}
+        back={`/forms/${id}`}
         variant="dark"
         action={
-          <div className="flex items-center gap-1.5">
-            <Link
-              to="/forms/$id/responses"
-              params={{ id: form.id }}
-              className="border-2 border-border bg-card p-1.5 hover:bg-muted"
-              title="View responses"
-            >
+          <div className="flex gap-1.5">
+            <Link to="/forms/$id/responses" params={{ id: form.id }} className="border-2 border-border bg-card p-2 hover:bg-muted" title="View all responses">
               <List className="h-4 w-4" />
             </Link>
             {submissions.length > 0 && (
-              <button
-                onClick={() => exportCsv(form, submissions)}
-                className="border-2 border-border bg-card p-1.5 hover:bg-muted"
-                title="Export CSV"
-              >
+              <button onClick={() => exportCsv(form, submissions)} className="border-2 border-border bg-card p-2 hover:bg-muted" title="Export CSV">
                 <Download className="h-4 w-4" />
               </button>
             )}
@@ -109,32 +134,70 @@ function FormAnalytics() {
         }
       />
       <PageShell>
-        {/* Date range filter */}
-        <div className="mb-4 flex gap-1.5">
-          {(["all", "7d", "30d"] as DateRange[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => setDateRange(r)}
-              className={`border-2 border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${dateRange === r ? "bg-primary" : "hover:bg-muted"}`}
-            >
-              {r === "all" ? "All time" : r === "7d" ? "7 days" : "30 days"}
+
+        {/* ── Date range filter ── */}
+        <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1">
+          {(["7d", "30d", "90d", "all"] as DateRange[]).map((r) => (
+            <button key={r} onClick={() => setDateRange(r)}
+              className={`shrink-0 border-2 border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${dateRange === r ? "bg-primary" : "hover:bg-muted"}`}>
+              {r === "7d" ? "7 Days" : r === "30d" ? "30 Days" : r === "90d" ? "90 Days" : "All Time"}
             </button>
           ))}
         </div>
 
+        {/* ── Summary cards ── */}
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <SummaryCard
+            icon={<BarChart2 className="h-4 w-4" />}
+            label="Responses"
+            value={String(submissions.length)}
+            sub={trendLabel ?? `of ${allSubs.length} total`}
+            trend={trend}
+            color={formColor}
+          />
+          <SummaryCard
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            label="Completion"
+            value={`${completionRate}%`}
+            sub="fields answered avg"
+            color={formColor}
+          />
+          <SummaryCard
+            icon={<Users className="h-4 w-4" />}
+            label="Total ever"
+            value={String(allSubs.length)}
+            sub="all time responses"
+            color={formColor}
+          />
+          <SummaryCard
+            icon={<Clock className="h-4 w-4" />}
+            label="Last response"
+            value={lastSub ? timeSince(lastSub.createdAt) : "—"}
+            sub={lastSub ? new Date(lastSub.createdAt).toLocaleDateString("en-GB") : "no data yet"}
+            color={formColor}
+          />
+        </div>
+
         {submissions.length === 0 ? (
-          <div className="brutal-flat p-8 text-center text-xs font-bold uppercase tracking-widest text-muted-foreground">
-            No responses in this period
+          <div className="brutal-flat p-12 text-center">
+            <BarChart2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground opacity-40" />
+            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">No responses in this period</p>
+            {dateRange !== "all" && (
+              <button onClick={() => setDateRange("all")} className="mt-3 border-2 border-border px-3 py-1.5 text-[10px] font-bold uppercase hover:bg-muted">
+                View all time
+              </button>
+            )}
           </div>
         ) : (
           <>
-            <TimelineCard submissions={submissions} color={formColor} />
-            <div className="mt-4 grid gap-4">
-              {form.fields
-                .filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "photo" && f.type !== "location")
-                .map((field) => (
-                  <FieldBlock key={field.id} field={field} submissions={submissions} isLongitudinal={!!form.longitudinal} color={formColor} />
-                ))}
+            {/* ── Response timeline ── */}
+            <TimelineCard submissions={submissions} color={formColor} dateRange={dateRange} />
+
+            {/* ── Field cards ── */}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {dataFields.map((field) => (
+                <FieldBlock key={field.id} field={field} submissions={submissions} isLongitudinal={!!form.longitudinal} color={formColor} />
+              ))}
             </div>
           </>
         )}
@@ -143,35 +206,68 @@ function FormAnalytics() {
   );
 }
 
-function TimelineCard({ submissions, color }: { submissions: Submission[]; color: string }) {
+// ── Summary card ─────────────────────────────────────────────────────────────
+
+function SummaryCard({ icon, label, value, sub, trend, color }: {
+  icon: React.ReactNode; label: string; value: string; sub: string; trend?: number; color: string;
+}) {
+  return (
+    <div className="brutal p-3 flex flex-col gap-1" style={{ borderLeftColor: color, borderLeftWidth: 4 }}>
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">{icon}</span>
+        {trend !== undefined && trend !== 0 && (
+          trend > 0
+            ? <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+            : <TrendingDown className="h-3.5 w-3.5 text-destructive" />
+        )}
+        {trend === 0 && <Minus className="h-3.5 w-3.5 text-muted-foreground" />}
+      </div>
+      <div className="font-display text-2xl uppercase leading-none">{value}</div>
+      <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="text-[9px] text-muted-foreground truncate">{sub}</div>
+    </div>
+  );
+}
+
+// ── Timeline card ─────────────────────────────────────────────────────────────
+
+function TimelineCard({ submissions, color, dateRange }: { submissions: Submission[]; color: string; dateRange: DateRange }) {
+  const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : dateRange === "90d" ? 90 : 60;
+
   const data = useMemo(() => {
-    const days: { date: string; n: number }[] = [];
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const start = d.getTime();
-      const end = start + 86400000;
-      days.push({
-        date: `${d.getMonth() + 1}/${d.getDate()}`,
-        n: submissions.filter((s) => s.createdAt >= start && s.createdAt < end).length,
-      });
+    const buckets: { date: string; n: number }[] = [];
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now); d.setDate(d.getDate() - i);
+      const start = d.getTime(); const end = start + 86400000;
+      const label = days > 30
+        ? (i % 7 === 0 ? `${d.getMonth() + 1}/${d.getDate()}` : "")
+        : `${d.getMonth() + 1}/${d.getDate()}`;
+      buckets.push({ date: label, n: submissions.filter((s) => s.createdAt >= start && s.createdAt < end).length });
     }
-    return days;
-  }, [submissions]);
+    return buckets;
+  }, [submissions, days]);
+
+  const avg = (data.reduce((s, d) => s + d.n, 0) / data.length) || 0;
 
   return (
     <div className="brutal p-3">
-      <h3 className="mb-2 text-[11px] font-bold uppercase tracking-widest">Responses — last 14 days</h3>
-      <div className="h-36">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-[10px] font-bold uppercase tracking-widest">Response trend</h3>
+        <span className="text-[9px] text-muted-foreground">avg {avg.toFixed(1)}/day</span>
+      </div>
+      <div className="h-32">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="date" fontSize={9} stroke="var(--foreground)" />
-            <YAxis fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
-            <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-            <Bar dataKey="n" fill={color} stroke="var(--border)" strokeWidth={2} name="Responses" />
+          <BarChart data={data} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <XAxis dataKey="date" fontSize={8} stroke="var(--foreground)" tick={{ fill: "var(--muted-foreground)" }} />
+            <YAxis fontSize={9} stroke="var(--foreground)" allowDecimals={false} tick={{ fill: "var(--muted-foreground)" }} />
+            <Tooltip
+              contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }}
+              cursor={{ fill: "var(--muted)" }}
+            />
+            <ReferenceLine y={avg} stroke="var(--foreground)" strokeDasharray="4 4" strokeOpacity={0.4} />
+            <Bar dataKey="n" fill={color} stroke="var(--border)" strokeWidth={1.5} name="Responses" radius={[1, 1, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -179,121 +275,213 @@ function TimelineCard({ submissions, color }: { submissions: Submission[]; color
   );
 }
 
-function FieldHeader({ field, answered, total }: { field: FormField; answered: number; total: number }) {
-  return (
-    <div className="mb-3 flex items-baseline justify-between gap-2">
-      <h3 className="font-display text-base uppercase leading-tight">
-        {field.label}
-        {field.unit ? <span className="ml-1 text-[10px] tracking-widest text-muted-foreground">({field.unit})</span> : null}
-      </h3>
-      <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground shrink-0">
-        n = {answered}/{total}
-      </span>
-    </div>
-  );
-}
+// ── Field block ───────────────────────────────────────────────────────────────
 
-function NumericStatsTable({ stats }: { stats: NumericStats }) {
-  return (
-    <div className="mb-3 grid grid-cols-3 gap-1.5">
-      <StatCell label="Mean ± SD" value={`${stats.mean} ± ${stats.sd}`} />
-      <StatCell label="Median" value={String(stats.median)} />
-      <StatCell label="Range" value={`${stats.min}–${stats.max}`} />
-      <StatCell label="IQR" value={`${stats.p25}–${stats.p75}`} hint="25th–75th percentile" />
-      <StatCell label="95% CI" value={`${stats.ci95Lower}–${stats.ci95Upper}`} hint="95% Confidence Interval of mean" />
-      <StatCell label="SE" value={String(stats.se)} hint="Standard Error" />
-    </div>
-  );
-}
-
-function StatCell({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="border-2 border-border bg-card p-1.5 text-center" title={hint}>
-      <div className="font-display text-sm leading-tight">{value}</div>
-      <div className="mt-0.5 text-[8px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-function FrequencyTable({ rows }: { rows: FrequencyRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="mb-3 overflow-hidden border-2 border-border">
-      {rows.map((r) => (
-        <div key={String(r.value)} className="flex items-center gap-2 border-b border-border px-3 py-1.5 last:border-0">
-          <div className="min-w-0 flex-1 text-[11px] font-bold uppercase tracking-wider truncate">{r.label}</div>
-          <div className="text-[11px] font-bold tabular-nums">{r.count}</div>
-          <div className="w-12 text-right text-[10px] text-muted-foreground">{r.percent}%</div>
-          <div className="w-16 h-2 bg-muted border border-border overflow-hidden">
-            <div className="h-full bg-primary" style={{ width: `${r.percent}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function FieldBlock({ field, submissions, isLongitudinal, color }: { field: FormField; submissions: Submission[]; isLongitudinal: boolean; color: string }) {
+function FieldBlock({ field, submissions, isLongitudinal, color }: {
+  field: FormField; submissions: Submission[]; isLongitudinal: boolean; color: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const raw = submissions.map((s) => s.data[field.id]);
   const nonEmpty = raw.filter((v) => v !== undefined && v !== null && v !== "");
+  const answered = nonEmpty.length;
+  const total = submissions.length;
+  const completionPct = total ? Math.round((answered / total) * 100) : 0;
 
-  const opts = field.optionObjects && field.optionObjects.length > 0
-    ? field.optionObjects
-    : (field.options ?? []).map((o) => ({ label: o, value: o }));
-
+  const opts = field.optionObjects?.length ? field.optionObjects : (field.options ?? []).map((o) => ({ label: o, value: o }));
   const chartType = selectChartType(field.type, opts.length, isLongitudinal);
 
-  if (nonEmpty.length === 0) {
+  // Header always shown
+  const header = (
+    <div className="flex items-start justify-between gap-2">
+      <div className="min-w-0">
+        <h3 className="font-display text-sm uppercase leading-tight truncate">{field.label}
+          {field.unit ? <span className="ml-1 text-[9px] tracking-widest text-muted-foreground font-sans normal-case">({field.unit})</span> : null}
+        </h3>
+        <div className="mt-1 flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden border border-border bg-muted max-w-[80px]">
+            <div className="h-full bg-primary transition-all" style={{ width: `${completionPct}%` }} />
+          </div>
+          <span className="text-[9px] font-bold text-muted-foreground tabular-nums">{answered}/{total}</span>
+        </div>
+      </div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="shrink-0 border border-border p-1 hover:bg-muted mt-0.5"
+        title={expanded ? "Collapse" : "Expand"}
+      >
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+
+  if (answered === 0) {
     return (
-      <div className="brutal p-3">
-        <FieldHeader field={field} answered={0} total={submissions.length} />
-        <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">No answers yet</p>
+      <div className="brutal p-3 opacity-60">
+        {header}
+        <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">No answers yet</p>
       </div>
     );
   }
 
-  // ── Numeric / Slider / Calculated / Measurement ───────────────────────────
-  if (field.type === "number" || field.type === "slider" || field.type === "calculated" ||
-      (field.type === "measurement" && field.measurementType !== "BP")) {
+  // ── Numeric ───────────────────────────────────────────────────────────────
+  if (["number", "slider", "calculated", "measurement"].includes(field.type) && field.measurementType !== "BP") {
     const stats = computeNumericStats(nonEmpty);
-
-    if (isLongitudinal && chartType === "line") {
-      const timeSeries = buildTimeSeries(
-        submissions.map((s) => ({ value: s.data[field.id], date: s.createdAt })),
-      );
-      return (
-        <div className="brutal p-3">
-          <FieldHeader field={field} answered={stats.n} total={submissions.length} />
-          <NumericStatsTable stats={stats} />
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={timeSeries} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="date" fontSize={9} stroke="var(--foreground)" />
-                <YAxis fontSize={9} stroke="var(--foreground)" />
-                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ fill: color, r: 3, stroke: "var(--border)", strokeWidth: 2 }} name={field.label} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="brutal p-3">
-        <FieldHeader field={field} answered={stats.n} total={submissions.length} />
-        <NumericStatsTable stats={stats} />
-        <div className="h-40">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stats.histogram} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="bin" fontSize={8} stroke="var(--foreground)" angle={-35} textAnchor="end" height={36} />
-              <YAxis fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
-              <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-              <Bar dataKey="count" fill={color} stroke="var(--border)" strokeWidth={2} name="Count" />
-            </BarChart>
-          </ResponsiveContainer>
+        {header}
+        {/* Big number highlight */}
+        <div className="mt-3 flex items-end gap-3">
+          <div>
+            <div className="font-display text-4xl uppercase leading-none">{stats.mean}</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">mean{field.unit ? ` (${field.unit})` : ""}</div>
+          </div>
+          <div className="pb-1 text-right text-xs text-muted-foreground space-y-0.5">
+            <div>median {stats.median}</div>
+            <div>sd ±{stats.sd}</div>
+          </div>
+        </div>
+
+        {/* Compact stat pills */}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[
+            { l: "Min", v: stats.min }, { l: "Max", v: stats.max },
+            { l: "IQR", v: `${stats.p25}–${stats.p75}` },
+            { l: "95% CI", v: `${stats.ci95Lower}–${stats.ci95Upper}` },
+          ].map(({ l, v }) => (
+            <div key={l} className="border border-border bg-card px-2 py-0.5 text-[9px] font-bold">
+              <span className="text-muted-foreground uppercase">{l} </span>{v}
+            </div>
+          ))}
+        </div>
+
+        {/* Chart — always visible if space, or only when expanded */}
+        {(expanded || nonEmpty.length > 1) && (
+          <div className="mt-3 h-32">
+            <ResponsiveContainer width="100%" height="100%">
+              {isLongitudinal && chartType === "line" ? (
+                <LineChart
+                  data={buildTimeSeries(submissions.map((s) => ({ value: s.data[field.id], date: s.createdAt })))}
+                  margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" fontSize={8} tick={{ fill: "var(--muted-foreground)" }} />
+                  <YAxis fontSize={9} tick={{ fill: "var(--muted-foreground)" }} />
+                  <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }} />
+                  <ReferenceLine y={stats.mean} stroke="var(--foreground)" strokeDasharray="4 4" strokeOpacity={0.4} />
+                  <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ fill: color, r: 2.5, stroke: "var(--border)", strokeWidth: 1.5 }} name={field.label} />
+                </LineChart>
+              ) : (
+                <BarChart data={stats.histogram} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="bin" fontSize={7} angle={-30} textAnchor="end" height={32} tick={{ fill: "var(--muted-foreground)" }} />
+                  <YAxis fontSize={9} allowDecimals={false} tick={{ fill: "var(--muted-foreground)" }} />
+                  <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }} />
+                  <Bar dataKey="count" fill={color} stroke="var(--border)" strokeWidth={1.5} radius={[1, 1, 0, 0]} name="Count" />
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Yes/No ────────────────────────────────────────────────────────────────
+  if (field.type === "yes_no" || field.type === "boolean") {
+    const { frequencies, n } = computeYesNoStats(nonEmpty.map((v) => (v === true ? "true" : v === false ? "false" : String(v))));
+    const top = frequencies[0];
+    return (
+      <div className="brutal p-3">
+        {header}
+        <div className="mt-3 flex items-end gap-3">
+          <div>
+            <div className="font-display text-4xl uppercase leading-none">{top?.percent ?? 0}%</div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{top?.label ?? "—"} (n={n})</div>
+          </div>
+        </div>
+        <div className="mt-2 space-y-1.5">
+          {frequencies.map((r) => (
+            <div key={String(r.value)} className="flex items-center gap-2">
+              <span className="w-8 text-[10px] font-bold uppercase">{r.label}</span>
+              <div className="flex-1 h-3 border border-border bg-muted overflow-hidden">
+                <div className="h-full transition-all" style={{ width: `${r.percent}%`, background: color }} />
+              </div>
+              <span className="w-10 text-right text-[10px] font-bold tabular-nums">{r.percent}%</span>
+              <span className="w-6 text-right text-[9px] text-muted-foreground">{r.count}</span>
+            </div>
+          ))}
+        </div>
+        {expanded && (
+          <div className="mt-3 h-28">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={frequencies.map((r) => ({ name: r.label, value: r.count }))} dataKey="value" nameKey="name"
+                  innerRadius={22} outerRadius={42} paddingAngle={3} stroke="var(--border)" strokeWidth={2}>
+                  {frequencies.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: 9, textTransform: "uppercase", fontWeight: 700 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Select one ────────────────────────────────────────────────────────────
+  if (["select_one", "select", "radio"].includes(field.type)) {
+    const { frequencies, n } = computeCategoricalStats(nonEmpty, opts);
+    const top = frequencies[0];
+    return (
+      <div className="brutal p-3">
+        {header}
+        <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Top answer (n={n})</div>
+        <div className="mt-0.5 font-display text-base uppercase truncate">{top?.label ?? "—"} — {top?.percent ?? 0}%</div>
+        <div className="mt-2 space-y-1">
+          {frequencies.slice(0, expanded ? undefined : 4).map((r) => (
+            <div key={String(r.value)} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[10px] font-bold">{r.label}</span>
+              <div className="w-20 h-2 border border-border bg-muted overflow-hidden">
+                <div className="h-full transition-all" style={{ width: `${r.percent}%`, background: color }} />
+              </div>
+              <span className="w-8 text-right text-[9px] font-bold tabular-nums">{r.percent}%</span>
+            </div>
+          ))}
+        </div>
+        {expanded && frequencies.length > 4 && (
+          <div className="mt-3 h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={frequencies.map((r) => ({ name: r.label, value: r.count, pct: r.percent }))} layout="vertical"
+                margin={{ top: 0, right: 28, left: 4, bottom: 0 }}>
+                <XAxis type="number" fontSize={9} allowDecimals={false} tick={{ fill: "var(--muted-foreground)" }} />
+                <YAxis type="category" dataKey="name" fontSize={9} width={88} tick={{ fill: "var(--muted-foreground)" }} />
+                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0, fontSize: 11 }} />
+                <Bar dataKey="value" fill={color} stroke="var(--border)" strokeWidth={1.5} radius={[0, 1, 1, 0]} name="Count" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Select many ───────────────────────────────────────────────────────────
+  if (["select_many", "multiselect"].includes(field.type)) {
+    const { frequencies, n } = computeCategoricalStats(nonEmpty, opts);
+    return (
+      <div className="brutal p-3">
+        {header}
+        <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">n={n} responses (multi-select)</div>
+        <div className="mt-2 space-y-1">
+          {frequencies.slice(0, expanded ? undefined : 5).map((r) => (
+            <div key={String(r.value)} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[10px] font-bold">{r.label}</span>
+              <div className="w-20 h-2 border border-border bg-muted overflow-hidden">
+                <div className="h-full" style={{ width: `${r.percent}%`, background: color }} />
+              </div>
+              <span className="w-8 text-right text-[9px] tabular-nums">{r.percent}%</span>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -304,96 +492,40 @@ function FieldBlock({ field, submissions, isLongitudinal, color }: { field: Form
     const { stats, frequencies } = computeRatingStats(nonEmpty, field.maxRating ?? 5);
     return (
       <div className="brutal p-3">
-        <FieldHeader field={field} answered={stats.n} total={submissions.length} />
-        <div className="mb-2 text-sm font-bold">Mean: {stats.mean} / {field.maxRating ?? 5}</div>
-        <FrequencyTable rows={frequencies} />
+        {header}
+        <div className="mt-3 flex items-end gap-2">
+          <div className="font-display text-4xl uppercase leading-none">{stats.mean}</div>
+          <div className="pb-1 text-[9px] font-bold uppercase text-muted-foreground">/ {field.maxRating ?? 5}</div>
+        </div>
+        <div className="mt-2 space-y-1">
+          {frequencies.map((r) => (
+            <div key={String(r.value)} className="flex items-center gap-2">
+              <span className="w-4 text-center text-[10px] font-bold">{"★".repeat(Number(r.value))}</span>
+              <div className="flex-1 h-2 border border-border bg-muted overflow-hidden">
+                <div className="h-full" style={{ width: `${r.percent}%`, background: color }} />
+              </div>
+              <span className="w-8 text-right text-[9px] tabular-nums">{r.percent}%</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
-  // ── Yes/No / Boolean ──────────────────────────────────────────────────────
-  if (field.type === "yes_no" || field.type === "boolean") {
-    const { frequencies, n } = computeYesNoStats(nonEmpty.map((v) => (v === true ? "true" : v === false ? "false" : String(v))));
-    const pieData = frequencies.map((r) => ({ name: r.label, value: r.count }));
-    return (
-      <div className="brutal p-3">
-        <FieldHeader field={field} answered={n} total={submissions.length} />
-        <FrequencyTable rows={frequencies} />
-        {pieData.length > 0 && (
-          <div className="h-36">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={28} outerRadius={55} paddingAngle={2} stroke="var(--border)" strokeWidth={2}>
-                  {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", fontWeight: 700 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Select one (+ legacy select/radio) ───────────────────────────────────
-  if (field.type === "select_one" || field.type === "select" || field.type === "radio") {
-    const { frequencies, n } = computeCategoricalStats(nonEmpty, opts);
-    const chartData = frequencies.map((r) => ({ name: r.label, value: r.count, percent: r.percent }));
-    return (
-      <div className="brutal p-3">
-        <FieldHeader field={field} answered={n} total={submissions.length} />
-        <FrequencyTable rows={frequencies} />
-        {chartType === "pie" ? (
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={chartData} dataKey="value" nameKey="name" paddingAngle={2} stroke="var(--border)" strokeWidth={2}>
-                  {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Legend wrapperStyle={{ fontSize: 10, textTransform: "uppercase", fontWeight: 700 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 24, left: 4, bottom: 0 }}>
-                <XAxis type="number" fontSize={9} stroke="var(--foreground)" allowDecimals={false} />
-                <YAxis type="category" dataKey="name" fontSize={9} stroke="var(--foreground)" width={90} />
-                <Tooltip contentStyle={{ border: "2px solid var(--border)", borderRadius: 0 }} />
-                <Bar dataKey="value" fill={color} stroke="var(--border)" strokeWidth={2} name="Count" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Select many / multiselect ─────────────────────────────────────────────
-  if (field.type === "select_many" || field.type === "multiselect") {
-    const { frequencies, n } = computeCategoricalStats(nonEmpty, opts);
-    return (
-      <div className="brutal p-3">
-        <FieldHeader field={field} answered={n} total={submissions.length} />
-        <FrequencyTable rows={frequencies} />
-      </div>
-    );
-  }
-
-  // ── Text / Textarea / Date / Time / Datetime — show recent values ─────────
+  // ── Text / Date / Other — recent values list ──────────────────────────────
   return (
     <div className="brutal p-3">
-      <FieldHeader field={field} answered={nonEmpty.length} total={submissions.length} />
-      <ul className="grid gap-1 max-h-48 overflow-auto">
-        {nonEmpty.slice(-8).reverse().map((v, i) => (
-          <li key={i} className="border-2 border-border bg-card px-3 py-1.5 text-xs font-semibold">
-            {String(v)}
-          </li>
+      {header}
+      <div className="mt-2 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">{answered} answers</div>
+      <ul className="mt-2 space-y-1 max-h-36 overflow-auto">
+        {nonEmpty.slice(-(expanded ? 20 : 5)).reverse().map((v, i) => (
+          <li key={i} className="border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold truncate">{String(v)}</li>
         ))}
       </ul>
     </div>
   );
 }
+
+// keep NumericStats used in imports satisfied
+type _NS = NumericStats;
+type _FR = FrequencyRow;
