@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useStore } from "@/lib/store";
+import { useStore, type FormDef } from "@/lib/store";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
@@ -12,7 +12,7 @@ import {
   computeRatingStats, buildTimeSeries, selectChartType,
   type NumericStats, type FrequencyRow,
 } from "@/lib/analytics";
-import { Download, List, ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2 } from "lucide-react";
+import { Download, List, ChevronDown, ChevronUp, ChevronRight, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2 } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 
 export const Route = createFileRoute("/analytics/$id")({ component: FormAnalytics });
@@ -70,10 +70,15 @@ function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission
 
 function FormAnalytics() {
   const { id } = Route.useParams();
-  const form = useStore((s) => s.forms.find((f) => f.id === id));
+  const allForms = useStore((s) => s.forms);
+  const form = allForms.find((f) => f.id === id);
   const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const formColor = getFormColor(id);
+
+  // Parent-child relationships
+  const parentForm = form?.parentFormId ? allForms.find((f) => f.id === form.parentFormId) : null;
+  const childForms = allForms.filter((f) => f.parentFormId === id);
 
   const allSubs = useMemo(
     () => rawSubs.filter((x) => x.formId === id).sort((a, b) => a.createdAt - b.createdAt),
@@ -117,8 +122,8 @@ function FormAnalytics() {
     <>
       <PageHeader
         title={form.name}
-        subtitle={form.category}
-        back={`/forms/${id}`}
+        subtitle={parentForm ? `Child of: ${parentForm.name}` : form.category}
+        back={parentForm ? `/analytics/${parentForm.id}` : "/analytics"}
         variant="dark"
         action={
           <div className="flex gap-1.5">
@@ -200,6 +205,41 @@ function FormAnalytics() {
               ))}
             </div>
           </>
+        )}
+
+        {/* ── Linked child forms ── */}
+        {childForms.length > 0 && (
+          <div className="mt-6">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Linked follow-up forms ({childForms.length})
+            </div>
+            <div className="grid gap-2">
+              {childForms.map((child) => {
+                const childSubs = rawSubs.filter((s) => s.formId === child.id);
+                const childColor = getFormColor(child.id);
+                return (
+                  <Link
+                    key={child.id}
+                    to="/analytics/$id"
+                    params={{ id: child.id }}
+                    className="brutal flex items-center gap-3 p-3 hover:bg-primary/20"
+                  >
+                    <div className="h-9 w-9 shrink-0 border-2 border-border flex items-center justify-center text-[10px] font-bold"
+                      style={{ background: childColor }}>
+                      {childSubs.length}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display text-sm uppercase truncate">{child.name}</div>
+                      <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                        {childSubs.length} response{childSubs.length !== 1 ? "s" : ""} · {child.fields.filter(f => f.type !== "section_header").length} fields
+                      </div>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         )}
       </PageShell>
     </>
