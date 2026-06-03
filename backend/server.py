@@ -1839,15 +1839,28 @@ async def sync_pull(
     async def _submissions():
         owned_f_res = await db.execute(select(FormDef.id).where(FormDef.owner_id == user.id))
         owned_f = {str(row[0]) for row in owned_f_res.all()}
-        base = or_(
-            Submission.owner_id == user.id,
-            Submission.patient_id.in_(shared_p),
-            Submission.form_id.in_(shared_f),
-            Submission.form_id.in_(owned_f),
-        )
-        q = select(Submission).where(
-            base if since_dt is None else and_(base, Submission.created_at > since_dt)
-        )
+        if since_dt is None:
+            base = or_(
+                Submission.owner_id == user.id,
+                Submission.patient_id.in_(shared_p),
+                Submission.form_id.in_(shared_f),
+                Submission.form_id.in_(owned_f),
+            )
+            q = select(Submission).where(base)
+        else:
+            # For owned/own submissions: apply incremental filter.
+            # For shared form submissions: always return all — submissions may have
+            # client-set createdAt timestamps in the past that predate last sync.
+            own_cond = and_(
+                or_(
+                    Submission.owner_id == user.id,
+                    Submission.patient_id.in_(shared_p),
+                    Submission.form_id.in_(owned_f),
+                ),
+                Submission.created_at > since_dt,
+            )
+            shared_cond = Submission.form_id.in_(shared_f) if shared_f else False
+            q = select(Submission).where(or_(own_cond, shared_cond))
         res = await db.execute(q.order_by(Submission.created_at.desc()).limit(2000))
         rows = res.scalars().all()
         out = []
