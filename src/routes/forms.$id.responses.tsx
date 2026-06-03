@@ -592,10 +592,10 @@ function FormResponses() {
             <Link
               to="/analytics/$id"
               params={{ id: form.id }}
-              className="border-2 border-border bg-card p-1.5 hover:bg-muted"
-              title="View analytics"
+              className="border-2 border-border bg-primary px-2.5 py-1.5 hover:bg-primary/80 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
+              title="View analytics charts"
             >
-              <BarChart2 className="h-3.5 w-3.5" />
+              <BarChart2 className="h-3.5 w-3.5" /> Analytics
             </Link>
             {isOwner && submissions.length > 0 && !form.longitudinal && (
               <>
