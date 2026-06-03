@@ -1801,8 +1801,16 @@ async def sync_pull(
         ]
 
     async def _forms():
-        base = or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_f))
-        q = select(FormDef).where(base if since_dt is None else and_(base, FormDef.updated_at > since_dt))
+        # Owned forms: only return those updated since last sync (incremental).
+        # Shared forms: always return ALL — a share may be new even if the form itself
+        # hasn't been modified, so applying updated_at > since_dt would silently miss them.
+        if since_dt is None:
+            base = or_(FormDef.owner_id == user.id, FormDef.id.in_(shared_f))
+            q = select(FormDef).where(base)
+        else:
+            owned_cond = and_(FormDef.owner_id == user.id, FormDef.updated_at > since_dt)
+            shared_cond = FormDef.id.in_(shared_f) if shared_f else False
+            q = select(FormDef).where(or_(owned_cond, shared_cond))
         res = await db.execute(q.order_by(FormDef.created_at.desc()))
         rows = res.scalars().all()
 
