@@ -72,15 +72,16 @@ function exportCsv(form: { name: string; fields: FormField[] }, subs: Submission
 function FormAnalytics() {
   const { id } = Route.useParams();
   const allForms = useStore((s) => s.forms);
-  const form = allForms.find((f) => f.id === id);
-  const longSubs = useStore((s) => s.longitudinalSubmissions.filter((s) => s.formId === id));
+  const allLongSubs = useStore((s) => s.longitudinalSubmissions);
   const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
-  const formColor = getFormColor(id);
 
-  // Parent-child relationships
-  const parentForm = form?.parentFormId ? allForms.find((f) => f.id === form.parentFormId) : null;
-  const childForms = allForms.filter((f) => f.parentFormId === id);
+  // Derived — stable references via useMemo, never inside useStore selector
+  const form = useMemo(() => allForms.find((f) => f.id === id), [allForms, id]);
+  const longSubs = useMemo(() => allLongSubs.filter((s) => s.formId === id), [allLongSubs, id]);
+  const formColor = getFormColor(id);
+  const parentForm = useMemo(() => form?.parentFormId ? allForms.find((f) => f.id === form.parentFormId) : null, [allForms, form]);
+  const childForms = useMemo(() => allForms.filter((f) => f.parentFormId === id), [allForms, id]);
 
   const allSubs = useMemo(
     () => rawSubs.filter((x) => x.formId === id).sort((a, b) => a.createdAt - b.createdAt),
