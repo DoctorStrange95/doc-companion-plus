@@ -74,11 +74,6 @@ function FormAnalytics() {
   const allForms = useStore((s) => s.forms);
   const form = allForms.find((f) => f.id === id);
   const longSubs = useStore((s) => s.longitudinalSubmissions.filter((s) => s.formId === id));
-
-  // Route longitudinal forms to dedicated view
-  if (form?.longitudinal) {
-    return <LongitudinalAnalytics form={form} subjects={longSubs} />;
-  }
   const rawSubs = useStore((s) => s.submissions);
   const [dateRange, setDateRange] = useState<DateRange>("30d");
   const formColor = getFormColor(id);
@@ -99,7 +94,6 @@ function FormAnalytics() {
     [form],
   );
 
-  // Completion rate: avg % of data fields answered per submission
   const completionRate = useMemo(() => {
     if (!submissions.length || !dataFields.length) return 0;
     const total = submissions.reduce((acc, s) => {
@@ -111,6 +105,11 @@ function FormAnalytics() {
     }, 0);
     return Math.round((total / submissions.length) * 100);
   }, [submissions, dataFields]);
+
+  // All hooks called — now safe to branch on form type
+  if (form?.longitudinal) {
+    return <LongitudinalAnalytics form={form} subjects={longSubs} />;
+  }
 
   if (!form) {
     return (
