@@ -2445,6 +2445,26 @@ async def admin_list_users(
     ]
 
 
+@app.post("/api/admin/users/{uid}/set-role")
+async def admin_set_role(
+    uid: str,
+    role: str = "worker",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    valid_roles = {"admin", "doctor", "worker"}
+    if role not in valid_roles:
+        raise HTTPException(400, f"Role must be one of: {', '.join(valid_roles)}")
+    try:
+        await db.execute(text("UPDATE users SET role=:role WHERE id=:uid"), {"role": role, "uid": uid})
+    except Exception:
+        await db.execute(text("UPDATE users SET role=:role WHERE id::text=:uid"), {"role": role, "uid": uid})
+    await db.commit()
+    return {"id": uid, "role": role}
+
+
 # ── Admin: form deployment ────────────────────────────────────────────────────
 
 class AdminFormOut(BaseModel):
