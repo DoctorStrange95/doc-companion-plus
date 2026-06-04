@@ -555,53 +555,52 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
               </div>
             ) : (
               <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-yellow-50">
-                <span className="text-[11px] font-bold text-yellow-800">⏸ Paused · GPS saved · Tap Resume to continue</span>
+                <span className="text-[11px] font-bold text-yellow-800">⏸ Paused — tap Resume to continue walking</span>
               </div>
             )}
           </div>
 
-          {/* Guidance */}
-          {tracking && (
-            <div className="bg-yellow-50 border-2 border-yellow-400 px-3 py-2 flex items-center gap-2">
-              <span className="text-lg shrink-0">⚡</span>
-              <span className="text-[11px] font-bold text-yellow-800">Keep screen on · Walk boundary · Pause to rest</span>
-            </div>
-          )}
-        </div>
-
-        {/* Sticky bottom tracking bar — always reachable */}
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background border-t-4 border-border safe-area-inset-bottom"
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {/* ── Inline action buttons — directly below map, always visible ── */}
           {tracking ? (
-            <div className="p-3 flex gap-2">
-              <button onClick={() => { setShowLandmarkPicker(true); setPendingLandmarkType(null); }}
-                className="flex-1 flex items-center justify-center gap-2 border-2 border-border bg-card py-4 font-bold uppercase tracking-wider text-sm active:bg-primary/20"
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => { setShowLandmarkPicker(true); setPendingLandmarkType(null); }}
+                className="flex items-center justify-center gap-2 border-4 border-border bg-card py-5 font-bold uppercase tracking-wider text-base active:bg-primary/20"
                 style={{ touchAction: "manipulation" }}>
-                <MapPin className="h-5 w-5" /> Drop Pin
+                <MapPin className="h-6 w-6" /> Drop Pin
               </button>
-              <button onClick={() => pause(points, landmarks, startTime)}
-                className="flex-1 flex items-center justify-center gap-2 border-2 border-border bg-yellow-400 py-4 font-bold uppercase tracking-wider text-sm active:opacity-80"
+              <button
+                onClick={() => pause(points, landmarks, startTime)}
+                className="flex items-center justify-center gap-2 border-4 border-border bg-yellow-400 py-5 font-bold uppercase tracking-wider text-base active:opacity-80"
                 style={{ touchAction: "manipulation" }}>
-                <Square className="h-5 w-5" /> Pause
+                <Square className="h-6 w-6" /> Pause
               </button>
             </div>
           ) : (
-            <div className="p-3 flex gap-2">
-              <button onClick={() => void resume(points)}
-                className="flex-[2] flex items-center justify-center gap-2 bg-primary border-2 border-border py-4 font-bold uppercase tracking-wider text-base active:opacity-80"
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => void resume(points)}
+                className="flex items-center justify-center gap-2 bg-primary border-4 border-border py-5 font-bold uppercase tracking-wider text-base active:opacity-80"
                 style={{ touchAction: "manipulation" }}>
-                <Play className="h-5 w-5" /> Resume
+                <Play className="h-6 w-6" /> Resume
               </button>
-              <button onClick={() => finish(points, landmarks, startTime)}
-                className="flex-1 flex items-center justify-center gap-2 bg-foreground text-background border-2 border-border py-4 font-bold uppercase tracking-wider text-sm active:opacity-80"
+              <button
+                onClick={() => finish(points, landmarks, startTime)}
+                className="flex items-center justify-center gap-2 bg-foreground text-background border-4 border-border py-5 font-bold uppercase tracking-wider text-sm active:opacity-80"
                 style={{ touchAction: "manipulation" }}>
-                <Square className="h-4 w-4" /> Finish &amp; Save
+                <Square className="h-5 w-5" /> Finish &amp; Save
               </button>
             </div>
           )}
+
+          {/* Guidance strip */}
+          {tracking && (
+            <div className="bg-yellow-50 border-2 border-yellow-400 px-3 py-2 flex items-center gap-2">
+              <span className="text-lg shrink-0">⚡</span>
+              <span className="text-[11px] font-bold text-yellow-800">Keep screen on · Walk boundary · Tap Pause to rest</span>
+            </div>
+          )}
         </div>
-        {/* Spacer so sticky bar doesn't overlap content */}
-        <div className="h-24" />
 
         {/* Landmarks already dropped (removable while tracking/paused) */}
         {landmarks.length > 0 && (
