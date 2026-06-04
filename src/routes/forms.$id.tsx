@@ -54,7 +54,13 @@ function PendingRequestsPanel({ formId }: { formId: string }) {
     }
   };
 
-  useEffect(() => { void load(); }, [formId]);
+  useEffect(() => {
+    void load();
+    // Poll every 30s so new requests appear without manual refresh
+    const t = setInterval(() => { void load(); }, 30000);
+    return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formId]);
 
   const handleApprove = async (req: AccessRequest) => {
     setApproving(req.id);
@@ -236,6 +242,7 @@ function FormDetail() {
   const [showInstallHelp, setShowInstallHelp] = useState(false);
 
   const [showShare, setShowShare] = useState(false);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [copied, setCopied] = useState<"fill" | "analytics" | null>(null);
   const [deleteStep, setDeleteStep] = useState(0);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -275,6 +282,23 @@ function FormDetail() {
       setShowDuplicateBanner(true);
     }
   }, [id]);
+
+  // Poll for pending access requests (badge on Share button)
+  useEffect(() => {
+    if (!formId || !form?.shareToken) return;
+    const tok = getToken();
+    if (!tok) return;
+    const check = () => {
+      fetch(`${API_BASE}/api/forms/${formId}/access-requests`, { headers: { Authorization: `Bearer ${tok}` } })
+        .then((r) => r.ok ? r.json() as Promise<AccessRequest[]> : [])
+        .then((data) => setPendingRequestCount((data as AccessRequest[]).filter((r) => r.status === "pending").length))
+        .catch(() => {});
+    };
+    check();
+    const t = setInterval(check, 60000);
+    return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formId, form?.shareToken]);
 
   // When the share modal opens: ensure the form exists in the backend DB.
   // Seed forms and forms created offline have no ownerId — push them directly
@@ -716,10 +740,15 @@ function FormDetail() {
             {(!form.shared || form.canEdit) && (
               <button
                 onClick={() => setShowShare(true)}
-                className="brutal flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
+                className="brutal relative flex items-center justify-center gap-2 p-3 text-xs font-bold uppercase tracking-wider hover:bg-primary/30"
               >
                 <Share2 className="h-4 w-4" />
                 {form.shared ? "Manage team" : "Share"}
+                {pendingRequestCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-destructive text-[9px] font-black text-destructive-foreground">
+                    {pendingRequestCount}
+                  </span>
+                )}
               </button>
             )}
 
@@ -1013,6 +1042,13 @@ function FormDetail() {
 
             <div className="p-4 space-y-5">
 
+              {/* ── Access requests — always visible at top when share token exists ── */}
+              {form.shareToken && (
+                <div className="border-2 border-primary/40 bg-primary/5 rounded-sm">
+                  <PendingRequestsPanel formId={form.id} />
+                </div>
+              )}
+
               {/* ── Link access toggle ── */}
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Fill link access</div>
@@ -1156,12 +1192,7 @@ function FormDetail() {
                 )}
               </div>
 
-              {/* ── Pending access requests ── */}
-              {!(form.isPublic ?? true) && (
-                <div className="border-t-2 border-border pt-4">
-                  <PendingRequestsPanel formId={form.id} />
-                </div>
-              )}
+              {/* access requests panel moved to top of modal */}
 
               {/* ── Transfer ownership ── */}
               <div className="border-t-2 border-border pt-5 space-y-2">
