@@ -15,6 +15,7 @@ import {
 } from "@/lib/analytics";
 import { Download, List, ChevronDown, ChevronUp, ChevronRight, TrendingUp, TrendingDown, Minus, Clock, Users, CheckCircle2, BarChart2, User } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
+import { GpsTrackSummary, type GpsTrackData, fmtArea, fmtDist } from "@/components/fields/GpsTrackField";
 
 export const Route = createFileRoute("/analytics/$id")({ component: FormAnalytics });
 
@@ -774,6 +775,41 @@ function FieldBlock({ field, submissions, isLongitudinal, color }: {
               <span className="w-8 text-right text-[9px] tabular-nums">{r.percent}%</span>
             </div>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── GPS Area Map ─────────────────────────────────────────────────────────
+  if (field.type === "gps_track") {
+    return (
+      <div className="brutal p-3 sm:col-span-2">
+        {header}
+        <div className="mt-3 space-y-3">
+          {nonEmpty.slice(0, expanded ? undefined : 1).map((v, i) => {
+            const data = v as GpsTrackData;
+            if (!data?.points) return null;
+            return (
+              <div key={i} className="border border-border">
+                <div className="px-2 py-1 bg-muted flex items-center gap-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <span>Response {answered - i}</span>
+                  <span>{fmtArea(data.areaM2)}</span>
+                  <span>{fmtDist(data.distanceM)} perimeter</span>
+                  <span>{(data.landmarks ?? []).length} pins</span>
+                  <span>{new Date(data.startTime).toLocaleDateString("en-GB")}</span>
+                </div>
+                <div className="p-2">
+                  <GpsTrackSummary data={data} printable />
+                </div>
+              </div>
+            );
+          })}
+          {!expanded && answered > 1 && (
+            <button onClick={() => setExpanded(true)}
+              className="w-full border border-border py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">
+              Show all {answered} maps
+            </button>
+          )}
         </div>
       </div>
     );

@@ -34,7 +34,13 @@ function formatCellValue(val: unknown, field: FormField): string {
   if (typeof val === "object") {
     const o = val as Record<string, unknown>;
     if ("systolic" in o) return `${o.systolic}/${o.diastolic} mmHg`;
-    if ("lat" in o) return `${(o.lat as number).toFixed(4)}, ${(o.lng as number).toFixed(4)}`;
+    if ("lat" in o && !("points" in o)) return `${(o.lat as number).toFixed(4)}, ${(o.lng as number).toFixed(4)}`;
+    if ("points" in o) {
+      const pts = (o.points as unknown[]).length;
+      const areaM2 = o.areaM2 as number ?? 0;
+      const areaLabel = areaM2 < 1000 ? `${areaM2.toFixed(0)}m²` : `${(areaM2 / 10000).toFixed(3)}ha`;
+      return `🗺 ${pts} pts · ${areaLabel}`;
+    }
     if (isFileUpload(val)) return val.name;
     if (isGrowthResult(val)) return `WAZ ${fmtZ(val.waz)} | HAZ ${fmtZ(val.haz)} | WHZ ${fmtZ(val.whz)} | ${val.status ?? "—"}`;
     if (isAgeValue(val)) return `${val.value} ${val.unit}`;
