@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { MapPin, Play, Square, Navigation, RefreshCw, AlertTriangle, Plus, X } from "lucide-react";
+import { MapPin, Play, Square, Navigation, RefreshCw, AlertTriangle, X, Satellite } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -297,12 +297,42 @@ interface Props {
   readOnly?: boolean;
 }
 
+const DRAFT_KEY = "gps_track_draft";
+
+interface GpsDraft {
+  points: GpsPoint[];
+  landmarks: Landmark[];
+  startTime: number;
+  savedAt: number;
+}
+
+function saveDraft(pts: GpsPoint[], lms: Landmark[], st: number) {
+  try {
+    const draft: GpsDraft = { points: pts, landmarks: lms, startTime: st, savedAt: Date.now() };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {}
+}
+
+function loadDraft(): GpsDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as GpsDraft;
+    // Discard drafts older than 24 hours
+    if (Date.now() - d.savedAt > 86400000) { localStorage.removeItem(DRAFT_KEY); return null; }
+    return d;
+  } catch { return null; }
+}
+
+function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
+
 export function GpsTrackField({ value, onChange, readOnly }: Props) {
   const [tracking, setTracking] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [points, setPoints] = useState<GpsPoint[]>(value?.points ?? []);
   const [landmarks, setLandmarks] = useState<Landmark[]>(value?.landmarks ?? []);
   const [startTime, setStartTime] = useState<number | null>(value ? value.startTime : null);
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(value?.durationMs ?? 0);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(!!value);
@@ -310,37 +340,31 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
   const [landmarkLabel, setLandmarkLabel] = useState("");
   const [pendingLandmarkType, setPendingLandmarkType] = useState<string | null>(null);
   const [currentPos, setCurrentPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [draft, setDraft] = useState<GpsDraft | null>(() => (!value ? loadDraft() : null));
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const watchRef = useRef<number | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedBaseRef = useRef(value?.durationMs ?? 0);
 
   useEffect(() => {
-    if (canvasRef.current) drawMap(canvasRef.current, points, landmarks, done).catch(() => {});
-  }, [points, landmarks, done]);
+    if (canvasRef.current) drawMap(canvasRef.current, points, landmarks, done || paused).catch(() => {});
+  }, [points, landmarks, done, paused]);
 
   useEffect(() => {
     if (tracking && startTime) {
-      timerRef.current = setInterval(() => setElapsed(Date.now() - startTime), 1000);
+      const base = elapsedBaseRef.current;
+      const t0 = Date.now();
+      timerRef.current = setInterval(() => setElapsed(base + (Date.now() - t0)), 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [tracking, startTime]);
 
-  const start = useCallback(async () => {
-    if (!("geolocation" in navigator)) { setError("GPS not available on this device."); return; }
-    setError(null); setPoints([]); setLandmarks([]); setDone(false);
-    const now = Date.now();
-    setStartTime(now); setTracking(true);
-    try {
-      if ("wakeLock" in navigator) {
-        // @ts-ignore
-        wakeLockRef.current = await navigator.wakeLock.request("screen");
-      }
-    } catch {}
-    let lastPt: GpsPoint | null = null;
+  const beginWatch = useCallback((existingPoints: GpsPoint[]) => {
+    let lastPt: GpsPoint | null = existingPoints[existingPoints.length - 1] ?? null;
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const pt: GpsPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, ts: pos.timestamp };
@@ -356,26 +380,61 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
     );
   }, []);
 
-  const stop = useCallback(() => {
+  const startFresh = useCallback(async () => {
+    if (!("geolocation" in navigator)) { setError("GPS not available on this device."); return; }
+    setError(null); const freshPts: GpsPoint[] = []; const freshLms: Landmark[] = [];
+    setPoints(freshPts); setLandmarks(freshLms); setDone(false); setPaused(false);
+    const now = Date.now(); setStartTime(now); setTracking(true);
+    elapsedBaseRef.current = 0; setElapsed(0);
+    try { if ("wakeLock" in navigator) { // @ts-ignore
+      wakeLockRef.current = await navigator.wakeLock.request("screen"); } } catch {}
+    beginWatch(freshPts);
+  }, [beginWatch]);
+
+  const continueFromDraft = useCallback(async (d: GpsDraft) => {
+    if (!("geolocation" in navigator)) { setError("GPS not available on this device."); return; }
+    setError(null);
+    setPoints(d.points); setLandmarks(d.landmarks); setDraft(null);
+    setStartTime(d.startTime); setDone(false); setPaused(false); setTracking(true);
+    const sessionMs = Date.now() - d.savedAt;
+    elapsedBaseRef.current = sessionMs; setElapsed(sessionMs);
+    try { if ("wakeLock" in navigator) { // @ts-ignore
+      wakeLockRef.current = await navigator.wakeLock.request("screen"); } } catch {}
+    beginWatch(d.points);
+  }, [beginWatch]);
+
+  const pause = useCallback((currentPoints: GpsPoint[], currentLandmarks: Landmark[], currentStart: number | null) => {
     if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
     wakeLockRef.current?.release().catch(() => {});
-    setTracking(false); setDone(true);
+    setTracking(false); setPaused(true);
+    if (currentStart) saveDraft(currentPoints, currentLandmarks, currentStart);
+    setDraft(null);
+  }, []);
+
+  const resume = useCallback(async (currentPoints: GpsPoint[]) => {
+    if (!("geolocation" in navigator)) return;
+    setError(null); setPaused(false); setTracking(true);
+    try { if ("wakeLock" in navigator) { // @ts-ignore
+      wakeLockRef.current = await navigator.wakeLock.request("screen"); } } catch {}
+    beginWatch(currentPoints);
+  }, [beginWatch]);
+
+  const finish = useCallback((currentPoints: GpsPoint[], currentLandmarks: Landmark[], currentStart: number | null) => {
+    if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
+    wakeLockRef.current?.release().catch(() => {});
+    clearDraft(); setTracking(false); setPaused(false); setDone(true);
   }, []);
 
   const dropLandmark = useCallback((type: string, label: string) => {
     if (!currentPos) return;
     const lm: Landmark = {
       id: `lm_${Date.now()}`,
-      lat: currentPos.lat,
-      lng: currentPos.lng,
-      type,
+      lat: currentPos.lat, lng: currentPos.lng, type,
       label: label || LANDMARK_TYPES.find((t) => t.id === type)?.label || type,
       ts: Date.now(),
     };
     setLandmarks((prev) => [...prev, lm]);
-    setShowLandmarkPicker(false);
-    setPendingLandmarkType(null);
-    setLandmarkLabel("");
+    setShowLandmarkPicker(false); setPendingLandmarkType(null); setLandmarkLabel("");
   }, [currentPos]);
 
   useEffect(() => {
@@ -400,155 +459,253 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
 
   if (readOnly && value) return <GpsTrackSummary data={value} />;
 
+  const accColor = accuracy === null ? "" : accuracy < 15 ? "text-green-600" : accuracy < 40 ? "text-yellow-600" : "text-red-500";
+  const accLabel = accuracy === null ? "Searching…" : `GPS ±${accuracy.toFixed(0)}m ${accuracy < 15 ? "· excellent" : accuracy < 40 ? "· good" : "· move outside"}`;
+
+  // ── Not started ─────────────────────────────────────────────────────────────
+  if (!tracking && !paused && !done) {
+    return (
+      <div className="space-y-3">
+        <div className="border-2 border-border bg-card">
+          <div className="px-5 py-6 flex flex-col items-center gap-3 text-center">
+            <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-border flex items-center justify-center">
+              <Satellite className="h-8 w-8 text-foreground" />
+            </div>
+            <div>
+              <div className="font-display text-base uppercase tracking-widest">Area Map</div>
+              <div className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                Walk the boundary of the area while GPS records your path.
+                Tap landmarks (wells, roads, schools) as you go.
+              </div>
+            </div>
+          </div>
+
+          {/* Continue from previous session if draft exists */}
+          {draft && draft.points.length > 0 && (
+            <div className="border-t-2 border-border bg-yellow-50 px-4 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-yellow-800 mb-2">
+                📍 Saved session found — {draft.points.length} points · {fmtDist(totalDistance(draft.points))}
+              </div>
+              <div className="text-[10px] text-yellow-700 mb-3">
+                Saved {new Date(draft.savedAt).toLocaleString("en-GB", { timeStyle: "short", dateStyle: "short" })}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => void continueFromDraft(draft)}
+                  className="flex-[2] flex items-center justify-center gap-2 bg-yellow-400 border-2 border-border py-3.5 font-bold uppercase tracking-wider text-sm active:opacity-80"
+                  style={{ touchAction: "manipulation" }}>
+                  <Play className="h-5 w-5" /> Continue Session
+                </button>
+                <button onClick={() => { clearDraft(); setDraft(null); }}
+                  className="flex-1 border-2 border-border py-3.5 text-[11px] font-bold uppercase text-muted-foreground active:bg-muted"
+                  style={{ touchAction: "manipulation" }}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => void startFresh()}
+            className={`w-full flex items-center justify-center gap-3 bg-primary border-t-2 border-border py-5 font-bold uppercase tracking-wider text-base active:opacity-80 ${draft ? "text-sm py-4" : ""}`}
+            style={{ touchAction: "manipulation" }}
+          >
+            <Play className="h-6 w-6" /> {draft ? "Start Fresh Instead" : "Start Area Tracking"}
+          </button>
+        </div>
+        {error && (
+          <div className="flex items-center gap-2 border-2 border-destructive bg-destructive/10 px-3 py-2 text-[11px] font-bold text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Tracking active ──────────────────────────────────────────────────────────
+  if (tracking || paused) {
+    return (
+      <>
+        <div className="space-y-2">
+          {/* Live map */}
+          <div className="border-2 border-border bg-card overflow-hidden">
+            <canvas ref={canvasRef} width={480} height={280}
+              className="w-full block" style={{ aspectRatio: "480/280", display: "block" }} />
+            {/* Stats strip */}
+            <div className="grid grid-cols-4 gap-px border-t-2 border-border bg-border">
+              {[
+                { label: "Points", value: String(points.length) },
+                { label: "Distance", value: fmtDist(totalDistance(points)) },
+                { label: "Pins", value: String(landmarks.length) },
+                { label: "Time", value: fmtDuration(elapsed) },
+              ].map(({ label, value: v }) => (
+                <div key={label} className="bg-card py-2 text-center">
+                  <div className="font-display text-sm leading-none">{v}</div>
+                  <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+            {/* GPS accuracy bar / paused indicator */}
+            {tracking ? (
+              <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-muted/40">
+                <Navigation className={`h-3.5 w-3.5 shrink-0 ${accColor}`} />
+                <span className={`text-[11px] font-bold ${accColor}`}>{accLabel}</span>
+                {accuracy !== null && accuracy > 50 && (
+                  <span className="ml-auto text-[10px] text-destructive font-bold">Move outside</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 border-t border-border bg-yellow-50">
+                <span className="text-[11px] font-bold text-yellow-800">⏸ Paused · GPS saved · Tap Resume to continue</span>
+              </div>
+            )}
+          </div>
+
+          {/* Guidance */}
+          {tracking && (
+            <div className="bg-yellow-50 border-2 border-yellow-400 px-3 py-2 flex items-center gap-2">
+              <span className="text-lg shrink-0">⚡</span>
+              <span className="text-[11px] font-bold text-yellow-800">Keep screen on · Walk boundary · Pause to rest</span>
+            </div>
+          )}
+        </div>
+
+        {/* Sticky bottom tracking bar — always reachable */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background border-t-4 border-border safe-area-inset-bottom"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {tracking ? (
+            <div className="p-3 flex gap-2">
+              <button onClick={() => { setShowLandmarkPicker(true); setPendingLandmarkType(null); }}
+                className="flex-1 flex items-center justify-center gap-2 border-2 border-border bg-card py-4 font-bold uppercase tracking-wider text-sm active:bg-primary/20"
+                style={{ touchAction: "manipulation" }}>
+                <MapPin className="h-5 w-5" /> Drop Pin
+              </button>
+              <button onClick={() => pause(points, landmarks, startTime)}
+                className="flex-1 flex items-center justify-center gap-2 border-2 border-border bg-yellow-400 py-4 font-bold uppercase tracking-wider text-sm active:opacity-80"
+                style={{ touchAction: "manipulation" }}>
+                <Square className="h-5 w-5" /> Pause
+              </button>
+            </div>
+          ) : (
+            <div className="p-3 flex gap-2">
+              <button onClick={() => void resume(points)}
+                className="flex-[2] flex items-center justify-center gap-2 bg-primary border-2 border-border py-4 font-bold uppercase tracking-wider text-base active:opacity-80"
+                style={{ touchAction: "manipulation" }}>
+                <Play className="h-5 w-5" /> Resume
+              </button>
+              <button onClick={() => finish(points, landmarks, startTime)}
+                className="flex-1 flex items-center justify-center gap-2 bg-foreground text-background border-2 border-border py-4 font-bold uppercase tracking-wider text-sm active:opacity-80"
+                style={{ touchAction: "manipulation" }}>
+                <Square className="h-4 w-4" /> Finish &amp; Save
+              </button>
+            </div>
+          )}
+        </div>
+        {/* Spacer so sticky bar doesn't overlap content */}
+        <div className="h-20" />
+
+        {/* Landmark picker modal */}
+        {showLandmarkPicker && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowLandmarkPicker(false)}>
+            <div className="w-full max-w-md bg-background border-t-4 border-border" style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b-2 border-border">
+                <span className="font-display text-base uppercase">Drop Landmark</span>
+                <button onClick={() => setShowLandmarkPicker(false)} className="border border-border p-1.5"><X className="h-4 w-4" /></button>
+              </div>
+              {!pendingLandmarkType ? (
+                <div className="p-3 grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                  {LANDMARK_TYPES.map((t) => (
+                    <button key={t.id} onClick={() => setPendingLandmarkType(t.id)}
+                      className="flex items-center gap-2 border-2 border-border px-3 py-3 text-left font-bold active:bg-primary"
+                      style={{ touchAction: "manipulation" }}>
+                      <span className="text-2xl">{t.emoji}</span>
+                      <span className="text-[11px] uppercase tracking-wide leading-tight">{t.label}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 space-y-3">
+                  <div className="text-sm font-bold">{LANDMARK_TYPES.find((t) => t.id === pendingLandmarkType)?.emoji} {LANDMARK_TYPES.find((t) => t.id === pendingLandmarkType)?.label}</div>
+                  <input type="text" className="input-brutal w-full" placeholder="Custom label (optional)"
+                    value={landmarkLabel} onChange={(e) => setLandmarkLabel(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") dropLandmark(pendingLandmarkType, landmarkLabel); }} autoFocus />
+                  <div className="flex gap-2">
+                    <button onClick={() => setPendingLandmarkType(null)} className="flex-1 border-2 border-border py-3 text-[11px] font-bold uppercase">Back</button>
+                    <button onClick={() => dropLandmark(pendingLandmarkType, landmarkLabel)} className="flex-1 btn-brutal py-3 text-[11px]">Pin It</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // ── Done / saved ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-3">
-      <div className="border-2 border-border bg-card">
-        {/* Canvas map */}
-        <canvas ref={canvasRef} width={480} height={300}
-          className="w-full block bg-muted"
-          style={{ imageRendering: "crisp-edges" }} />
+      {/* Completed map */}
+      <div className="border-2 border-border bg-card overflow-hidden">
+        <canvas ref={canvasRef} width={480} height={280}
+          className="w-full block" style={{ aspectRatio: "480/280", display: "block" }} />
+
+        {/* Area result — prominent */}
+        {points.length >= 3 && (
+          <div className="border-t-2 border-border bg-primary px-4 py-3 flex items-center justify-between">
+            <div>
+              <div className="text-[9px] font-bold uppercase tracking-widest opacity-60">Calculated Area</div>
+              <div className="font-display text-xl leading-tight mt-0.5">{fmtArea(shoelaceAreaM2(points))}</div>
+            </div>
+            <div className="text-right text-[10px] font-bold uppercase opacity-70 space-y-0.5">
+              <div>{fmtDist(totalDistance(points))} perimeter</div>
+              <div>{points.length} GPS points</div>
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-px border-t-2 border-border bg-border">
+        <div className="grid grid-cols-3 gap-px border-t border-border bg-border">
           {[
-            { label: "Points", value: String(points.length) },
-            { label: "Distance", value: fmtDist(totalDistance(points)) },
-            { label: "Pins", value: String(landmarks.length) },
-            { label: "Time", value: tracking ? fmtDuration(elapsed) : done ? fmtDuration(value?.durationMs ?? 0) : "—" },
+            { label: "Duration", value: fmtDuration(value?.durationMs ?? 0) },
+            { label: "Landmarks", value: String(landmarks.length) },
+            { label: "Date", value: value ? new Date(value.startTime).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "—" },
           ].map(({ label, value: v }) => (
             <div key={label} className="bg-card py-2 text-center">
-              <div className="font-display text-base leading-none">{v}</div>
+              <div className="font-display text-sm leading-none">{v}</div>
               <div className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{label}</div>
             </div>
           ))}
         </div>
-
-        {/* Area result */}
-        {done && points.length >= 3 && (
-          <div className="border-t-2 border-border bg-primary/20 px-4 py-3">
-            <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Calculated area</div>
-            <div className="font-display text-2xl mt-0.5">{fmtArea(shoelaceAreaM2(points))}</div>
-          </div>
-        )}
-
-        {/* GPS accuracy */}
-        {tracking && accuracy !== null && (
-          <div className={`border-t border-border px-3 py-1.5 flex items-center gap-2 text-[10px] ${accuracy < 15 ? "bg-green-50" : accuracy < 40 ? "bg-yellow-50" : "bg-red-50"}`}>
-            <Navigation className={`h-3 w-3 ${accuracy < 15 ? "text-green-600" : accuracy < 40 ? "text-yellow-600" : "text-red-500"}`} />
-            <span>GPS ±{accuracy.toFixed(0)}m {accuracy > 50 ? "— move outside, accuracy low" : accuracy < 15 ? "— excellent" : "— good"}</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="border-t border-border px-3 py-1.5 flex items-center gap-2 text-[10px] text-destructive bg-destructive/5">
-            <AlertTriangle className="h-3 w-3" /> {error}
-          </div>
-        )}
       </div>
-
-      {/* Landmark picker modal */}
-      {showLandmarkPicker && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setShowLandmarkPicker(false)}>
-          <div className="w-full max-w-md bg-background border-t-4 border-border pb-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b-2 border-border">
-              <span className="font-display text-base uppercase">Drop landmark</span>
-              <button onClick={() => setShowLandmarkPicker(false)} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
-            </div>
-            {!pendingLandmarkType ? (
-              <div className="p-3 grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-                {LANDMARK_TYPES.map((t) => (
-                  <button key={t.id} onClick={() => setPendingLandmarkType(t.id)}
-                    className="flex items-center gap-2 border-2 border-border px-3 py-2.5 text-left text-sm font-bold hover:bg-primary/20 active:bg-primary">
-                    <span className="text-xl">{t.emoji}</span>
-                    <span className="text-[11px] uppercase tracking-wide leading-tight">{t.label}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="p-4 space-y-3">
-                <div className="text-sm font-bold">{LANDMARK_TYPES.find((t) => t.id === pendingLandmarkType)?.emoji} {LANDMARK_TYPES.find((t) => t.id === pendingLandmarkType)?.label}</div>
-                <input
-                  type="text"
-                  className="input-brutal w-full"
-                  placeholder="Custom label (optional)"
-                  value={landmarkLabel}
-                  onChange={(e) => setLandmarkLabel(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") dropLandmark(pendingLandmarkType, landmarkLabel); }}
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button onClick={() => setPendingLandmarkType(null)} className="flex-1 border-2 border-border py-2 text-[11px] font-bold uppercase hover:bg-muted">Back</button>
-                  <button onClick={() => dropLandmark(pendingLandmarkType, landmarkLabel)}
-                    className="flex-1 btn-brutal py-2 text-[11px]">Pin it</button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Controls */}
-      {!readOnly && (
-        <div className="space-y-2">
-          {!tracking && !done && (
-            <button onClick={() => void start()}
-              className="w-full flex items-center justify-center gap-2 bg-primary border-2 border-border py-3.5 font-bold uppercase tracking-wider text-sm hover:bg-primary/80">
-              <Play className="h-5 w-5" /> Start area tracking
-            </button>
-          )}
-          {tracking && (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setShowLandmarkPicker(true); setPendingLandmarkType(null); }}
-                className="flex items-center justify-center gap-2 border-2 border-border bg-card py-3 font-bold uppercase tracking-wider text-xs hover:bg-primary/20">
-                <MapPin className="h-4 w-4" /> Drop pin
-              </button>
-              <button onClick={stop}
-                className="flex items-center justify-center gap-2 bg-destructive text-destructive-foreground border-2 border-border py-3 font-bold uppercase tracking-wider text-xs">
-                <Square className="h-4 w-4" /> Stop & save
-              </button>
-            </div>
-          )}
-          {done && (
-            <button onClick={() => { setDone(false); setPoints([]); setLandmarks([]); onChange(undefined); setStartTime(null); }}
-              className="w-full flex items-center justify-center gap-2 border-2 border-border py-3 font-bold uppercase tracking-wider text-sm hover:bg-muted">
-              <RefreshCw className="h-4 w-4" /> Re-map area
-            </button>
-          )}
-        </div>
-      )}
 
       {/* Landmark list */}
       {landmarks.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Landmarks dropped ({landmarks.length})</div>
+        <div className="border-2 border-border divide-y divide-border">
+          <div className="px-3 py-1.5 bg-muted text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+            Landmarks ({landmarks.length})
+          </div>
           {landmarks.map((lm) => {
             const t = LANDMARK_TYPES.find((x) => x.id === lm.type);
             return (
-              <div key={lm.id} className="flex items-center gap-2 border border-border px-3 py-1.5 text-[11px]">
+              <div key={lm.id} className="flex items-center gap-2 px-3 py-2 text-[11px]">
                 <span>{t?.emoji ?? "📍"}</span>
                 <span className="flex-1 font-semibold">{lm.label}</span>
-                <span className="text-muted-foreground">{lm.lat.toFixed(5)}, {lm.lng.toFixed(5)}</span>
-                {!done && (
-                  <button onClick={() => setLandmarks((prev) => prev.filter((x) => x.id !== lm.id))} className="text-muted-foreground hover:text-destructive">
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
+                <span className="text-muted-foreground font-mono text-[9px]">{lm.lat.toFixed(5)}, {lm.lng.toFixed(5)}</span>
               </div>
             );
           })}
         </div>
       )}
 
-      {!tracking && !done && (
-        <p className="text-[10px] text-muted-foreground">
-          Walk the boundary of the area. Tap <strong>Drop pin</strong> to mark landmarks as you go.
-          Tap Stop when you return near the start.
-        </p>
-      )}
-      {tracking && (
-        <p className="text-[10px] text-yellow-700 font-bold">
-          ⚡ Keep screen on · GPS is recording · Walk the boundary
-        </p>
+      {/* Re-map button */}
+      {!readOnly && (
+        <button
+          onClick={() => { clearDraft(); setDone(false); setPaused(false); setPoints([]); setLandmarks([]); onChange(undefined); setStartTime(null); elapsedBaseRef.current = 0; setElapsed(0); setDraft(loadDraft()); }}
+          className="w-full flex items-center justify-center gap-2 border-2 border-border py-3.5 font-bold uppercase tracking-wider text-sm active:bg-muted"
+          style={{ touchAction: "manipulation" }}
+        >
+          <RefreshCw className="h-4 w-4" /> Re-map Area
+        </button>
       )}
     </div>
   );
