@@ -641,20 +641,30 @@ async def import_csv(
 ):
     _require_admin(user)
     if replace:
-        await db.execute(text("DELETE FROM dr_regimens"))
-        await db.execute(text("DELETE FROM dr_drugs"))
-        await db.execute(text("DELETE FROM dr_conditions"))
-        await db.commit()
+        try:
+            await db.execute(text("DELETE FROM dr_regimens"))
+            await db.execute(text("DELETE FROM dr_drugs"))
+            await db.execute(text("DELETE FROM dr_conditions"))
+            await db.commit()
+        except Exception as e:
+            await db.rollback()
+            return {"updated": 0, "inserted": 0, "skipped": 0,
+                    "errors": [f"Replace/wipe failed ({type(e).__name__}): {str(e)[:300]}"]}
+
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
     updated = inserted = skipped = 0
     errors: list[str] = []
 
-    # Cache conditions/drugs already seen this import to avoid repeated SELECT per row
+    # In-memory cache: condition/drug name → DB id (avoids repeated SELECTs)
     cond_cache: dict[str, str] = {}
     drug_cache: dict[str, str] = {}
 
     for i, row in enumerate(reader, start=2):
+        cname = ""
+        dname = ""
+        new_cond_key: str | None = None
+        new_drug_key: str | None = None
         try:
             rid_csv = row.get("regimen_id", "").strip()
             cname = row.get("condition_name", "").strip()
@@ -663,7 +673,7 @@ async def import_csv(
                 skipped += 1
                 continue
 
-            def _regimen_params(cid: str, did: str) -> dict:
+            def _rp(cid: str, did: str) -> dict:
                 return {
                     "cid": cid, "did": did,
                     "adult": row.get("adult_dose", ""), "max_dose": row.get("max_dose", ""),
@@ -676,14 +686,14 @@ async def import_csv(
                     "notes": row.get("notes", ""), "contra": row.get("contraindications", ""),
                 }
 
-            # If regimen_id present and exists → UPDATE
+            # UPDATE path: regimen_id exists in DB
             if rid_csv:
                 existing = (await db.execute(
                     text("SELECT condition_id, drug_id FROM dr_regimens WHERE id=:id LIMIT 1"),
                     {"id": rid_csv}
                 )).mappings().first()
                 if existing:
-                    p = _regimen_params(str(existing["condition_id"]), str(existing["drug_id"]))
+                    p = _rp(str(existing["condition_id"]), str(existing["drug_id"]))
                     await db.execute(text("""
                         UPDATE dr_regimens SET
                           adult_dose=:adult, max_dose=:max_dose, pediatric_dose=:ped,
@@ -692,16 +702,18 @@ async def import_csv(
                           notes=:notes, contraindications=:contra, updated_at=now()
                         WHERE id=:rid
                     """), {**p, "rid": rid_csv})
+                    await db.commit()
                     updated += 1
                     continue
 
-            # Upsert condition (use in-memory cache to skip DB round trip)
+            # Upsert condition
             ckey = cname.lower()
             if ckey in cond_cache:
                 cid = cond_cache[ckey]
             else:
                 c_row = (await db.execute(
-                    text("SELECT id FROM dr_conditions WHERE lower(name)=lower(:n) LIMIT 1"), {"n": cname}
+                    text("SELECT id FROM dr_conditions WHERE lower(name)=lower(:n) LIMIT 1"),
+                    {"n": cname}
                 )).mappings().first()
                 if c_row:
                     cid = str(c_row["id"])
@@ -713,15 +725,17 @@ async def import_csv(
                         VALUES (:id, :name, CAST(:aliases AS jsonb), :cat, :icd)
                     """), {"id": cid, "name": cname, "aliases": json.dumps(aliases),
                           "cat": row.get("condition_category", ""), "icd": row.get("condition_icd_code", "")})
+                    new_cond_key = ckey
                 cond_cache[ckey] = cid
 
-            # Upsert drug (cache)
+            # Upsert drug
             dkey = dname.lower()
             if dkey in drug_cache:
                 did = drug_cache[dkey]
             else:
                 d_row = (await db.execute(
-                    text("SELECT id FROM dr_drugs WHERE lower(generic_name)=lower(:n) LIMIT 1"), {"n": dname}
+                    text("SELECT id FROM dr_drugs WHERE lower(generic_name)=lower(:n) LIMIT 1"),
+                    {"n": dname}
                 )).mappings().first()
                 if d_row:
                     did = str(d_row["id"])
@@ -733,9 +747,10 @@ async def import_csv(
                         VALUES (:id, :name, CAST(:brands AS jsonb), :cls)
                     """), {"id": did, "name": dname, "brands": json.dumps(brands),
                           "cls": row.get("drug_class", "")})
+                    new_drug_key = dkey
                 drug_cache[dkey] = did
 
-            p = _regimen_params(cid, did)
+            p = _rp(cid, did)
             existing_r = (await db.execute(
                 text("SELECT id FROM dr_regimens WHERE condition_id=:cid AND drug_id=:did LIMIT 1"),
                 {"cid": cid, "did": did}
@@ -749,25 +764,29 @@ async def import_csv(
                       notes=:notes, contraindications=:contra, updated_at=now()
                     WHERE id=:rid
                 """), {**p, "rid": str(existing_r["id"])})
+                await db.commit()
                 updated += 1
             else:
                 await db.execute(text("""
                     INSERT INTO dr_regimens
                     (id, condition_id, drug_id, adult_dose, max_dose, pediatric_dose, route, site,
                      frequency, duration, strength, formulation, line_of_treatment, notes, contraindications)
-                    VALUES
-                    (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
-                     :freq, :dur, :str, :form, :line, :notes, :contra)
+                    VALUES (:id, :cid, :did, :adult, :max_dose, :ped, :route, :site,
+                            :freq, :dur, :str, :form, :line, :notes, :contra)
                 """), {"id": rid_csv or str(uuid.uuid4()), **p})
+                await db.commit()
                 inserted += 1
-        except Exception as e:
-            errors.append(f"Row {i}: {str(e)[:120]}")
 
-    # Single commit for all rows — eliminates 150+ round trips
-    try:
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        errors.append(f"Commit failed: {str(e)[:200]}")
+        except Exception as e:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            # Evict cache entries that may reference rolled-back inserts
+            if new_cond_key:
+                cond_cache.pop(new_cond_key, None)
+            if new_drug_key:
+                drug_cache.pop(new_drug_key, None)
+            errors.append(f"Row {i} [{type(e).__name__}]: {str(e)[:250]}")
 
     return {"updated": updated, "inserted": inserted, "skipped": skipped, "errors": errors}

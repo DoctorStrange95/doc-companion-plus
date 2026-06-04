@@ -10,6 +10,7 @@ import { API_BASE } from "@/lib/api";
 import { EmbeddedBMI } from "@/components/tools/EmbeddedBMI";
 import { EmbeddedGrowthChart } from "@/components/tools/EmbeddedGrowthChart";
 import { EmbeddedDrugReference } from "@/components/tools/EmbeddedDrugReference";
+import { GpsTrackField, type GpsTrackData } from "@/components/fields/GpsTrackField";
 
 const search = z.object({ patient: z.string().optional() });
 
@@ -1011,6 +1012,14 @@ function FieldRenderer({
           loading={geoLoading === f.id}
           onCapture={onGeo}
           onClear={onGeoClear}
+        />
+      )}
+
+      {/* GPS Area Mapping */}
+      {f.type === "gps_track" && (
+        <GpsTrackField
+          value={value as GpsTrackData | undefined}
+          onChange={onChange}
         />
       )}
 

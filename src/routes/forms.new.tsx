@@ -107,6 +107,7 @@ const PALETTE: { group: string; items: PaletteItem[] }[] = [
       { type: "age", label: "Age", icon: Timer },
       { type: "measurement", label: "Measurement", icon: Stethoscope },
       { type: "location", label: "Location / GPS", icon: MapPin },
+      { type: "gps_track", label: "Area mapping", icon: MapPin },
       { type: "photo", label: "Photo / Image", icon: Camera },
       { type: "file_upload", label: "File upload", icon: Upload },
     ],

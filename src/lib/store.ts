@@ -48,7 +48,9 @@ export type FieldType =
   // Embedded clinical tools
   | "tool_embed"
   // Clinical age field (years / months / days with auto-conversion)
-  | "age";
+  | "age"
+  // GPS area mapping — continuous track + area calculation
+  | "gps_track";
 
 export type SkipOp = "eq" | "neq" | "gt" | "lt" | "contains" | "is_answered";
 

@@ -5,6 +5,7 @@ import type { Submission, FormField } from "@/lib/store";
 import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
 import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText, Loader2 } from "lucide-react";
+import { GpsTrackSummary, type GpsTrackData } from "@/components/fields/GpsTrackField";
 
 export const Route = createFileRoute("/forms/$id/responses")({ component: FormResponses });
 
@@ -56,6 +57,9 @@ function downloadFile(file: FileUploadValue) {
 function DetailFieldValue({ field, val }: { field: FormField; val: unknown }) {
   if (val === undefined || val === null || val === "") {
     return <span className="text-muted-foreground">—</span>;
+  }
+  if (field.type === "gps_track" && typeof val === "object" && val !== null && "points" in val) {
+    return <GpsTrackSummary data={val as GpsTrackData} />;
   }
   if (field.type === "photo" && typeof val === "string" && val.startsWith("data:")) {
     return (

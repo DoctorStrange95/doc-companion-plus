@@ -113,3 +113,4 @@ Backend (Render free tier — cold-starts after ~15 min idle)
 3. **Guest / anonymous sessions** — let unregistered users try tools and save results locally, then prompt to create an account to persist data.
 4. **Push notifications** — notify the user when a background sync brings in new data.
 5. **Test suite expansion** — unit tests for store sync logic; integration tests for the full push/pull cycle.
+
