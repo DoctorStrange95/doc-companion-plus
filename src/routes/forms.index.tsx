@@ -3,9 +3,10 @@ import { useState, useMemo } from "react";
 import { useStore, store, sync } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw, AlertTriangle } from "lucide-react";
+import { Plus, FileText, Edit2, Share2, Copy, ChevronRight, Search, List, RefreshCw, AlertTriangle, Link2, CheckCircle2, Clock } from "lucide-react";
 import { getFormColor } from "@/lib/formColor";
 import { AuthRequired } from "@/components/AuthGate";
+import { API_BASE, getToken } from "@/lib/api";
 
 export const Route = createFileRoute("/forms/")({ component: FormsList });
 
@@ -36,6 +37,9 @@ function FormsList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [synced, setSynced] = useState(false);
+  const [joinLink, setJoinLink] = useState("");
+  const [joinStatus, setJoinStatus] = useState<null | { type: "ok" | "pending" | "error"; msg: string }>(null);
+  const [joining, setJoining] = useState(false);
   // Free plan: max 5 owned forms
   const ownedFormCount = user ? forms.filter((f) => f.ownerId === user.id).length : 0;
   const atFormLimit = user?.role !== "admin" && ownedFormCount >= 5;
@@ -53,6 +57,45 @@ function FormsList() {
     }
   };
 
+
+  const handleJoin = async () => {
+    const raw = joinLink.trim();
+    if (!raw) return;
+    // Extract token from URLs like /f/sh_XXXX or paste of full URL
+    const tokenMatch = raw.match(/\/f\/(sh_[A-Za-z0-9_-]+)/);
+    const token = tokenMatch ? tokenMatch[1] : (raw.startsWith("sh_") ? raw : null);
+    if (!token) { setJoinStatus({ type: "error", msg: "Paste a full share link (e.g. https://…/f/sh_…)" }); return; }
+    setJoining(true); setJoinStatus(null);
+    const tok = getToken();
+    try {
+      const access = await fetch(`${API_BASE}/api/forms/public/${token}/my-access`, {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+      });
+      const accessData = await access.json() as { status: string };
+      if (accessData.status === "allowed" || accessData.status === "owner") {
+        await sync.pull();
+        setJoinStatus({ type: "ok", msg: "Form added to your dashboard!" });
+        setJoinLink("");
+      } else if (accessData.status === "pending") {
+        setJoinStatus({ type: "pending", msg: "Your access request is already pending. Ask the form owner to approve it." });
+      } else {
+        // Request access
+        const req = await fetch(`${API_BASE}/api/forms/public/${token}/request-access`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        });
+        if (req.ok) {
+          setJoinStatus({ type: "pending", msg: "Access requested! The form owner will need to approve you." });
+          setJoinLink("");
+        } else {
+          const body = await req.json().catch(() => ({ detail: "Failed" })) as { detail?: string };
+          setJoinStatus({ type: "error", msg: body.detail ?? "Could not request access." });
+        }
+      }
+    } catch {
+      setJoinStatus({ type: "error", msg: "Network error — check connection and try again." });
+    } finally { setJoining(false); }
+  };
 
   const filteredForms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -124,6 +167,43 @@ function FormsList() {
             </button>
           </div>
         )}
+        {/* ── Join form by link ── */}
+        <div className="mb-4 border-2 border-border bg-card">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Join a form by link</span>
+          </div>
+          <div className="flex gap-0">
+            <input
+              type="url"
+              value={joinLink}
+              onChange={(e) => { setJoinLink(e.target.value); setJoinStatus(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleJoin(); }}
+              placeholder="Paste share link here…"
+              className="flex-1 border-0 bg-transparent px-3 py-3 text-[11px] font-bold placeholder:text-muted-foreground focus:outline-none"
+            />
+            <button
+              onClick={() => void handleJoin()}
+              disabled={joining || !joinLink.trim()}
+              className="shrink-0 border-l-2 border-border bg-primary px-4 py-3 text-[10px] font-bold uppercase tracking-widest disabled:opacity-40 active:opacity-80"
+              style={{ touchAction: "manipulation" }}
+            >
+              {joining ? "…" : "Join"}
+            </button>
+          </div>
+          {joinStatus && (
+            <div className={`flex items-center gap-2 border-t border-border px-3 py-2 text-[11px] font-bold ${
+              joinStatus.type === "ok" ? "text-green-700 bg-green-50" :
+              joinStatus.type === "pending" ? "text-yellow-700 bg-yellow-50" : "text-destructive bg-destructive/10"
+            }`}>
+              {joinStatus.type === "ok" ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> :
+               joinStatus.type === "pending" ? <Clock className="h-3.5 w-3.5 shrink-0" /> :
+               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+              {joinStatus.msg}
+            </div>
+          )}
+        </div>
+
         {forms.length > 0 && (
           <div className="relative mb-4">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

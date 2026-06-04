@@ -601,7 +601,29 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
           )}
         </div>
         {/* Spacer so sticky bar doesn't overlap content */}
-        <div className="h-20" />
+        <div className="h-24" />
+
+        {/* Landmarks already dropped (removable while tracking/paused) */}
+        {landmarks.length > 0 && (
+          <div className="border-2 border-border divide-y divide-border">
+            <div className="px-3 py-1.5 bg-muted text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              Pins dropped ({landmarks.length}) — tap ✕ to remove
+            </div>
+            {landmarks.map((lm) => {
+              const t = LANDMARK_TYPES.find((x) => x.id === lm.type);
+              return (
+                <div key={lm.id} className="flex items-center gap-2 px-3 py-2 text-[11px]">
+                  <span>{t?.emoji ?? "📍"}</span>
+                  <span className="flex-1 font-semibold">{lm.label}</span>
+                  <button onClick={() => setLandmarks((prev) => prev.filter((x) => x.id !== lm.id))}
+                    className="text-muted-foreground hover:text-destructive p-1">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Landmark picker modal */}
         {showLandmarkPicker && (
@@ -697,16 +719,45 @@ export function GpsTrackField({ value, onChange, readOnly }: Props) {
         </div>
       )}
 
-      {/* Re-map button */}
+      {/* Re-map button — with confirmation to avoid accidental loss */}
       {!readOnly && (
-        <button
-          onClick={() => { clearDraft(); setDone(false); setPaused(false); setPoints([]); setLandmarks([]); onChange(undefined); setStartTime(null); elapsedBaseRef.current = 0; setElapsed(0); setDraft(loadDraft()); }}
-          className="w-full flex items-center justify-center gap-2 border-2 border-border py-3.5 font-bold uppercase tracking-wider text-sm active:bg-muted"
-          style={{ touchAction: "manipulation" }}
-        >
-          <RefreshCw className="h-4 w-4" /> Re-map Area
-        </button>
+        <RemapButton onConfirm={() => { clearDraft(); setDone(false); setPaused(false); setPoints([]); setLandmarks([]); onChange(undefined); setStartTime(null); elapsedBaseRef.current = 0; setElapsed(0); setDraft(loadDraft()); }} />
       )}
+    </div>
+  );
+}
+
+// ── Re-map confirmation button ────────────────────────────────────────────────
+
+function RemapButton({ onConfirm }: { onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <button onClick={() => setConfirming(true)}
+        className="w-full flex items-center justify-center gap-2 border-2 border-border py-3.5 font-bold uppercase tracking-wider text-sm active:bg-muted"
+        style={{ touchAction: "manipulation" }}>
+        <RefreshCw className="h-4 w-4" /> Re-map Area
+      </button>
+    );
+  }
+  return (
+    <div className="border-2 border-destructive bg-destructive/10 p-3 space-y-2">
+      <p className="text-[11px] font-bold text-destructive flex items-center gap-1.5">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        This will delete the current map and all pins. Are you sure?
+      </p>
+      <div className="flex gap-2">
+        <button onClick={() => setConfirming(false)}
+          className="flex-1 border-2 border-border py-2.5 text-[11px] font-bold uppercase active:bg-muted"
+          style={{ touchAction: "manipulation" }}>
+          Keep map
+        </button>
+        <button onClick={onConfirm}
+          className="flex-1 border-2 border-destructive bg-destructive text-destructive-foreground py-2.5 text-[11px] font-bold uppercase active:opacity-80"
+          style={{ touchAction: "manipulation" }}>
+          Yes, re-map
+        </button>
+      </div>
     </div>
   );
 }
