@@ -2659,6 +2659,63 @@ async def admin_list_assignees(
     ]
 
 
+@app.get("/api/admin/forms/{form_id}/data")
+async def admin_form_data(
+    form_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    form_row = (await db.execute(
+        text("SELECT id, name, category, fields FROM forms WHERE id = :id"),
+        {"id": form_id},
+    )).mappings().first()
+    if not form_row:
+        raise HTTPException(status_code=404, detail="Form not found")
+
+    subs = (await db.execute(
+        text("""
+            SELECT s.id, s.created_at, s.data, u.email AS owner_email, COALESCE(u.name,'') AS owner_name
+            FROM submissions s
+            LEFT JOIN users u ON u.id::text = s.owner_id::text
+            WHERE s.form_id = :fid
+            ORDER BY s.created_at DESC
+            LIMIT 500
+        """),
+        {"fid": form_id},
+    )).mappings().all()
+
+    fields_raw = form_row["fields"] or []
+    if isinstance(fields_raw, str):
+        import json as _json
+        fields_raw = _json.loads(fields_raw)
+
+    return {
+        "form": {
+            "id": form_row["id"],
+            "name": form_row["name"],
+            "category": form_row["category"] or "",
+            "fields": [
+                {"id": f.get("id", ""), "label": f.get("label", ""), "type": f.get("type", "text"), "variableName": f.get("variableName", "")}
+                for f in fields_raw
+                if f.get("type") not in ("section_header", "page_break")
+            ],
+        },
+        "submissions": [
+            {
+                "id": str(row["id"]),
+                "created_at": row["created_at"].isoformat() if row["created_at"] else "",
+                "owner_email": row["owner_email"] or "",
+                "owner_name": row["owner_name"] or "",
+                "data": row["data"] or {},
+            }
+            for row in subs
+        ],
+    }
+
+
 @app.post("/api/admin/deploy", response_model=AdminAssigneeOut)
 async def admin_deploy_form(
     body: AdminDeployIn,

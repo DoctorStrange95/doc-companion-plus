@@ -4,7 +4,7 @@ import { useStore, store, sync } from "@/lib/store";
 import type { Submission, FormField } from "@/lib/store";
 import type { LongitudinalSubmission } from "@/types/longitudinal";
 import { PageHeader, PageShell } from "@/components/PageShell";
-import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText, Loader2 } from "lucide-react";
+import { Trash2, X, Download, AlertTriangle, User, FileJson, RefreshCw, BarChart2, Image, FileText, Loader2, Printer } from "lucide-react";
 import { GpsTrackSummary, type GpsTrackData } from "@/components/fields/GpsTrackField";
 
 export const Route = createFileRoute("/forms/$id/responses")({ component: FormResponses });
@@ -59,7 +59,7 @@ function DetailFieldValue({ field, val }: { field: FormField; val: unknown }) {
     return <span className="text-muted-foreground">—</span>;
   }
   if (field.type === "gps_track" && typeof val === "object" && val !== null && "points" in val) {
-    return <GpsTrackSummary data={val as GpsTrackData} />;
+    return <GpsTrackSummary data={val as GpsTrackData} printable />;
   }
   if (field.type === "photo" && typeof val === "string" && val.startsWith("data:")) {
     return (
@@ -213,7 +213,17 @@ function DetailModal({ sub, fields, onClose, onDelete, canDelete }: {
   const dataFields = fields.filter((f) => f.type !== "section_header" && f.type !== "page_break" && f.type !== "calculated");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={onClose}>
+    <>
+      <style>{`
+        @media print {
+          body > *:not(.print-response-modal) { display: none !important; }
+          .print-response-modal { position: static !important; background: none !important; max-height: none !important; overflow: visible !important; }
+          .print-response-modal > div { max-height: none !important; overflow: visible !important; border: none !important; }
+          .no-print { display: none !important; }
+          @page { margin: 15mm 12mm; size: A4 portrait; }
+        }
+      `}</style>
+    <div className="print-response-modal fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center" onClick={onClose}>
       <div className="w-full max-w-lg border-4 border-border bg-background max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b-2 border-border p-4">
           <div>
@@ -222,7 +232,12 @@ function DetailModal({ sub, fields, onClose, onDelete, canDelete }: {
             </div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{date}</div>
           </div>
-          <button onClick={onClose} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+          <div className="flex items-center gap-1.5 no-print">
+            <button onClick={() => window.print()} className="border border-border p-1.5 hover:bg-muted" title="Print / Save PDF">
+              <Printer className="h-4 w-4" />
+            </button>
+            <button onClick={onClose} className="border border-border p-1.5 hover:bg-muted"><X className="h-4 w-4" /></button>
+          </div>
         </div>
         <div className="divide-y divide-border px-4">
           {dataFields.map((f) => (
@@ -255,6 +270,7 @@ function DetailModal({ sub, fields, onClose, onDelete, canDelete }: {
         )}
       </div>
     </div>
+    </>
   );
 }
 

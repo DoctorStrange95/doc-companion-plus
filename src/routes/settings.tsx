@@ -9,7 +9,7 @@ import { API_BASE, getToken } from "@/lib/api";
 import {
   Download, Wifi, WifiOff, LogOut, RefreshCw, AlertTriangle,
   Edit2, Check, X, Trash2, Zap, Crown, Building2, Sparkles, MailCheck, ShieldCheck,
-  Users, Loader2, ShieldAlert,
+  Users, Loader2, ShieldAlert, BarChart2, ChevronDown, ChevronUp, Table2,
 } from "lucide-react";
 
 export const Route = createFileRoute("/settings")({ component: Settings });
@@ -472,16 +472,22 @@ interface AdminAssignee {
   response_count: number;
 }
 
-type AdminTab = "users" | "forms";
+type AdminTab = "users" | "forms" | "data";
 
 function AdminPanel() {
-  const [tab, setTab] = useState<AdminTab>("users");
+  const [tab, setTab] = useState<AdminTab>("data");
+
+  const TAB_LABELS: Record<AdminTab, string> = {
+    data: "📊 Data",
+    users: "👥 Users",
+    forms: "📋 Deploy",
+  };
 
   return (
     <section className="brutal mt-4 border-secondary">
       {/* Tab bar */}
       <div className="flex border-b-2 border-border">
-        {(["users", "forms"] as AdminTab[]).map((t) => (
+        {(["data", "users", "forms"] as AdminTab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -489,14 +495,200 @@ function AdminPanel() {
               tab === t ? "bg-secondary text-secondary-foreground" : "bg-card hover:bg-muted"
             }`}
           >
-            {t === "users" ? "👥 Users" : "📋 Form Deployment"}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
 
+      {tab === "data" && <AdminDataTab />}
       {tab === "users" && <AdminUsersTab />}
       {tab === "forms" && <AdminFormsTab />}
     </section>
+  );
+}
+
+// ── Admin Data Tab ────────────────────────────────────────────────────────────
+
+interface AdminFormField { id: string; label: string; type: string; variableName: string; }
+interface AdminSubmission { id: string; created_at: string; owner_email: string; owner_name: string; data: Record<string, unknown>; }
+interface AdminFormData { form: { id: string; name: string; category: string; fields: AdminFormField[] }; submissions: AdminSubmission[]; }
+
+function cellValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) return v.join(", ");
+  if (typeof v === "object") {
+    const obj = v as Record<string, unknown>;
+    if ("lat" in obj && "lng" in obj) return `${(obj.lat as number).toFixed(5)},${(obj.lng as number).toFixed(5)}`;
+    return JSON.stringify(v);
+  }
+  return String(v);
+}
+
+function exportAdminCsv(fd: AdminFormData) {
+  const { form, submissions } = fd;
+  const headers = ["#", "Date", "Time", "Respondent", ...form.fields.map((f) => f.variableName || f.label)];
+  const rows = submissions.map((s, i) => {
+    const dt = new Date(s.created_at);
+    const vals = form.fields.map((f) => `"${cellValue(s.data[f.id]).replace(/"/g, '""')}"`);
+    return [`${i + 1}`, dt.toLocaleDateString("en-GB"), dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), `"${s.owner_email}"`, ...vals].join(",");
+  });
+  const csv = [headers.join(","), ...rows].join("\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = `${form.name.replace(/[^a-z0-9]/gi, "_")}_admin.csv`; a.click();
+}
+
+function AdminDataTab() {
+  const [forms, setForms] = useState<AdminForm[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [formData, setFormData] = useState<AdminFormData | null>(null);
+  const [loadingData, setLoadingData] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const fetchForms = async () => {
+    setLoading(true); setError("");
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/forms`, { headers: { Authorization: `Bearer ${tok}` } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setForms(await res.json() as AdminForm[]);
+    } catch (e) { setError(`Failed: ${e instanceof Error ? e.message : "unknown"}`); }
+    finally { setLoading(false); }
+  };
+
+  const loadFormData = async (id: string) => {
+    if (selectedId === id) { setSelectedId(null); setFormData(null); return; }
+    setSelectedId(id); setFormData(null); setLoadingData(true);
+    const tok = getToken();
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/forms/${id}/data`, { headers: { Authorization: `Bearer ${tok}` } });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setFormData(await res.json() as AdminFormData);
+    } catch (e) { setError(`${e instanceof Error ? e.message : "unknown"}`); }
+    finally { setLoadingData(false); }
+  };
+
+  useEffect(() => { void fetchForms(); }, []);
+
+  const filtered = forms.filter((f) =>
+    !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.owner_email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="p-4 space-y-3">
+      {/* search + refresh */}
+      <div className="flex gap-2">
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search forms…"
+          className="flex-1 border-2 border-border bg-card px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+        <button onClick={() => void fetchForms()} disabled={loading}
+          className="flex items-center gap-1.5 border-2 border-border px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-muted disabled:opacity-50">
+          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      {error && <p className="text-[11px] font-bold text-destructive border-2 border-destructive px-3 py-2">{error}</p>}
+      {loading && <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+
+      <div className="space-y-2">
+        {filtered.map((f) => (
+          <div key={f.id} className="border-2 border-border">
+            <button type="button" onClick={() => void loadFormData(f.id)}
+              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 hover:bg-muted text-left">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-bold truncate">{f.name}</span>
+                  <span className={`px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest border ${
+                    f.status === "active" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                  }`}>{f.status}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest border border-border px-1.5 py-0.5">{f.response_count} resp</span>
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{f.category} · {f.owner_name || f.owner_email}</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
+                {selectedId === f.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </div>
+            </button>
+
+            {selectedId === f.id && (
+              <div className="border-t-2 border-border bg-card">
+                {loadingData && <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>}
+                {formData && <AdminResponseTable fd={formData} />}
+              </div>
+            )}
+          </div>
+        ))}
+        {!loading && filtered.length === 0 && <p className="text-[11px] text-muted-foreground text-center py-4">No forms found.</p>}
+      </div>
+    </div>
+  );
+}
+
+function AdminResponseTable({ fd }: { fd: AdminFormData }) {
+  const { form, submissions } = fd;
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  if (submissions.length === 0) {
+    return <div className="px-4 py-6 text-center text-[11px] font-bold uppercase tracking-widest text-muted-foreground">No responses yet</div>;
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <BarChart2 className="inline h-3 w-3 mr-1" />{submissions.length} response{submissions.length !== 1 ? "s" : ""}
+        </span>
+        <button onClick={() => exportAdminCsv(fd)}
+          className="flex items-center gap-1.5 border-2 border-border px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-muted">
+          <Download className="h-3 w-3" /> CSV
+        </button>
+      </div>
+
+      {/* Scrollable table */}
+      <div className="overflow-x-auto border-2 border-border">
+        <table className="w-full text-[10px]" style={{ minWidth: `${Math.max(400, form.fields.length * 120)}px` }}>
+          <thead>
+            <tr className="border-b-2 border-border bg-muted">
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest whitespace-nowrap border-r border-border">#</th>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest whitespace-nowrap border-r border-border">Date</th>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest whitespace-nowrap border-r border-border">By</th>
+              {form.fields.map((f) => (
+                <th key={f.id} className="px-2 py-1.5 text-left font-bold uppercase tracking-widest whitespace-nowrap border-r last:border-r-0 border-border max-w-[160px]">
+                  <span className="block truncate max-w-[140px]" title={f.label}>{f.variableName || f.label}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {submissions.map((s, i) => {
+              const dt = new Date(s.created_at);
+              const isExp = expandedRow === s.id;
+              return (
+                <tr key={s.id} onClick={() => setExpandedRow(isExp ? null : s.id)}
+                  className={`border-b border-border cursor-pointer hover:bg-muted/60 ${isExp ? "bg-muted" : i % 2 === 0 ? "bg-card" : "bg-background"}`}>
+                  <td className="px-2 py-1.5 font-bold tabular-nums border-r border-border">{submissions.length - i}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap border-r border-border text-muted-foreground">
+                    {dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}{" "}
+                    <span className="text-[9px]">{dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                  </td>
+                  <td className="px-2 py-1.5 border-r border-border max-w-[120px]">
+                    <span className="block truncate text-[9px]" title={s.owner_email}>{s.owner_name || s.owner_email.split("@")[0]}</span>
+                  </td>
+                  {form.fields.map((f) => (
+                    <td key={f.id} className="px-2 py-1.5 border-r last:border-r-0 border-border max-w-[160px]">
+                      <span className={`block truncate ${isExp ? "" : "max-w-[140px]"}`} title={cellValue(s.data[f.id])}>{cellValue(s.data[f.id])}</span>
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[9px] text-muted-foreground">Tap a row to expand. Scroll right to see all fields.</p>
+    </div>
   );
 }
 
